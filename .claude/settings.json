@@ -1,0 +1,258 @@
+{
+  "companyAnnouncements": ["Welcome to Ralph-Claude solution"],
+  "permissions": {
+    "allow": [
+      "Agent",
+      "AskUserQuestion",
+      "Bash",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "Edit",
+      "EnterPlanMode",
+      "EnterWorktree",
+      "ExitPlanMode",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "ListMcpResourcesTool",
+      "NotebookEdit",
+      "Read",
+      "ReadMcpResourceTool",
+      "Skill",
+      "TaskCreate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
+      "TaskUpdate",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Write",
+      "mcp__kithable-chrome"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~/)",
+      "Bash(rm -r -f /)",
+      "Bash(rm -r -f ~)",
+      "Bash(rm -r -f /*)",
+      "Bash(rm -r -f ~/)",
+      "Bash(sudo rm -rf /)",
+      "Bash(sudo rm -rf ~)",
+      "Bash(sudo rm -rf /*)",
+      "Bash(sudo rm -rf ~/)",
+      "Bash(sudo rm -r -f /)",
+      "Bash(sudo rm -r -f ~)",
+      "Bash(sudo rm -r -f /*)",
+      "Bash(sudo rm -r -f ~/)",
+
+      "Read(./.venv/**)",
+      "Glob(./.venv/**)",
+      "Grep(./.venv/**)",
+      "Edit(./.venv/**)",
+      "Write(./.venv/**)",
+      "Read(./**/venv/**)",
+      "Glob(./**/venv/**)",
+      "Grep(./**/venv/**)",
+      "Read(./**/.venv/**)",
+      "Glob(./**/.venv/**)",
+      "Grep(./**/.venv/**)",
+
+      "Read(./node_modules/**)",
+      "Glob(./node_modules/**)",
+      "Grep(./node_modules/**)",
+      "Edit(./node_modules/**)",
+      "Write(./node_modules/**)",
+      "Read(./**/node_modules/**)",
+      "Glob(./**/node_modules/**)",
+      "Grep(./**/node_modules/**)",
+
+      "Read(~/.ssh/**)",
+      "Glob(~/.ssh/**)",
+      "Grep(~/.ssh/**)",
+      "Edit(~/.ssh/**)",
+      "Write(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Glob(~/.gnupg/**)",
+      "Edit(~/.gnupg/**)",
+      "Write(~/.gnupg/**)",
+
+      "Read(./.env.production)",
+      "Read(./.env.staging)",
+      "Read(./secrets/**)",
+      "Glob(./secrets/**)",
+      "Read(./.secrets/**)",
+      "Glob(./.secrets/**)",
+      "Read(./config/credentials.json)",
+      "Read(./config/secrets.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.p12)",
+      "Read(./**/*.pfx)",
+      "Read(./**/*.keystore)",
+      "Read(./**/*.jks)",
+
+      "Read(./.git/**)",
+      "Glob(./.git/**)",
+      "Grep(./.git/**)",
+      "Edit(./.git/**)",
+      "Write(./.git/**)",
+      "Read(./.git/worktrees/**)",
+      "EnterWorktree(./.git/worktrees/**)",
+
+      "Read(./build/**)",
+      "Glob(./build/**)",
+      "Grep(./build/**)",
+      "Read(./dist/**)",
+      "Glob(./dist/**)",
+      "Grep(./dist/**)",
+      "Read(./.next/**)",
+      "Glob(./.next/**)",
+      "Grep(./.next/**)",
+      "Read(./.nuxt/**)",
+      "Glob(./.nuxt/**)",
+      "Read(./out/**)",
+      "Glob(./out/**)",
+      "Read(./__pycache__/**)",
+      "Glob(./__pycache__/**)",
+      "Read(./**/__pycache__/**)",
+      "Glob(./**/__pycache__/**)",
+      "Read(./.cache/**)",
+      "Glob(./.cache/**)",
+      "Read(./.parcel-cache/**)",
+      "Glob(./.parcel-cache/**)",
+      "Read(./.turbo/**)",
+      "Glob(./.turbo/**)",
+      "Read(./target/**)",
+      "Glob(./target/**)",
+      "Read(./*.egg-info/**)",
+      "Glob(./*.egg-info/**)",
+
+      "Read(./.yarn/cache/**)",
+      "Glob(./.yarn/cache/**)",
+      "Read(./.pnpm-store/**)",
+      "Glob(./.pnpm-store/**)",
+      "Read(./.npm/**)",
+      "Glob(./.npm/**)",
+      "Read(~/.npm/**)",
+      "Read(~/.yarn/**)",
+      "Read(~/.pnpm-store/**)",
+      "Read(~/.cache/pip/**)",
+
+      "Read(./.idea/**)",
+      "Glob(./.idea/**)",
+      "Edit(./.idea/**)",
+      "Write(./.idea/**)",
+      "Read(./.vscode/**)",
+      "Glob(./.vscode/**)",
+      "Read(./*.swp)",
+      "Read(./**/*.swp)",
+      "Read(./*.swo)",
+      "Read(./**/*.swo)",
+
+      "Read(./.DS_Store)",
+      "Read(./**/.DS_Store)",
+      "Read(./Thumbs.db)",
+      "Read(./**/Thumbs.db)",
+
+      "Read(./docker-data/**)",
+      "Glob(./docker-data/**)",
+      "Read(./.docker/**)",
+      "Glob(./.docker/**)",
+
+      "Read(./**/*.log)",
+      "Glob(./**/*.log)",
+      "Read(./logs/**)",
+      "Glob(./logs/**)",
+
+      "Read(./.terraform/**)",
+      "Glob(./.terraform/**)",
+      "Read(./terraform.tfstate)",
+      "Read(./terraform.tfstate.backup)",
+      "Read(./**/*.tfstate)",
+      "Read(./**/*.tfstate.backup)",
+
+      "Read(./coverage/**)",
+      "Glob(./coverage/**)",
+      "Read(./.nyc_output/**)",
+      "Glob(./.nyc_output/**)",
+      "Read(./htmlcov/**)",
+      "Glob(./htmlcov/**)",
+
+      "Read(~/.aws/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.gcloud/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.kube/config)",
+      "Read(~/.docker/config.json)",
+      "Read(./**/serviceAccountKey.json)",
+      "Read(./**/*credentials*.json)",
+      "Read(./.npmrc)",
+      "Read(./.pypirc)",
+      "Read(~/.npmrc)",
+      "Read(~/.pypirc)",
+      "Read(~/.netrc)",
+      "Read(~/.gitconfig)",
+      "Read(~/.bash_history)",
+      "Read(~/.zsh_history)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__vex-chrome__navigate_page",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '⚠️ AUTH REQUIRED: Set Authorization header before navigation!' && echo 'Token:' && grep 'CLAUDE_SERVICE_TOKEN=' claude_tokens.md 2>/dev/null | cut -d'=' -f2 | head -1 || echo 'Token file not found - regenerate token first'"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__vex-chrome__(navigate_page|evaluate_script|take_snapshot)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/chrome-pre-navigate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__vex-chrome__(navigate_page|evaluate_script|take_snapshot)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/chrome-post-navigate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/chrome-cleanup.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "dev-tools-plugin@claude-my-marketplace": true,
+    "office-plugin@claude-my-marketplace": true,
+    "infra-plugin@claude-my-marketplace": true,
+    "media-plugin@claude-my-marketplace": true,
+    "design-plugin@claude-my-marketplace": true,
+    "web-design-plugin@claude-my-marketplace": true
+  }
+}
