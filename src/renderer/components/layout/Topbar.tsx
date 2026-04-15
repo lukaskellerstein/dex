@@ -1,4 +1,4 @@
-import { Zap, RefreshCw, Play, Square, FolderOpen } from "lucide-react";
+import { RefreshCw, Play, Square, FolderOpen } from "lucide-react";
 import type { RunConfig } from "../../../core/types.js";
 
 interface AggregateStats {
@@ -58,7 +58,11 @@ export function Topbar({
           flexShrink: 0,
         }}
       >
-        <Zap size={14} color="var(--primary)" />
+        <img
+          src="./logo.png"
+          alt="Ralph Claude"
+          style={{ width: 18, height: 18, borderRadius: 3 }}
+        />
         Ralph Claude
       </div>
 

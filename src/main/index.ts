@@ -21,6 +21,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 900,
     minHeight: 600,
+    icon: path.join(__dirname, "../../docs/logo/logo.png"),
     frame: false,
     backgroundColor: "#131520",
     webPreferences: {
