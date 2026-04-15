@@ -13,6 +13,8 @@ import type { SubagentInfo } from "../../../core/types.js";
 
 interface SubagentListProps {
   subagents: SubagentInfo[];
+  isParentRunning?: boolean;
+  onSubagentClick?: (subagent: SubagentInfo) => void;
 }
 
 function formatDuration(startedAt: string, completedAt: string | null): string {
@@ -169,7 +171,7 @@ function SubagentDetail({ sa }: { sa: SubagentInfo }) {
   );
 }
 
-export function SubagentList({ subagents }: SubagentListProps) {
+export function SubagentList({ subagents, isParentRunning = true, onSubagentClick }: SubagentListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (subagents.length === 0) return null;
@@ -194,17 +196,20 @@ export function SubagentList({ subagents }: SubagentListProps) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {subagents.map((sa) => {
-            const isRunning = !sa.completedAt;
+            const isRunning = isParentRunning && !sa.completedAt;
             const isExpanded = expandedId === sa.id;
+            const typeLabel = sa.subagentType === "unknown"
+              ? sa.subagentId.slice(0, 8)
+              : sa.subagentType;
             const label = sa.description
               ? sa.description.slice(0, 40) +
                 (sa.description.length > 40 ? "..." : "")
-              : sa.subagentType;
+              : typeLabel;
 
             return (
               <button
                 key={sa.id}
-                onClick={() => setExpandedId(isExpanded ? null : sa.id)}
+                onClick={() => onSubagentClick ? onSubagentClick(sa) : setExpandedId(isExpanded ? null : sa.id)}
                 title={sa.description ?? sa.subagentType}
                 style={{
                   display: "flex",

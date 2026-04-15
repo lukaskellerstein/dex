@@ -9,6 +9,7 @@ import {
   FolderSearch,
   Bot,
   ListTodo,
+  ClipboardList,
   Wrench,
   ChevronDown,
   ChevronUp,
@@ -18,6 +19,7 @@ import { ReadInput } from "./ReadInput.js";
 import { WriteInput } from "./WriteInput.js";
 import { EditInput } from "./EditInput.js";
 import { TodoWriteInput } from "./TodoWriteInput.js";
+import { TaskInput } from "./TaskInput.js";
 import { ToolResultStep } from "./ToolResultStep.js";
 import {
   ToolFormattedResult,
@@ -49,6 +51,12 @@ function getToolIcon(toolName: string): ReactNode {
       return <Bot size={13} />;
     case "TodoWrite":
       return <ListTodo size={13} />;
+    case "Task":
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskGet":
+    case "TaskList":
+      return <ClipboardList size={13} />;
     default:
       return <Wrench size={13} />;
   }
@@ -61,6 +69,7 @@ function getToolColor(toolName: string): string {
   if (["Grep", "Glob"].includes(toolName)) return "hsl(280, 60%, 60%)";
   if (toolName === "Agent") return "hsl(195, 85%, 55%)";
   if (toolName === "TodoWrite") return "hsl(38, 80%, 55%)";
+  if (toolName === "Task" || toolName.startsWith("Task")) return "hsl(38, 80%, 55%)";
   if (toolName.startsWith("mcp__")) return "hsl(174, 72%, 46%)";
   return "var(--foreground-dim)";
 }
@@ -89,6 +98,12 @@ function renderInput(toolName: string, input: Record<string, unknown>) {
       return <EditInput input={input} />;
     case "TodoWrite":
       return <TodoWriteInput input={input} />;
+    case "Task":
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskGet":
+    case "TaskList":
+      return <TaskInput input={input} />;
     default:
       return null;
   }

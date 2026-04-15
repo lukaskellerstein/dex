@@ -73,6 +73,7 @@ export interface RunConfig {
 export type OrchestratorEvent =
   | { type: "run_started"; config: RunConfig; runId: string; branchName: string }
   | { type: "spec_started"; specDir: string }
+  | { type: "spec_completed"; specDir: string; phasesCompleted: number }
   | { type: "phase_started"; phase: Phase; iteration: number; phaseTraceId: string }
   | { type: "agent_step"; step: AgentStep }
   | { type: "subagent_started"; info: SubagentInfo }

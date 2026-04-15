@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld("ralphAPI", {
     ipcRenderer.invoke("orchestrator:start", config),
   stopRun: () => ipcRenderer.invoke("orchestrator:stop"),
   isRunning: () => ipcRenderer.invoke("orchestrator:isRunning") as Promise<boolean>,
+  getRunState: () => ipcRenderer.invoke("orchestrator:getRunState") as Promise<{
+    runId: string;
+    projectDir: string;
+    specDir: string;
+    mode: string;
+    model: string;
+    phaseTraceId: string;
+    phaseNumber: number;
+    phaseName: string;
+  } | null>,
 
   // Orchestrator events
   onOrchestratorEvent: (cb: (event: Record<string, unknown>) => void) => {

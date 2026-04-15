@@ -8,8 +8,9 @@ import type {
   Phase,
   RunConfig,
   SubagentInfo,
+  Task,
 } from "./types.js";
-import { parseTasksFile, derivePhaseStatus } from "./parser.js";
+import { parseTasksFile, derivePhaseStatus, extractTaskIds } from "./parser.js";
 import {
   initDatabase,
   createRun,
@@ -109,6 +110,30 @@ function log(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unk
 
 let abortController: AbortController | null = null;
 
+// ── Module-level run state (survives renderer reload) ──
+
+interface RunState {
+  runId: string;
+  projectDir: string;
+  specDir: string;
+  mode: string;
+  model: string;
+  phaseTraceId: string;
+  phaseNumber: number;
+  phaseName: string;
+}
+
+let currentRunState: RunState | null = null;
+
+/**
+ * Returns the current run state if the orchestrator is actively running.
+ * This is the authoritative source — DB rows can be stale from crashes.
+ */
+export function getRunState(): RunState | null {
+  if (!abortController) return null;
+  return currentRunState;
+}
+
 // ── Step Construction Helpers ──
 
 function makeStep(
@@ -170,8 +195,8 @@ function toToolResultStep(
 function toSubagentInfo(input: Record<string, unknown>): SubagentInfo {
   return {
     id: crypto.randomUUID(),
-    subagentId: String(input.subagent_id ?? crypto.randomUUID()),
-    subagentType: String(input.subagent_type ?? "unknown"),
+    subagentId: String(input.subagent_id ?? input.agent_id ?? crypto.randomUUID()),
+    subagentType: String(input.subagent_type ?? input.agent_type ?? "unknown"),
     description: input.description ? String(input.description) : null,
     startedAt: new Date().toISOString(),
     completedAt: null,
@@ -203,6 +228,101 @@ function listSpecDirs(projectDir: string): string[] {
 function isSpecComplete(projectDir: string, specDir: string): boolean {
   const phases = parseTasksFile(projectDir, specDir);
   return phases.length > 0 && phases.every((p) => p.status === "complete");
+}
+
+// ── In-Memory Task State ──
+
+const STATUS_RANK: Record<string, number> = {
+  not_done: 0,
+  code_exists: 1,
+  in_progress: 2,
+  done: 3,
+};
+
+class RunTaskState {
+  private phases: Phase[];
+  private taskMap: Map<string, Task>;
+
+  constructor(initialPhases: Phase[]) {
+    // Deep-clone so mutations don't affect the caller's data
+    this.phases = JSON.parse(JSON.stringify(initialPhases));
+    this.taskMap = new Map();
+    for (const p of this.phases) {
+      for (const t of p.tasks) {
+        this.taskMap.set(t.id, t);
+      }
+    }
+  }
+
+  /** Apply TodoWrite statuses. Promotes only (never demotes). Returns current phases. */
+  updateFromTodoWrite(
+    todos: Array<{ content?: string; status?: string }>
+  ): Phase[] {
+    const updates = new Map<string, "in_progress" | "done">();
+
+    for (const todo of todos) {
+      if (!todo.content) continue;
+      const ids = extractTaskIds(todo.content);
+      const mapped =
+        todo.status === "completed" ? "done" : todo.status === "in_progress" ? "in_progress" : null;
+      if (!mapped) continue;
+      for (const id of ids) {
+        updates.set(id, mapped);
+      }
+    }
+
+    if (updates.size === 0) return this.phases;
+
+    for (const [id, newStatus] of updates) {
+      const task = this.taskMap.get(id);
+      if (task && STATUS_RANK[newStatus] > STATUS_RANK[task.status]) {
+        task.status = newStatus;
+      }
+    }
+
+    // Re-derive phase statuses
+    for (const p of this.phases) {
+      p.status = derivePhaseStatus(p.tasks);
+    }
+
+    return this.phases;
+  }
+
+  /**
+   * Re-read tasks.md from disk and reconcile with in-memory state.
+   * Promote-only: a task that is "done" on disk but "not_done" in memory
+   * gets promoted. A task that is "done" in memory stays "done" even if
+   * disk says otherwise (agent may have used TodoWrite earlier).
+   */
+  reconcileFromDisk(freshPhases: Phase[]): Phase[] {
+    for (const freshPhase of freshPhases) {
+      for (const freshTask of freshPhase.tasks) {
+        const memTask = this.taskMap.get(freshTask.id);
+        if (memTask && STATUS_RANK[freshTask.status] > STATUS_RANK[memTask.status]) {
+          memTask.status = freshTask.status;
+        }
+      }
+    }
+
+    for (const p of this.phases) {
+      p.status = derivePhaseStatus(p.tasks);
+    }
+
+    return this.phases;
+  }
+
+  getPhases(): Phase[] {
+    return this.phases;
+  }
+
+  getIncompletePhases(filter: "all" | number[]): Phase[] {
+    if (filter === "all") {
+      return this.phases.filter((p) => p.status !== "complete");
+    }
+    return this.phases.filter(
+      (p) => filter.includes(p.number) && p.status !== "complete"
+    );
+  }
 }
 
 // ── Prompt Builders ──
@@ -245,19 +365,18 @@ async function runPhase(
   phase: Phase,
   phaseTraceId: string,
   emit: EmitFn,
-  rlog: RunLogger
+  rlog: RunLogger,
+  runTaskState: RunTaskState
 ): Promise<{ cost: number; durationMs: number }> {
   const startTime = Date.now();
   let stepIndex = 0;
   let totalCost = 0;
+  const knownSubagentIds = new Set<string>();
 
   const skillName = config.mode === "plan" ? "speckit-plan" : "speckit-implement";
   const specPath = config.specDir.startsWith("/")
     ? config.specDir
     : `${config.projectDir}/${config.specDir}`;
-  const tasksPath = path.join(config.projectDir, config.specDir, "tasks.md");
-  let lastTasksMtime = 0;
-  try { lastTasksMtime = fs.statSync(tasksPath).mtimeMs; } catch { /* file may not exist yet */ }
 
   const prompt = buildPrompt(config, phase);
   rlog.phase("INFO", `runPhase: spawning agent for Phase ${phase.number}: ${phase.name}`);
@@ -357,7 +476,7 @@ async function runPhase(
                   emitAndStore(toToolResultStep(input, stepIndex++));
                 }
 
-                // Detect TodoWrite — overlay agent's live task statuses onto phases
+                // Detect TodoWrite — update in-memory task state (sole source of truth during run)
                 if (toolName === "TodoWrite") {
                   try {
                     const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
@@ -365,49 +484,13 @@ async function runPhase(
                       content?: string;
                       status?: string;
                     }>;
-                    // Build a map: task ID → live status
-                    const TASK_ID_RE = /\b(T\d+)\b/;
-                    const todoStatusMap = new Map<string, "in_progress" | "done">();
-                    for (const todo of todos) {
-                      const match = todo.content?.match(TASK_ID_RE);
-                      if (match) {
-                        if (todo.status === "completed") todoStatusMap.set(match[1], "done");
-                        else if (todo.status === "in_progress") todoStatusMap.set(match[1], "in_progress");
-                      }
-                    }
-                    if (todoStatusMap.size > 0) {
-                      const phases = parseTasksFile(config.projectDir, config.specDir);
-                      // Overlay live statuses — only promote, never demote
-                      for (const p of phases) {
-                        for (const t of p.tasks) {
-                          const liveStatus = todoStatusMap.get(t.id);
-                          if (liveStatus && t.status !== "done") {
-                            t.status = liveStatus;
-                          }
-                        }
-                        // Re-derive phase status after overlay
-                        p.status = derivePhaseStatus(p.tasks);
-                      }
-                      emit({ type: "tasks_updated", phases });
-                      rlog.phase("DEBUG", "PostToolUse: TodoWrite detected, emitted tasks_updated", {
-                        updates: Object.fromEntries(todoStatusMap),
-                      });
-                    }
+                    const updatedPhases = runTaskState.updateFromTodoWrite(todos);
+                    emit({ type: "tasks_updated", phases: updatedPhases });
+                    rlog.phase("DEBUG", "PostToolUse: TodoWrite detected, emitted tasks_updated");
                   } catch (err) {
-                    rlog.phase("WARN", "PostToolUse: failed to parse TodoWrite", { err: String(err) });
+                    rlog.phase("WARN", "PostToolUse: failed to process TodoWrite", { err: String(err) });
                   }
                 }
-
-                // Check if tasks.md was modified — emit live task updates
-                try {
-                  const currentMtime = fs.statSync(tasksPath).mtimeMs;
-                  if (currentMtime !== lastTasksMtime) {
-                    lastTasksMtime = currentMtime;
-                    const updatedPhases = parseTasksFile(config.projectDir, config.specDir);
-                    emit({ type: "tasks_updated", phases: updatedPhases });
-                    rlog.phase("DEBUG", "PostToolUse: tasks.md changed, emitted tasks_updated");
-                  }
-                } catch { /* tasks.md may not exist */ }
 
                 return {
                   hookSpecificOutput: { hookEventName: "PostToolUse" },
@@ -422,6 +505,7 @@ async function runPhase(
             hooks: [
               async (input: Record<string, unknown>) => {
                 const info = toSubagentInfo(input);
+                knownSubagentIds.add(info.subagentId);
                 rlog.subagentEvent(info.subagentId, "INFO", "SubagentStart", {
                   subagentType: info.subagentType,
                   description: info.description,
@@ -446,8 +530,16 @@ async function runPhase(
             matcher: undefined,
             hooks: [
               async (input: Record<string, unknown>) => {
-                const subagentId = String(input.subagent_id ?? "unknown");
+                const subagentId = String(input.subagent_id ?? input.agent_id ?? "unknown");
                 rlog.subagentEvent(subagentId, "INFO", "SubagentStop", { rawInput: input });
+
+                // Skip subagents we never saw start — these are session-init
+                // subagents spawned before our hooks were registered.
+                if (!knownSubagentIds.has(subagentId)) {
+                  rlog.phase("DEBUG", `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`);
+                  return {};
+                }
+
                 emit({ type: "subagent_completed", subagentId });
                 completeSubagent(subagentId);
                 emitAndStore(
@@ -620,6 +712,17 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
   emit({ type: "run_started", config, runId, branchName });
 
+  currentRunState = {
+    runId,
+    projectDir: config.projectDir,
+    specDir: config.specDir,
+    mode: config.mode,
+    model: config.model,
+    phaseTraceId: "",
+    phaseNumber: 0,
+    phaseName: "",
+  };
+
   let phasesCompleted = 0;
   let totalCost = 0;
   const runStart = Date.now();
@@ -646,7 +749,14 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       const specConfig = { ...config, specDir };
 
       emit({ type: "spec_started", specDir });
+      if (currentRunState) currentRunState.specDir = specDir;
       rlog.run("INFO", `run: starting spec ${specDir}`);
+
+      // Initialize in-memory task state once per spec. Updated via two paths:
+      // 1. TodoWrite detection (PostToolUse hook) — real-time during phase
+      // 2. Disk reconciliation (after each phase) — catches Edit tool changes
+      const initialPhases = parseTasksFile(config.projectDir, specDir);
+      const runTaskState = new RunTaskState(initialPhases);
 
       let iteration = 0;
       let specFailed = false;
@@ -654,15 +764,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       while (iteration < config.maxIterations) {
         if (abortController.signal.aborted) break;
 
-        // Re-parse tasks.md each iteration for current status
-        const phases = parseTasksFile(config.projectDir, specDir);
-        const targetPhases =
-          config.phases === "all"
-            ? phases.filter((p) => p.status !== "complete")
-            : phases.filter((p) =>
-                (config.phases as number[]).includes(p.number) &&
-                p.status !== "complete"
-              );
+        const targetPhases = runTaskState.getIncompletePhases(config.phases);
 
         const phase = targetPhases[0];
         if (!phase) break; // all target phases complete for this spec
@@ -671,15 +773,22 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
         createPhaseTrace({
           id: phaseTraceId,
           runId,
+          specDir,
           phaseNumber: phase.number,
           phaseName: phase.name,
         });
 
         rlog.startPhase(phase.number, phase.name, phaseTraceId);
+        if (currentRunState) {
+          currentRunState.phaseTraceId = phaseTraceId;
+          currentRunState.phaseNumber = phase.number;
+          currentRunState.phaseName = phase.name;
+        }
         emit({ type: "phase_started", phase, iteration, phaseTraceId });
+        emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
 
         try {
-          const result = await runPhase(specConfig, phase, phaseTraceId, emit, rlog);
+          const result = await runPhase(specConfig, phase, phaseTraceId, emit, rlog, runTaskState);
 
           completePhaseTrace(
             phaseTraceId,
@@ -690,6 +799,13 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
           phasesCompleted++;
           totalCost += result.cost;
+
+          // Reconcile in-memory state with disk — the agent marks tasks [x]
+          // by editing tasks.md directly (Edit tool), not just via TodoWrite.
+          // Without this, getIncompletePhases() would re-run completed phases.
+          const freshPhases = parseTasksFile(config.projectDir, specDir);
+          const reconciledPhases = runTaskState.reconcileFromDisk(freshPhases);
+          emit({ type: "tasks_updated", phases: reconciledPhases });
 
           emit({
             type: "phase_completed",
@@ -717,12 +833,18 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
         iteration++;
       }
 
+      if (!specFailed && !abortController.signal.aborted) {
+        rlog.run("INFO", `run: spec ${specDir} completed`);
+        emit({ type: "spec_completed", specDir, phasesCompleted });
+      }
+
       // If a spec failed, stop processing further specs
       if (specFailed) break;
     }
   } finally {
     const wasStopped = abortController?.signal.aborted ?? false;
     abortController = null;
+    currentRunState = null;
 
     const totalDuration = Date.now() - runStart;
     const finalStatus = wasStopped ? "stopped" : "completed";
