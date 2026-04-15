@@ -35,6 +35,7 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS phase_traces (
       id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
+      spec_dir TEXT,
       phase_number INTEGER NOT NULL,
       phase_name TEXT NOT NULL,
       status TEXT DEFAULT 'running',
@@ -77,6 +78,24 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_subagent_phase
       ON subagent_metadata(phase_trace_id);
   `);
+
+  // Clean up orphaned "running" rows from prior crashes
+  cleanupOrphanedRuns(db);
+}
+
+/**
+ * Mark any "running" runs/phase_traces as "crashed" on startup.
+ * If the process was killed, the `finally` block in `run()` never ran,
+ * leaving stale rows that confuse the UI on next launch.
+ */
+function cleanupOrphanedRuns(database: Database.Database): void {
+  const now = new Date().toISOString();
+  database
+    .prepare(`UPDATE phase_traces SET status = 'crashed', completed_at = ? WHERE status = 'running'`)
+    .run(now);
+  database
+    .prepare(`UPDATE runs SET status = 'crashed', completed_at = ? WHERE status = 'running'`)
+    .run(now);
 }
 
 function getDb(): Database.Database {
@@ -121,15 +140,16 @@ export function completeRun(
 export function createPhaseTrace(trace: {
   id: string;
   runId: string;
+  specDir: string;
   phaseNumber: number;
   phaseName: string;
 }): void {
   getDb()
     .prepare(
-      `INSERT INTO phase_traces (id, run_id, phase_number, phase_name, status, created_at)
-       VALUES (?, ?, ?, ?, 'running', ?)`
+      `INSERT INTO phase_traces (id, run_id, spec_dir, phase_number, phase_name, status, created_at)
+       VALUES (?, ?, ?, ?, ?, 'running', ?)`
     )
-    .run(trace.id, trace.runId, trace.phaseNumber, trace.phaseName, new Date().toISOString());
+    .run(trace.id, trace.runId, trace.specDir, trace.phaseNumber, trace.phaseName, new Date().toISOString());
 }
 
 export function completePhaseTrace(
@@ -285,11 +305,65 @@ export function getLatestPhaseTrace(
     .prepare(
       `SELECT pt.* FROM phase_traces pt
        JOIN runs r ON r.id = pt.run_id
-       WHERE r.project_dir = ? AND r.spec_dir = ? AND pt.phase_number = ?
+       WHERE r.project_dir = ? AND pt.phase_number = ?
+         AND (pt.spec_dir = ? OR pt.spec_dir IS NULL)
        ORDER BY pt.created_at DESC LIMIT 1`
     )
-    .get(projectDir, specDir, phaseNumber) as PhaseTraceRow | undefined;
+    .get(projectDir, phaseNumber, specDir) as PhaseTraceRow | undefined;
   return row ?? null;
+}
+
+export interface ActiveRunState {
+  runId: string;
+  projectDir: string;
+  specDir: string;
+  mode: string;
+  model: string;
+  phaseTraceId: string;
+  phaseNumber: number;
+  phaseName: string;
+}
+
+/**
+ * Query for a currently active run + its currently running phase trace.
+ * Both `runs.status` and `phase_traces.status` must be 'running'.
+ * Returns null if nothing is actively running.
+ */
+export function getActiveRunState(): ActiveRunState | null {
+  const row = getDb()
+    .prepare(
+      `SELECT r.id AS run_id, r.project_dir, r.spec_dir AS run_spec_dir, r.mode, r.model,
+              pt.id AS phase_trace_id, pt.spec_dir AS phase_spec_dir, pt.phase_number, pt.phase_name
+       FROM runs r
+       JOIN phase_traces pt ON pt.run_id = r.id AND pt.status = 'running'
+       WHERE r.status = 'running'
+       ORDER BY pt.created_at DESC
+       LIMIT 1`
+    )
+    .get() as {
+      run_id: string;
+      project_dir: string;
+      run_spec_dir: string;
+      mode: string;
+      model: string;
+      phase_trace_id: string;
+      phase_spec_dir: string | null;
+      phase_number: number;
+      phase_name: string;
+    } | undefined;
+
+  if (!row) return null;
+
+  return {
+    runId: row.run_id,
+    projectDir: row.project_dir,
+    specDir: row.phase_spec_dir ?? row.run_spec_dir,
+    mode: row.mode,
+    model: row.model,
+    phaseTraceId: row.phase_trace_id,
+    phaseNumber: row.phase_number,
+    phaseName: row.phase_name,
+  };
 }
 
 export function closeDatabase(): void {

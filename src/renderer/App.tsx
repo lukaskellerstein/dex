@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import type { Phase, Task, RunConfig } from "../core/types.js";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Copy, Check } from "lucide-react";
+import type { Phase, Task, RunConfig, SubagentInfo } from "../core/types.js";
 import { AgentStepList } from "./components/agent-trace/AgentStepList.js";
 import { SubagentList } from "./components/agent-trace/SubagentList.js";
+import { SubagentDetailView } from "./components/agent-trace/SubagentDetailView.js";
 import { AppShell } from "./components/layout/AppShell.js";
 import { ProjectOverview } from "./components/project-overview/ProjectOverview.js";
 import { PhaseView } from "./components/task-board/PhaseView.js";
@@ -9,12 +11,71 @@ import { ProgressBar } from "./components/task-board/ProgressBar.js";
 import { useOrchestrator } from "./hooks/useOrchestrator.js";
 import { useProject } from "./hooks/useProject.js";
 
-type View = "overview" | "tasks" | "trace";
+function CopyBadge({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleClick = useCallback(() => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [value]);
+  return (
+    <span
+      title={copied ? "Copied!" : "Click to copy"}
+      onClick={handleClick}
+      style={{
+        fontSize: "0.68rem",
+        padding: "1px 5px",
+        borderRadius: "var(--radius)",
+        background: copied
+          ? "color-mix(in srgb, var(--status-success) 15%, var(--surface-elevated))"
+          : "var(--surface-elevated)",
+        border: `1px solid ${copied ? "var(--status-success)" : "var(--border)"}`,
+        color: copied ? "var(--status-success)" : "var(--foreground-dim)",
+        fontFamily: "var(--font-mono)",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        transition: "background 0.15s, border-color 0.15s, color 0.15s",
+      }}
+    >
+      {label}:{value}
+      {copied ? <Check size={10} /> : <Copy size={10} />}
+    </span>
+  );
+}
+
+type View = "overview" | "tasks" | "trace" | "subagent-detail";
 
 export default function App() {
   const project = useProject();
   const orchestrator = useOrchestrator();
   const [currentView, setCurrentView] = useState<View>("overview");
+  const [selectedSubagent, setSelectedSubagent] = useState<SubagentInfo | null>(null);
+
+  const handleSubagentClick = useCallback(
+    (subagentId: string) => {
+      const sub = orchestrator.subagents.find((s) => s.subagentId === subagentId);
+      if (sub) {
+        setSelectedSubagent(sub);
+        setCurrentView("subagent-detail");
+      }
+    },
+    [orchestrator.subagents]
+  );
+
+  const handleSubagentBadgeClick = useCallback(
+    (sub: SubagentInfo) => {
+      setSelectedSubagent(sub);
+      setCurrentView("subagent-detail");
+    },
+    []
+  );
+
+  const handleBackFromSubagent = useCallback(() => {
+    setSelectedSubagent(null);
+    setCurrentView("trace");
+  }, []);
 
   // Auto-refresh phases when a phase completes or tasks change mid-phase
   useEffect(() => {
@@ -109,21 +170,75 @@ export default function App() {
         Open a project to get started
       </div>
     );
+  } else if (currentView === "subagent-detail" && selectedSubagent) {
+    content = (
+      <SubagentDetailView
+        subagent={selectedSubagent}
+        parentSteps={orchestrator.liveSteps}
+        isRunning={orchestrator.isRunning}
+        onBack={handleBackFromSubagent}
+      />
+    );
   } else if (currentView === "trace") {
+    const traceStartedAt = orchestrator.liveSteps[0]?.createdAt;
+    const traceDurationMs = orchestrator.totalDuration > 0
+      ? orchestrator.totalDuration
+      : traceStartedAt
+        ? Date.now() - new Date(traceStartedAt).getTime()
+        : 0;
+
     content = (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        {/* Breadcrumb: spec / phase */}
+        <div
+          style={{
+            padding: "10px 14px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "color-mix(in srgb, var(--primary) 4%, var(--background))",
+            fontSize: "0.82rem",
+          }}
+        >
+          {project.selectedSpec && (
+            <>
+              <span
+                onClick={() => setCurrentView("tasks")}
+                style={{
+                  color: "var(--foreground-muted)",
+                  cursor: "pointer",
+                  transition: "color 0.15s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
+              >
+                {project.selectedSpec}
+              </span>
+              <span style={{ color: "var(--foreground-dim)" }}>/</span>
+            </>
+          )}
+          {orchestrator.currentPhase && (
+            <span style={{ fontWeight: 600, color: "var(--foreground)" }}>
+              Phase {orchestrator.currentPhase.number}: {orchestrator.currentPhase.name}
+            </span>
+          )}
+          {orchestrator.currentRunId && (
+            <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+              <CopyBadge label="run" value={orchestrator.currentRunId} />
+            </span>
+          )}
+        </div>
         <AgentStepList
           steps={orchestrator.liveSteps}
           isRunning={orchestrator.isRunning}
-          runId={orchestrator.currentRunId ?? undefined}
-          phaseTraceId={orchestrator.currentPhaseTraceId ?? undefined}
-          phaseLabel={
-            orchestrator.currentPhase
-              ? `Phase ${orchestrator.currentPhase.number}: ${orchestrator.currentPhase.name}`
-              : undefined
-          }
+          agentId={orchestrator.currentPhaseTraceId ?? undefined}
+          startedAt={traceStartedAt}
+          durationMs={traceDurationMs}
+          subagents={orchestrator.subagents}
+          onSubagentClick={handleSubagentClick}
         />
-        <SubagentList subagents={orchestrator.subagents} />
+        <SubagentList subagents={orchestrator.subagents} isParentRunning={orchestrator.isRunning} onSubagentClick={handleSubagentBadgeClick} />
       </div>
     );
   } else if (currentView === "overview" || !project.selectedSpec) {

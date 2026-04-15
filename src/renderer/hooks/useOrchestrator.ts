@@ -49,9 +49,57 @@ export function useOrchestrator(): OrchestratorHook {
     tasksUpdatedCb.current = cb;
   }, []);
 
-  // Sync isRunning with main process on mount (survives HMR/reload)
+  // Sync full running state with main process on mount (survives HMR/reload)
   useEffect(() => {
-    window.ralphAPI.isRunning().then(setIsRunning);
+    window.ralphAPI.getRunState().then(async (state) => {
+      if (!state) return;
+
+      setIsRunning(true);
+      setCurrentRunId(state.runId);
+      setActiveSpecDir(state.specDir);
+
+      // A phase may not have started yet (phaseTraceId is empty between phases)
+      if (!state.phaseTraceId) return;
+
+      setCurrentPhaseTraceId(state.phaseTraceId);
+      setCurrentPhase({
+        number: state.phaseNumber,
+        name: state.phaseName,
+        purpose: "",
+        tasks: [],
+        status: "partial",
+      });
+
+      // Reload accumulated steps and subagents for the running phase
+      const [stepRows, subagentRows] = await Promise.all([
+        window.ralphAPI.getPhaseSteps(state.phaseTraceId),
+        window.ralphAPI.getPhaseSubagents(state.phaseTraceId),
+      ]);
+
+      setLiveSteps(
+        stepRows.map((row) => ({
+          id: row.id,
+          sequenceIndex: row.sequence_index,
+          type: row.type as AgentStep["type"],
+          content: row.content,
+          metadata: row.metadata ? JSON.parse(row.metadata) : null,
+          durationMs: row.duration_ms,
+          tokenCount: row.token_count,
+          createdAt: row.created_at,
+        }))
+      );
+
+      setSubagents(
+        subagentRows.map((row) => ({
+          id: row.id,
+          subagentId: row.subagent_id,
+          subagentType: row.subagent_type,
+          description: row.description,
+          startedAt: row.started_at,
+          completedAt: row.completed_at,
+        }))
+      );
+    });
   }, []);
 
   useEffect(() => {
@@ -70,6 +118,14 @@ export function useOrchestrator(): OrchestratorHook {
 
           case "spec_started":
             setActiveSpecDir(event.specDir);
+            break;
+
+          case "spec_completed":
+            // Clear active spec so the overview card stops showing "RUNNING"
+            // The next spec_started (if any) will set it again
+            setActiveSpecDir(null);
+            setCurrentPhase(null);
+            setCurrentPhaseTraceId(null);
             break;
 
           case "phase_started":

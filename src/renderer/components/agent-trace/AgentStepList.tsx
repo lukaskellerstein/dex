@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from "react";
-import { Copy, Check } from "lucide-react";
-import type { AgentStep } from "../../../core/types.js";
+import { Copy, Check, Bot, Clock } from "lucide-react";
+import type { AgentStep, SubagentInfo } from "../../../core/types.js";
 import { AgentStepItem } from "./AgentStepItem.js";
 
 const LINE_LEFT = 20; // center of the vertical line
@@ -18,15 +18,26 @@ function formatDelta(ms: number): string {
   return `+${(ms / 60_000).toFixed(1)}m`;
 }
 
+function formatDuration(ms: number): string {
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return `${min}m ${rem}s`;
+}
+
 interface AgentStepListProps {
   steps: AgentStep[];
   isRunning: boolean;
-  runId?: string;
-  phaseTraceId?: string;
-  phaseLabel?: string;
+  agentId?: string;
+  startedAt?: string;
+  durationMs?: number;
+  headerTitle?: string;
+  subagents?: SubagentInfo[];
+  onSubagentClick?: (subagentId: string) => void;
 }
 
-function CopyBadge({ label, value }: { label: string; value: string }) {
+function CopyIdBadge({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const handleClick = useCallback(() => {
     navigator.clipboard.writeText(value);
@@ -36,7 +47,7 @@ function CopyBadge({ label, value }: { label: string; value: string }) {
 
   return (
     <span
-      title={copied ? "Copied!" : `Click to copy`}
+      title={copied ? "Copied!" : "Click to copy"}
       onClick={handleClick}
       style={{
         fontSize: "0.68rem",
@@ -57,7 +68,7 @@ function CopyBadge({ label, value }: { label: string; value: string }) {
         transition: "background 0.15s, border-color 0.15s, color 0.15s",
       }}
     >
-      {label}:{value}
+      {value}
       {copied ? <Check size={10} /> : <Copy size={10} />}
     </span>
   );
@@ -68,24 +79,70 @@ interface GroupedStep {
   resultSteps: AgentStep[];
 }
 
-export function AgentStepList({ steps, isRunning, runId, phaseTraceId, phaseLabel }: AgentStepListProps) {
+export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs, headerTitle, subagents, onSubagentClick }: AgentStepListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+
+  // Build the display steps: strip all raw subagent_result steps (unreliable IDs
+  // in legacy data, and noise from session-init subagents) and inject synthetic
+  // completed steps from the SubagentInfo metadata which has correct data.
+  const processedSteps = useMemo(() => {
+    // Remove all subagent_result steps — we'll synthesize them from SubagentInfo
+    const filtered = steps.filter((s) => s.type !== "subagent_result");
+
+    if (!subagents || subagents.length === 0) return filtered;
+
+    // Build a map of subagentId → spawn step index for positioning
+    const spawnIndices = new Map<string, number>();
+    filtered.forEach((s, i) => {
+      if (s.type === "subagent_spawn") {
+        const id = s.metadata?.subagentId as string;
+        if (id) spawnIndices.set(id, i);
+      }
+    });
+
+    // For each subagent that has a spawn, insert a synthetic completed step
+    // right before the next step that has a timestamp after the subagent's end time
+    const synthetics: AgentStep[] = [];
+    for (const sa of subagents) {
+      if (!spawnIndices.has(sa.subagentId)) continue;
+      const endTime = sa.completedAt ?? (isRunning ? null : sa.startedAt);
+      if (!endTime) continue;
+      synthetics.push({
+        id: `synth-result-${sa.subagentId}`,
+        sequenceIndex: 999990,
+        type: "subagent_result",
+        content: null,
+        metadata: {
+          subagentId: sa.subagentId,
+          subagentType: sa.subagentType,
+        },
+        durationMs: null,
+        tokenCount: null,
+        createdAt: endTime,
+      });
+    }
+
+    if (synthetics.length === 0) return filtered;
+
+    // Merge synthetics into the filtered steps by timestamp
+    const merged = [...filtered, ...synthetics];
+    merged.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+    return merged;
+  }, [steps, subagents, isRunning]);
 
   // Group steps: pair tool_result/tool_error with their originating tool_call
   // using toolUseId from metadata. This handles parallel tool calls correctly
   // where results may arrive in any order after multiple calls.
-  // Filter out redundant subagent/skill steps (shown in SubagentList instead).
   const grouped = useMemo<GroupedStep[]>(() => {
-    const redundant = new Set([
-      "subagent_spawn", "subagent_result",
-    ]);
     const result: GroupedStep[] = [];
     const callsByToolUseId = new Map<string, GroupedStep>();
 
-    for (const step of steps) {
-      if (redundant.has(step.type)) continue;
-
+    for (const step of processedSteps) {
       if (step.type === "tool_result" || step.type === "tool_error" || step.type === "skill_result") {
         const toolUseId = step.metadata?.toolUseId as string | undefined;
         const matchingCall = toolUseId ? callsByToolUseId.get(toolUseId) : null;
@@ -106,7 +163,7 @@ export function AgentStepList({ steps, isRunning, runId, phaseTraceId, phaseLabe
       }
     }
     return result;
-  }, [steps]);
+  }, [processedSteps]);
 
   // Auto-scroll to bottom when new steps arrive
   useEffect(() => {
@@ -128,7 +185,8 @@ export function AgentStepList({ steps, isRunning, runId, phaseTraceId, phaseLabe
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100%",
+        flex: 1,
+        minHeight: 0,
         overflow: "hidden",
       }}
     >
@@ -143,29 +201,38 @@ export function AgentStepList({ steps, isRunning, runId, phaseTraceId, phaseLabe
           color: "var(--foreground-dim)",
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 8,
         }}
       >
-        Agent Trace
-        {phaseLabel && (
+        {headerTitle ?? "Agent Detail"}
+        {agentId && (
+          <>
+            <Bot size={13} color="var(--primary)" />
+            <CopyIdBadge value={agentId} />
+          </>
+        )}
+        {startedAt && (
           <span
             style={{
-              fontSize: "0.77rem",
-              padding: "1px 6px",
-              borderRadius: "var(--radius)",
-              background: "var(--primary-muted)",
-              color: "var(--foreground-muted)",
+              marginLeft: "auto",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: "0.75rem",
+              fontFamily: "var(--font-mono)",
               textTransform: "none",
               letterSpacing: "normal",
             }}
           >
-            {phaseLabel}
-          </span>
-        )}
-        {(runId || phaseTraceId) && (
-          <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-            {phaseTraceId && <CopyBadge label="agent" value={phaseTraceId} />}
-            {runId && <CopyBadge label="run" value={runId} />}
+            <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--foreground-dim)" }}>
+              <Clock size={10} />
+              {formatTime(startedAt)}
+            </span>
+            {durationMs != null && durationMs > 0 && (
+              <span style={{ color: "var(--primary)", opacity: 0.8 }}>
+                {formatDuration(durationMs)}
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -238,6 +305,7 @@ export function AgentStepList({ steps, isRunning, runId, phaseTraceId, phaseLabe
                     resultSteps={resultSteps}
                     timestamp={step.createdAt ? formatTime(step.createdAt) : undefined}
                     delta={deltaMs != null && deltaMs > 0 ? formatDelta(deltaMs) : undefined}
+                    onSubagentClick={onSubagentClick}
                   />
                 </div>
               );

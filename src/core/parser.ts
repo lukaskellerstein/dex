@@ -110,6 +110,42 @@ export function parseTasksMd(content: string): Phase[] {
   return phases;
 }
 
+/**
+ * Extract all task IDs from a string, handling ranges (T046-T050) and
+ * multiple individual IDs (T046, T048). Returns deduplicated array.
+ */
+export function extractTaskIds(content: string): string[] {
+  const ids: string[] = [];
+  const RANGE_RE = /\bT(\d+)\s*[-–]\s*T(\d+)\b/g;
+  const SINGLE_RE = /\b(T\d+)\b/g;
+
+  // Track character spans covered by ranges to avoid double-counting
+  const rangeSpans: [number, number][] = [];
+  let match: RegExpExecArray | null;
+
+  // First pass: expand ranges
+  while ((match = RANGE_RE.exec(content)) !== null) {
+    const startNum = parseInt(match[1], 10);
+    const endNum = parseInt(match[2], 10);
+    const padLen = match[1].length;
+    for (let n = startNum; n <= endNum; n++) {
+      const id = `T${String(n).padStart(padLen, "0")}`;
+      if (!ids.includes(id)) ids.push(id);
+    }
+    rangeSpans.push([match.index, match.index + match[0].length]);
+  }
+
+  // Second pass: individual IDs not already covered by a range
+  while ((match = SINGLE_RE.exec(content)) !== null) {
+    const inRange = rangeSpans.some(([s, e]) => match!.index >= s && match!.index < e);
+    if (!inRange && !ids.includes(match[1])) {
+      ids.push(match[1]);
+    }
+  }
+
+  return ids;
+}
+
 export function parseTasksFile(
   projectDir: string,
   specDir: string
