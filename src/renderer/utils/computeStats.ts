@@ -22,7 +22,7 @@ export function computeStats(
   steps: AgentStep[],
   overrides?: { durationMs?: number | null; costUsd?: number | null }
 ): AgentStats {
-  const tools = new Set<string>();
+  let toolCount = 0;
   const mcpServers = new Set<string>();
   const subagents = new Set<string>();
   const skills = new Set<string>();
@@ -36,28 +36,22 @@ export function computeStats(
       errorCount++;
     }
 
-    // Extract cost from step metadata (accumulated)
-    if (step.metadata && typeof step.metadata.costUsd === "number") {
-      costUsd = step.metadata.costUsd;
+    // Extract running cost/token totals from step metadata (each step carries
+    // the latest accumulated values, so the last one wins)
+    if (step.metadata) {
+      if (typeof step.metadata.costUsd === "number") costUsd = step.metadata.costUsd;
+      if (typeof step.metadata.inputTokens === "number") inputTokens = step.metadata.inputTokens;
+      if (typeof step.metadata.outputTokens === "number") outputTokens = step.metadata.outputTokens;
     }
 
-    // Extract tokens from "completed" step metadata
-    if (step.type === "completed" && step.metadata) {
-      const meta = step.metadata;
-      if (typeof meta.inputTokens === "number") inputTokens = meta.inputTokens;
-      if (typeof meta.outputTokens === "number") outputTokens = meta.outputTokens;
-    }
-
-    // Count unique tools
+    // Count total tool invocations
     if (step.type === "tool_call") {
+      toolCount++;
       const toolName = step.metadata?.toolName as string | undefined;
-      if (!toolName) continue;
-
-      if (toolName.startsWith("mcp__")) {
+      if (toolName?.startsWith("mcp__")) {
         const parts = toolName.split("__");
         if (parts.length >= 2) mcpServers.add(parts[1]);
       }
-      tools.add(toolName);
     }
 
     // Count subagents
@@ -79,7 +73,7 @@ export function computeStats(
     inputTokens,
     outputTokens,
     stepCount: steps.length,
-    toolCount: tools.size,
+    toolCount,
     mcpCount: mcpServers.size,
     subagentCount: subagents.size,
     skillCount: skills.size,

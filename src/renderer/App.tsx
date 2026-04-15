@@ -52,6 +52,14 @@ export default function App() {
   const orchestrator = useOrchestrator();
   const [currentView, setCurrentView] = useState<View>("overview");
   const [selectedSubagent, setSelectedSubagent] = useState<SubagentInfo | null>(null);
+  const [, setTick] = useState(0);
+
+  // Tick every second while running so duration updates in realtime
+  useEffect(() => {
+    if (!orchestrator.isRunning) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [orchestrator.isRunning]);
 
   const handleSubagentClick = useCallback(
     (subagentId: string) => {
@@ -181,11 +189,14 @@ export default function App() {
     );
   } else if (currentView === "trace") {
     const traceStartedAt = orchestrator.liveSteps[0]?.createdAt;
-    const traceDurationMs = orchestrator.totalDuration > 0
-      ? orchestrator.totalDuration
-      : traceStartedAt
-        ? Date.now() - new Date(traceStartedAt).getTime()
-        : 0;
+    // Show current phase elapsed time when running, not the run-level accumulation
+    const traceDurationMs = orchestrator.isRunning && traceStartedAt
+      ? Date.now() - new Date(traceStartedAt).getTime()
+      : orchestrator.totalDuration > 0
+        ? orchestrator.totalDuration
+        : traceStartedAt
+          ? Date.now() - new Date(traceStartedAt).getTime()
+          : 0;
 
     content = (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -235,7 +246,6 @@ export default function App() {
           agentId={orchestrator.currentPhaseTraceId ?? undefined}
           startedAt={traceStartedAt}
           durationMs={traceDurationMs}
-          costUsd={orchestrator.totalCost}
           subagents={orchestrator.subagents}
           onSubagentClick={handleSubagentClick}
         />

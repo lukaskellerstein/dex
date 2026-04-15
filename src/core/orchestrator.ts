@@ -134,6 +134,24 @@ export function getRunState(): RunState | null {
   return currentRunState;
 }
 
+// ── Pricing (USD per 1M tokens) ──
+
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "claude-sonnet-4-5-20250514": { input: 3, output: 15 },
+  "claude-sonnet-4-6":          { input: 3, output: 15 },
+  "claude-opus-4-5-20250414":   { input: 15, output: 75 },
+  "claude-opus-4-6":            { input: 15, output: 75 },
+  "claude-haiku-4-5-20251001":  { input: 0.80, output: 4 },
+};
+
+function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
+  // Match by prefix — e.g. "claude-sonnet-4-5-20250514" matches "claude-sonnet-4-5"
+  const pricing = MODEL_PRICING[model]
+    ?? Object.entries(MODEL_PRICING).find(([k]) => model.startsWith(k))?.[1];
+  if (!pricing) return 0;
+  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
+}
+
 // ── Step Construction Helpers ──
 
 function makeStep(
@@ -367,10 +385,12 @@ async function runPhase(
   emit: EmitFn,
   rlog: RunLogger,
   runTaskState: RunTaskState
-): Promise<{ cost: number; durationMs: number }> {
+): Promise<{ cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
   const startTime = Date.now();
   let stepIndex = 0;
   let totalCost = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
   const knownSubagentIds = new Set<string>();
 
   const skillName = config.mode === "plan" ? "speckit-plan" : "speckit-implement";
@@ -383,10 +403,20 @@ async function runPhase(
   rlog.phase("DEBUG", "runPhase: prompt", { length: prompt.length, prompt });
 
   // Dual-write helper: emit to UI via IPC + persist to SQLite
+  // Attaches running cost/token totals so the renderer can display live stats.
   const emitAndStore = (step: AgentStep) => {
-    rlog.phase("DEBUG", `emitAndStore: step type=${step.type}`, { id: step.id, seq: step.sequenceIndex });
-    emit({ type: "agent_step", step });
-    insertStep({ ...step, phaseTraceId });
+    const enriched: AgentStep = {
+      ...step,
+      metadata: {
+        ...step.metadata,
+        costUsd: totalCost || null,
+        inputTokens: totalInputTokens || null,
+        outputTokens: totalOutputTokens || null,
+      },
+    };
+    rlog.phase("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
+    emit({ type: "agent_step", step: enriched });
+    insertStep({ ...enriched, phaseTraceId });
   };
 
   // Emit the initial prompt as a user_message step
@@ -642,9 +672,22 @@ async function runPhase(
       const content = innerMsg?.content as
         | Array<Record<string, unknown>>
         | undefined;
-      rlog.phase("DEBUG", "assistant content blocks", {
+
+      // Accumulate per-turn token usage from the API response
+      // Try inner message (API response wrapper) first, then outer message
+      const usage = (innerMsg?.usage ?? message.usage) as Record<string, unknown> | undefined;
+      if (usage) {
+        if (typeof usage.input_tokens === "number") totalInputTokens += usage.input_tokens;
+        if (typeof usage.output_tokens === "number") totalOutputTokens += usage.output_tokens;
+        totalCost = estimateCost(config.model, totalInputTokens, totalOutputTokens);
+      }
+
+      rlog.phase("DEBUG", "assistant message", {
+        outerKeys: Object.keys(message),
+        innerKeys: innerMsg ? Object.keys(innerMsg) : null,
         blockTypes: content?.map((b) => b.type) ?? [],
-        blockCount: content?.length ?? 0,
+        usage: usage ?? null,
+        runningTokens: { input: totalInputTokens, output: totalOutputTokens },
       });
       if (content) {
         for (const block of content) {
@@ -664,14 +707,24 @@ async function runPhase(
     if (message.type === "result") {
       const costUsd = message.total_cost_usd;
       if (typeof costUsd === "number") totalCost = costUsd;
+
+      // Extract token totals from result.usage (authoritative final values)
+      const resultUsage = message.usage as Record<string, unknown> | undefined;
+      if (resultUsage) {
+        if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
+        if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
+      }
+
       rlog.phase("INFO", `runPhase: result received`, {
         cost: costUsd,
         durationMs: message.duration_ms,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        usage: resultUsage ?? null,
         isError: message.is_error,
         subtype: message.subtype,
         result: typeof message.result === "string" ? message.result.slice(0, 500) : message.result,
         numTurns: message.num_turns,
-        permissionDenials: message.permission_denials,
       });
     }
   }
@@ -681,10 +734,13 @@ async function runPhase(
 
   // Emit a completed step at the end
   if (!isAborted()) {
-    emitAndStore(makeStep("completed", stepIndex++, `Phase ${phase.number}: ${phase.name} completed`));
+    emitAndStore(makeStep("completed", stepIndex++, `Phase ${phase.number}: ${phase.name} completed`, {
+      inputTokens: totalInputTokens || null,
+      outputTokens: totalOutputTokens || null,
+    }));
   }
 
-  return { cost: totalCost, durationMs };
+  return { cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
 }
 
 // ── Main Loop ──
@@ -794,7 +850,9 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
             phaseTraceId,
             "completed",
             result.cost,
-            result.durationMs
+            result.durationMs,
+            result.inputTokens || undefined,
+            result.outputTokens || undefined
           );
 
           phasesCompleted++;

@@ -207,8 +207,8 @@ export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrac
         </div>
       )}
 
-      {/* Phase stats from historical trace */}
-      {expanded && traceStats && (traceStats.cost_usd != null || traceStats.duration_ms != null) && (
+      {/* Phase stats from historical trace — hide for not-started and currently-running phases */}
+      {expanded && traceStats && phase.status !== "not_started" && !isRunning && (traceStats.cost_usd != null || traceStats.duration_ms != null) && (
         <div style={{ padding: "0 14px 8px 44px" }}>
           <StatsBar
             compact
