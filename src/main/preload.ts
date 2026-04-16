@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("dexAPI", {
   answerQuestion: (requestId: string, answers: Record<string, string>) =>
     ipcRenderer.invoke("orchestrator:answer-question", requestId, answers),
   isRunning: () => ipcRenderer.invoke("orchestrator:isRunning") as Promise<boolean>,
+  getProjectState: (dir: string) => ipcRenderer.invoke("orchestrator:getProjectState", dir),
   getRunState: () => ipcRenderer.invoke("orchestrator:getRunState") as Promise<{
     runId: string;
     projectDir: string;

@@ -317,5 +317,5 @@ export function buildImplementPrompt(
 - Run build/typecheck after each logical group of changes
 - If a task fails, log the error and move to the next task
 - Do not spawn more than 3 subagents concurrently
-- Commit after completing the phase: git add -A && git commit -m "Phase ${phase.number}: ${phase.name}"`;
+- Commit after completing the phase: git add -A -- ':!.dex/' && git commit -m "Phase ${phase.number}: ${phase.name}"`;
 }

@@ -25,6 +25,7 @@ export interface LoopDashboardProps {
   onStageClick: (stage: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
+  debugBadge?: React.ReactNode;
 }
 
 const CLARIFICATION_STAGE_TYPES = [
@@ -315,6 +316,7 @@ function LoopPhaseView({
   onStageClick,
   onImplPhaseClick,
   onSelectSpec,
+  debugBadge,
 }: {
   cycles: UiLoopCycle[];
   currentCycle: number | null;
@@ -325,6 +327,7 @@ function LoopPhaseView({
   onStageClick: (stage: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
+  debugBadge?: React.ReactNode;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -351,6 +354,7 @@ function LoopPhaseView({
           </span>
         )}
         <div style={{ flex: 1 }} />
+        {debugBadge}
       </div>
 
       {/* Scrollable content — cycles directly */}
@@ -586,6 +590,7 @@ export function LoopDashboard({
   onStageClick,
   onImplPhaseClick,
   onSelectSpec,
+  debugBadge,
 }: LoopDashboardProps) {
   const activePhase = deriveActivePhase(isCheckingPrerequisites, isClarifying, preCycleStages, cycles, loopTermination, isRunning);
   const [selectedPhase, setSelectedPhase] = useState<MacroPhase>(activePhase);
@@ -646,6 +651,7 @@ export function LoopDashboard({
             onStageClick={onStageClick}
             onImplPhaseClick={onImplPhaseClick}
             onSelectSpec={onSelectSpec}
+            debugBadge={debugBadge}
           />
         )}
 
