@@ -603,6 +603,16 @@ export function useOrchestrator(): OrchestratorHook {
           case "loop_terminated":
             setLoopTermination(event.termination);
             break;
+
+          case "state_reconciled":
+            // Log drift summary — UI display can be enhanced later
+            if (event.driftSummary) {
+              const ds = event.driftSummary;
+              if (ds.missingArtifacts.length > 0 || ds.modifiedArtifacts.length > 0 || Object.keys(ds.taskRegressions).length > 0) {
+                console.info("[dex] State reconciliation detected drift:", ds);
+              }
+            }
+            break;
         }
       }
     );

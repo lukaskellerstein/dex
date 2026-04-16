@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Check, RotateCw, FolderPlus } from "lucide-react";
+import { Bug, Check, RotateCw, FolderPlus } from "lucide-react";
 import type { Phase, Task, RunConfig, SubagentInfo } from "../core/types.js";
 import { AgentStepList } from "./components/agent-trace/AgentStepList.js";
 import { SubagentDetailView } from "./components/agent-trace/SubagentDetailView.js";
@@ -13,16 +13,50 @@ import { ClarificationPanel } from "./components/loop/ClarificationPanel.js";
 import { useOrchestrator } from "./hooks/useOrchestrator.js";
 import { useProject } from "./hooks/useProject.js";
 
-function CopyBadge({ label, value }: { label: string; value: string }) {
+interface DebugContext {
+  runId: string | null;
+  phaseTraceId: string | null;
+  mode: string | null;
+  cycle: number | null;
+  stage: string | null;
+  specDir: string | null;
+  phase: string | null;
+  projectDir: string | null;
+  view: string;
+  isRunning: boolean;
+  viewingHistorical: boolean;
+}
+
+function buildDebugPayload(ctx: DebugContext): string {
+  const lines: string[] = ["Dex Debug Context", "─────────────────"];
+  const add = (label: string, val: unknown) => {
+    if (val != null && val !== "") lines.push(`${label.padEnd(16)} ${val}`);
+  };
+  add("RunID:", ctx.runId);
+  add("PhaseTraceID:", ctx.phaseTraceId);
+  add("Mode:", ctx.mode);
+  add("Cycle:", ctx.cycle);
+  add("Stage:", ctx.stage);
+  add("SpecDir:", ctx.specDir);
+  add("Phase:", ctx.phase);
+  add("ProjectDir:", ctx.projectDir);
+  add("View:", ctx.view);
+  add("IsRunning:", ctx.isRunning);
+  add("ViewHistory:", ctx.viewingHistorical);
+  add("Timestamp:", new Date().toISOString());
+  return lines.join("\n");
+}
+
+function DebugCopyBadge({ context }: { context: DebugContext }) {
   const [copied, setCopied] = useState(false);
   const handleClick = useCallback(() => {
-    navigator.clipboard.writeText(`${label === "run" ? "RunID" : label}: ${value}`);
+    navigator.clipboard.writeText(buildDebugPayload(context));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }, [value]);
+  }, [context]);
   return (
     <span
-      title={copied ? "Copied!" : "Click to copy"}
+      title={copied ? "Copied!" : "Copy debug context to clipboard"}
       onClick={handleClick}
       style={{
         fontSize: "0.68rem",
@@ -41,8 +75,8 @@ function CopyBadge({ label, value }: { label: string; value: string }) {
         transition: "background 0.15s, border-color 0.15s, color 0.15s",
       }}
     >
-      {label}:{value}
-      {copied ? <Check size={10} /> : <Copy size={10} />}
+      {copied ? <Check size={10} /> : <Bug size={10} />}
+      {copied ? "copied" : "debug"}
     </span>
   );
 }
@@ -199,11 +233,11 @@ export default function App() {
     descriptionFile?: string;
     maxLoopCycles?: number;
     maxBudgetUsd?: number;
-    resumeRunId?: string;
+    resume?: boolean;
   }) => {
     if (!project.projectDir) return;
 
-    const { resumeRunId, ...rest } = loopConfig;
+    const { resume, ...rest } = loopConfig;
     const config: RunConfig = {
       projectDir: project.projectDir,
       specDir: "",
@@ -213,7 +247,7 @@ export default function App() {
       maxTurns: 75,
       phases: "all",
       ...rest,
-      ...(resumeRunId ? { resumeRunId } : {}),
+      ...(resume ? { resume: true } : {}),
     };
     window.dexAPI.startRun(config);
   };
@@ -245,8 +279,8 @@ export default function App() {
     // If we have loop history (paused loop), resume in loop mode
     const hasLoopHistory = orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
     if (hasLoopHistory || orchestrator.mode === "loop") {
-      // Pass the previous run ID so the orchestrator can resume from where it stopped
-      handleStartLoop({ resumeRunId: orchestrator.currentRunId ?? undefined });
+      // Resume from state file
+      handleStartLoop({ resume: true });
       return;
     }
 
@@ -291,6 +325,27 @@ export default function App() {
     },
     [project.projectDir, project.selectedSpec, orchestrator.loadPhaseTrace, orchestrator.switchToLive, orchestrator.isRunning, orchestrator.currentPhase]
   );
+
+  const debugContext = useMemo<DebugContext>(() => ({
+    runId: orchestrator.currentRunId,
+    phaseTraceId: orchestrator.currentPhaseTraceId,
+    mode: orchestrator.mode,
+    cycle: orchestrator.currentCycle,
+    stage: orchestrator.currentStage,
+    specDir: orchestrator.activeSpecDir,
+    phase: orchestrator.currentPhase
+      ? `${orchestrator.currentPhase.number} - ${orchestrator.currentPhase.name}`
+      : null,
+    projectDir: project.projectDir,
+    view: currentView,
+    isRunning: orchestrator.isRunning,
+    viewingHistorical: orchestrator.viewingHistorical,
+  }), [
+    orchestrator.currentRunId, orchestrator.currentPhaseTraceId, orchestrator.mode,
+    orchestrator.currentCycle, orchestrator.currentStage, orchestrator.activeSpecDir,
+    orchestrator.currentPhase, project.projectDir, currentView,
+    orchestrator.isRunning, orchestrator.viewingHistorical,
+  ]);
 
   let content;
 
@@ -486,12 +541,10 @@ export default function App() {
               )}
             </span>
           )}
-          {/* Right: run ID */}
-          {orchestrator.currentRunId && (
-            <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-              <CopyBadge label="run" value={orchestrator.currentRunId} />
-            </span>
-          )}
+          {/* Right: debug context badge */}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+            <DebugCopyBadge context={debugContext} />
+          </span>
         </div>
         <AgentStepList
           steps={orchestrator.liveSteps}
@@ -522,6 +575,7 @@ export default function App() {
         onStageClick={handleStageClick}
         onImplPhaseClick={handleImplPhaseClick}
         onSelectSpec={handleSelectSpec}
+        debugBadge={<DebugCopyBadge context={debugContext} />}
       />
     );
   } else if (currentView === "loop-start") {

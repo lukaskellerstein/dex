@@ -1,6 +1,7 @@
 import { ipcMain, type BrowserWindow } from "electron";
 import type { RunConfig, OrchestratorEvent } from "../../core/types.js";
 import { run, stopRun, isRunning, getRunState, submitUserAnswer } from "../../core/orchestrator.js";
+import { loadState } from "../../core/state.js";
 
 export function registerOrchestratorHandlers(
   getWindow: () => BrowserWindow | null
@@ -41,5 +42,9 @@ export function registerOrchestratorHandlers(
 
   ipcMain.handle("orchestrator:getRunState", () => {
     return getRunState();
+  });
+
+  ipcMain.handle("orchestrator:getProjectState", async (_event, projectDir: string) => {
+    return loadState(projectDir);
   });
 }

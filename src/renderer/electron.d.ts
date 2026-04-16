@@ -1,4 +1,5 @@
-import type { OrchestratorEvent, Phase, RunConfig, LoopStageType, LoopTermination, UserInputQuestion } from "../core/types.js";
+import type { OrchestratorEvent, Phase, RunConfig, LoopStageType, LoopTermination, UserInputQuestion, DriftSummary } from "../core/types.js";
+import type { DexState } from "../core/state.js";
 import type {
   RunRow,
   PhaseTraceRow,
@@ -19,6 +20,7 @@ interface DexAPI {
   createProject(parentDir: string, name: string): Promise<{ path: string } | { error: string }>;
 
   // Orchestrator
+  getProjectState(dir: string): Promise<DexState | null>;
   startRun(config: RunConfig): Promise<void>;
   stopRun(): Promise<void>;
   answerQuestion(requestId: string, answers: Record<string, string>): Promise<void>;

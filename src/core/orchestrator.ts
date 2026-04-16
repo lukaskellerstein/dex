@@ -34,7 +34,23 @@ import {
   createBranch,
   createPullRequest,
   createLoopPullRequest,
+  commitCheckpoint,
+  getHeadSha,
 } from "./git.js";
+import {
+  createInitialState,
+  saveState,
+  loadState,
+  clearState,
+  updateState,
+  hashFile,
+  detectStaleState,
+  acquireStateLock,
+  resolveWorkingTreeConflict,
+  reconcileState,
+  migrateFromDbResume,
+} from "./state.js";
+import type { DexState } from "./state.js";
 import {
   buildProductClarificationPrompt,
   buildTechnicalClarificationPrompt,
@@ -140,6 +156,8 @@ function log(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unk
 }
 
 let abortController: AbortController | null = null;
+let activeProjectDir: string | null = null;
+let releaseLock: (() => void) | null = null;
 
 /** Sentinel error thrown when abort is detected between stages to skip remaining work. */
 class AbortError extends Error {
@@ -205,9 +223,28 @@ function waitForUserInput(
   questions: import("./types.js").UserInputQuestion[]
 ): Promise<Record<string, string>> {
   const requestId = crypto.randomUUID();
+
+  // Persist pending question to state file so it survives crashes
+  if (activeProjectDir) {
+    updateState(activeProjectDir, {
+      pendingQuestion: {
+        id: requestId,
+        question: questions.map(q => q.question).join("; "),
+        context: `runId:${runId}`,
+        askedAt: new Date().toISOString(),
+      },
+    }).catch(() => {});
+  }
+
   emit({ type: "user_input_request", runId, requestId, questions });
   return new Promise<Record<string, string>>((resolve) => {
-    pendingQuestions.set(requestId, resolve);
+    pendingQuestions.set(requestId, (answers) => {
+      // Clear pending question from state file on answer
+      if (activeProjectDir) {
+        updateState(activeProjectDir, { pendingQuestion: null }).catch(() => {});
+      }
+      resolve(answers);
+    });
   });
 }
 
@@ -438,14 +475,14 @@ function buildPrompt(config: RunConfig, phase: Phase): string {
     ? `After analyzing:
 - Update ${specPath}/tasks.md with accurate task statuses
 - If you learned operational patterns, update CLAUDE.md
-- Commit: git add -A && git commit -m "plan: Phase ${phase.number} gap analysis"`
+- Commit: git add -A -- ':!.dex/' && git commit -m "plan: Phase ${phase.number} gap analysis"`
     : `IMPORTANT — update tasks.md incrementally:
 - After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md before moving to the next task. This drives a real-time progress UI.
 
 After implementing all tasks:
 - Run build/typecheck to verify changes compile
 - Run tests if they exist
-- Commit: git add -A && git commit -m "Phase ${phase.number}: ${phase.name}"
+- Commit: git add -A -- ':!.dex/' && git commit -m "Phase ${phase.number}: ${phase.name}"
 - If you learned operational patterns, update CLAUDE.md`;
 
   return `/${skillName} ${specPath} --phase ${phase.number}
@@ -1130,6 +1167,23 @@ async function runStage(
     ...(isAborted() ? { stopped: true } : {}),
   });
 
+  // Checkpoint: update state file and commit after each completed stage
+  if (!isAborted() && activeProjectDir) {
+    try {
+      await updateState(activeProjectDir, {
+        lastCompletedStage: stageType,
+        currentCycleNumber: cycleNumber,
+        currentSpecDir: specDir ?? null,
+      });
+      const sha = commitCheckpoint(activeProjectDir, stageType, cycleNumber, specDir ?? null, totalCost);
+      await updateState(activeProjectDir, {
+        checkpoint: { sha, timestamp: new Date().toISOString() },
+      });
+    } catch {
+      // Checkpoint failure shouldn't crash the run
+    }
+  }
+
   return { result: resultText, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
 }
 
@@ -1265,7 +1319,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
   // For resume, stay on the current branch — don't create a new one.
   let baseBranch = "";
   let branchName = "";
-  if (config.resumeRunId) {
+  if (config.resume) {
     // Resume: stay on current branch (the user is already on the paused run's branch)
     branchName = getCurrentBranch(config.projectDir);
   } else if (config.mode !== "loop") {
@@ -1285,6 +1339,24 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     mode: config.mode,
     model: config.model,
   });
+
+  activeProjectDir = config.projectDir;
+
+  // Acquire state lock to prevent concurrent writes
+  try {
+    releaseLock = await acquireStateLock(config.projectDir);
+  } catch (lockErr) {
+    emit({ type: "error", message: lockErr instanceof Error ? lockErr.message : String(lockErr) });
+    abortController = null;
+    activeProjectDir = null;
+    return;
+  }
+
+  // Create initial state file (unless resuming — state already exists)
+  if (!config.resume) {
+    const initialState = createInitialState(config, runId, branchName, baseBranch);
+    await saveState(config.projectDir, initialState);
+  }
 
   emit({ type: "run_started", config, runId, branchName });
 
@@ -1327,6 +1399,30 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     const totalDuration = Date.now() - runStart;
     const finalStatus = wasStopped ? "stopped" : "completed";
     completeRun(runId, finalStatus, totalCost, totalDuration, phasesCompleted);
+
+    // Update state file: paused if stopped, clear if completed
+    if (activeProjectDir) {
+      try {
+        if (wasStopped) {
+          await updateState(activeProjectDir, {
+            status: "paused",
+            pausedAt: new Date().toISOString(),
+            cumulativeCostUsd: totalCost,
+          });
+        } else {
+          await updateState(activeProjectDir, { status: "completed" });
+        }
+      } catch {
+        // State write failure shouldn't crash the cleanup
+      }
+    }
+
+    // Release state lock
+    if (releaseLock) {
+      releaseLock();
+      releaseLock = null;
+    }
+    activeProjectDir = null;
 
     let prUrl: string | null = null;
     if (!wasStopped && phasesCompleted > 0 && branchName) {
@@ -1627,7 +1723,7 @@ async function runPrerequisites(
           rlog.run("INFO", `runPrerequisites: creating GitHub repo '${repoName}'`);
           try {
             // Commit all files created during prerequisites (GOAL.md, .specify/, .claude/, etc.)
-            execSync("git add -A && git commit -m \"Initial project setup (prerequisites)\"", {
+            execSync("git add -A -- ':!.dex/' && git commit -m \"Initial project setup (prerequisites)\"", {
               cwd: config.projectDir,
               stdio: "pipe",
               timeout: 10_000,
@@ -1699,6 +1795,19 @@ async function runLoop(
     throw new Error(`Loop mode requires GOAL.md at ${goalPath}`);
   }
 
+  // Detect stale state from a different branch or completed run
+  if (config.resume) {
+    const staleCheck = await detectStaleState(config.projectDir);
+    if (staleCheck === "stale" || staleCheck === "completed") {
+      rlog.run("INFO", `runLoop: stale state detected (${staleCheck}) — clearing and starting fresh`);
+      await clearState(config.projectDir);
+      config = { ...config, resume: false };
+    } else if (staleCheck === "none") {
+      rlog.run("INFO", "runLoop: no state file found — starting fresh");
+      config = { ...config, resume: false };
+    }
+  }
+
   const clarifiedPath = path.join(config.projectDir, "GOAL_clarified.md");
   let fullPlanPath = "";
   let cumulativeCost = 0;
@@ -1706,17 +1815,6 @@ async function runLoop(
   const featuresCompleted: string[] = [];
   const featuresSkipped: string[] = [];
   const failureTracker = new Map<string, FailureRecord>();
-
-  // Load existing failure records from SQLite for crash recovery
-  const loadFailureRecords = () => {
-    for (const [, record] of failureTracker) {
-      const dbRecord = getFailureRecord(runId, record.specDir);
-      if (dbRecord) {
-        record.implFailures = dbRecord.impl_failures;
-        record.replanFailures = dbRecord.replan_failures;
-      }
-    }
-  };
 
   const getOrCreateFailureRecord = (specDir: string): FailureRecord => {
     let record = failureTracker.get(specDir);
@@ -1730,35 +1828,70 @@ async function runLoop(
   const persistFailure = (specDir: string) => {
     const record = getOrCreateFailureRecord(specDir);
     upsertFailureRecord(runId, specDir, record.implFailures, record.replanFailures);
+    // Also persist to state file
+    updateState(config.projectDir, {
+      failureCounts: { [specDir]: { implFailures: record.implFailures, replanFailures: record.replanFailures } },
+    }).catch(() => { /* state write failure shouldn't crash the run */ });
   };
 
-  // ── Determine resume context from previous run ──
+  // ── Determine resume context from state file ──
   let resumeSpecDir: string | null = null;
   let resumeLastStage: string | null = null;
-  if (config.resumeRunId) {
-    const prevRun = getRun(config.resumeRunId);
-    if (prevRun) {
-      const prevCycles = getLoopCycles(config.resumeRunId);
-      const lastCycle = prevCycles[prevCycles.length - 1];
-      if (lastCycle?.spec_dir) {
-        resumeSpecDir = lastCycle.spec_dir;
-      }
-      // Find the last stage that ran in the last cycle
-      const lastCycleStages = prevRun.phases
-        .filter((pt) => pt.phase_name.startsWith("loop:") && pt.phase_number === lastCycle?.cycle_number)
-        .sort((a, b) => a.created_at.localeCompare(b.created_at));
-      const lastStage = lastCycleStages[lastCycleStages.length - 1];
-      if (lastStage) {
-        resumeLastStage = lastStage.phase_name.replace("loop:", "");
-      }
-      // Carry over cumulative cost from the previous run
-      cumulativeCost = prevRun.run.total_cost_usd ?? 0;
-      cyclesCompleted = lastCycle ? lastCycle.cycle_number - 1 : 0;
+  if (config.resume) {
+    // Resolve working-tree vs committed state (crash recovery)
+    let savedState = await resolveWorkingTreeConflict(config.projectDir);
+    if (!savedState) {
+      savedState = await loadState(config.projectDir);
     }
-    rlog.run("INFO", `runLoop: resuming from run ${config.resumeRunId}`, { resumeSpecDir, resumeLastStage, cumulativeCost, cyclesCompleted });
+
+    if (savedState) {
+      // Reconcile artifact integrity
+      const reconciliation = await reconcileState(config.projectDir, savedState, emit, runId);
+
+      // Apply state patches from reconciliation
+      if (Object.keys(reconciliation.statePatches).length > 0) {
+        await updateState(config.projectDir, reconciliation.statePatches);
+      }
+
+      // Log warnings
+      for (const w of reconciliation.warnings) {
+        rlog.run("WARN", `runLoop: reconciliation: ${w}`);
+      }
+
+      // Restore position from state file
+      resumeSpecDir = savedState.currentSpecDir;
+      resumeLastStage = savedState.lastCompletedStage;
+      cumulativeCost = savedState.cumulativeCostUsd;
+      cyclesCompleted = savedState.cyclesCompleted;
+      featuresCompleted.push(...savedState.featuresCompleted);
+      featuresSkipped.push(...savedState.featuresSkipped);
+      fullPlanPath = savedState.fullPlanPath ?? "";
+
+      // Restore failure counts from state file
+      for (const [specDir, counts] of Object.entries(savedState.failureCounts)) {
+        failureTracker.set(specDir, {
+          specDir,
+          implFailures: counts.implFailures,
+          replanFailures: counts.replanFailures,
+        });
+      }
+
+      // Use reconciliation resume point if drift was detected
+      if (reconciliation.resumeFrom.specDir) {
+        resumeSpecDir = reconciliation.resumeFrom.specDir;
+      }
+
+      rlog.run("INFO", "runLoop: resuming from state file", {
+        resumeSpecDir,
+        resumeLastStage,
+        cumulativeCost,
+        cyclesCompleted,
+        drift: reconciliation.driftSummary,
+      });
+    }
   }
 
-  const isResume = !!config.resumeRunId;
+  const isResume = !!config.resume;
 
   // ── Phase 0: Prerequisites (skip on resume) ──
   if (!isResume) {
@@ -1903,7 +2036,6 @@ async function runLoop(
   }
 
   // ── Phase B: Autonomous Loop ──
-  loadFailureRecords();
 
   while (true) {
     // Check abort
@@ -2226,6 +2358,14 @@ async function runLoop(
 
       featuresCompleted.push(featureName ?? implSpecDir);
 
+      // Update state file with feature completion
+      if (activeProjectDir) {
+        updateState(activeProjectDir, {
+          featuresCompleted: [...featuresCompleted],
+          cumulativeCostUsd: cumulativeCost + cycleCost,
+        }).catch(() => {});
+      }
+
     } catch (err) {
       // AbortError is a clean exit — not a stage failure
       if (err instanceof AbortError) {
@@ -2258,6 +2398,15 @@ async function runLoop(
 
     updateLoopCycle(cycleId, cycleStatus, cycleCost, Date.now() - cycleStart);
     updateRunLoopsCompleted(runId, cyclesCompleted);
+
+    // Update state file with cycle completion
+    if (activeProjectDir) {
+      updateState(activeProjectDir, {
+        cumulativeCostUsd: cumulativeCost,
+        cyclesCompleted,
+        currentCycleNumber: cycleNumber,
+      }).catch(() => {});
+    }
 
     if (currentRunState) {
       currentRunState.loopsCompleted = cyclesCompleted;

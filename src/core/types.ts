@@ -1,3 +1,14 @@
+// ── State Management Types (used by both types.ts and state.ts) ──
+
+export interface DriftSummary {
+  missingArtifacts: string[];
+  modifiedArtifacts: string[];
+  taskRegressions: Record<string, string[]>;
+  taskProgressions: Record<string, string[]>;
+  extraCommits: number;
+  pendingQuestionReask: boolean;
+}
+
 // ── Spec-Kit Types (parsed from tasks.md for UI display) ──
 
 export interface Phase {
@@ -169,8 +180,8 @@ export interface RunConfig {
   maxBudgetUsd?: number;
   autoClarification?: boolean;
 
-  // Resume: set to a previous run's ID to continue from where it stopped
-  resumeRunId?: string;
+  // Resume: set to true to resume from .dex/state.json
+  resume?: boolean;
 }
 
 // ── Events: Orchestrator → UI ──
@@ -239,6 +250,9 @@ export type OrchestratorEvent =
   | { type: "loop_terminated"; runId: string; termination: LoopTermination }
   // User input request/response (AskUserQuestion)
   | { type: "user_input_request"; runId: string; requestId: string; questions: UserInputQuestion[] }
-  | { type: "user_input_response"; requestId: string; answers: Record<string, string> };
+  | { type: "user_input_response"; requestId: string; answers: Record<string, string> }
+  // State reconciliation events
+  | { type: "state_reconciling"; runId: string }
+  | { type: "state_reconciled"; runId: string; driftSummary: DriftSummary };
 
 export type EmitFn = (event: OrchestratorEvent) => void;

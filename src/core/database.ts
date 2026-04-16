@@ -563,6 +563,9 @@ export interface ActiveRunState {
  * Query for a currently active run + its currently running phase trace.
  * Both `runs.status` and `phase_traces.status` must be 'running'.
  * Returns null if nothing is actively running.
+ *
+ * @deprecated No longer used for resume — resume now reads from .dex/state.json.
+ * Kept for backward compatibility with any code that still calls it.
  */
 export function getActiveRunState(): ActiveRunState | null {
   const row = getDb()

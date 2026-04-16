@@ -12,6 +12,53 @@ export function getCurrentBranch(projectDir: string): string {
   return exec("git rev-parse --abbrev-ref HEAD", projectDir);
 }
 
+export function getHeadSha(projectDir: string): string {
+  return exec("git rev-parse HEAD", projectDir);
+}
+
+export function countCommitsBetween(projectDir: string, fromSha: string, toSha: string): number {
+  const count = exec(`git rev-list --count ${fromSha}..${toSha}`, projectDir);
+  return parseInt(count, 10) || 0;
+}
+
+export function getCommittedFileContent(projectDir: string, ref: string, filePath: string): string | null {
+  try {
+    return exec(`git show ${ref}:${filePath}`, projectDir);
+  } catch {
+    return null;
+  }
+}
+
+export function commitCheckpoint(
+  projectDir: string,
+  stage: string,
+  cycleNumber: number,
+  featureName: string | null,
+  cost: number
+): string {
+  const featurePart = featureName ? ` [feature:${featureName}]` : "";
+  const costPart = cost > 0 ? ` [cost:$${cost.toFixed(2)}]` : "";
+  const message = `dex: ${stage} completed [cycle:${cycleNumber}]${featurePart}${costPart}`;
+
+  // Runtime guard: warn if agent's last commit contains .dex/state.json
+  try {
+    const lastCommitFiles = exec("git diff-tree --no-commit-id --name-only -r HEAD", projectDir);
+    if (lastCommitFiles.includes(".dex/state.json")) {
+      console.warn("[dex] WARNING: Agent committed .dex/state.json — checkpoint may be stale");
+    }
+  } catch {
+    // Ignore — might be the first commit
+  }
+
+  exec('git add .dex/state.json', projectDir);
+  try {
+    exec(`git commit -m "${message}"`, projectDir);
+  } catch {
+    // Nothing to commit (state unchanged) — that's fine
+  }
+  return getHeadSha(projectDir);
+}
+
 export function createBranch(
   projectDir: string,
   mode: "plan" | "build" | "loop"
