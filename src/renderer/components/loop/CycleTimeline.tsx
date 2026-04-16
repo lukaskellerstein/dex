@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { CheckCircle, ChevronDown, ChevronRight, DollarSign, SkipForward, Loader, Pause } from "lucide-react";
+import { CheckCircle, ChevronDown, ChevronRight, Circle, DollarSign, SkipForward, Loader, Pause } from "lucide-react";
 import type { LoopStageType } from "../../../core/types.js";
 import type { UiLoopCycle, UiLoopStage } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
@@ -37,8 +37,14 @@ function CycleTimelineItem({
   specSummaries: SpecSummary[];
 }) {
   const isCycleRunning = cycle.status === "running" && isRunning;
-  const isCyclePaused = cycle.status === "running" && !isRunning;
+  // "paused" = cycle was mid-flight when the run was stopped. In the DB it may
+  // appear as either "running" (never updated due to crash) or "stopped" (clean stop).
+  // When the loop isn't running, both states mean the user can resume it.
+  const isCyclePaused =
+    (cycle.status === "running" && !isRunning) ||
+    (cycle.status === "stopped" && !isRunning);
   const isCompleted = cycle.status === "completed";
+  const isFailed = cycle.status === "failed";
   const isSkipped = cycle.status === "skipped";
 
   const totalDuration = cycle.stages.reduce((sum, s) => sum + s.durationMs, 0)
@@ -99,6 +105,21 @@ function CycleTimelineItem({
             }}>
               <Pause size={10} fill="var(--status-warning, #f59e0b)" style={{ color: "var(--status-warning, #f59e0b)" }} />
             </div>
+          ) : isFailed ? (
+            <div style={{
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "color-mix(in srgb, var(--status-error) 15%, var(--surface-elevated))",
+              border: "2px solid var(--status-error)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              color: "var(--status-error)",
+            }}>
+              <Circle size={10} fill="currentColor" />
+            </div>
           ) : (
             <div style={{
               width: 12,
@@ -117,8 +138,8 @@ function CycleTimelineItem({
         <div style={{
           width: 2,
           flex: 1,
-          background: isCompleted ? "var(--status-success)" : isCyclePaused ? "var(--status-warning, #f59e0b)" : "var(--border)",
-          ...(isLast && !isCompleted && !isCyclePaused ? {
+          background: isCompleted ? "var(--status-success)" : isFailed ? "var(--status-error)" : isCyclePaused ? "var(--status-warning, #f59e0b)" : "var(--border)",
+          ...(isLast && !isCompleted && !isCyclePaused && !isFailed ? {
             background: "none",
             backgroundImage: `repeating-linear-gradient(to bottom, var(--border) 0px, var(--border) 4px, transparent 4px, transparent 8px)`,
           } : {}),
@@ -141,12 +162,16 @@ function CycleTimelineItem({
               ? "color-mix(in srgb, var(--status-info) 6%, var(--surface-elevated))"
               : isCyclePaused
                 ? "color-mix(in srgb, var(--status-warning, #f59e0b) 6%, var(--surface-elevated))"
-                : "var(--surface-elevated)",
+                : isFailed
+                  ? "color-mix(in srgb, var(--status-error) 6%, var(--surface-elevated))"
+                  : "var(--surface-elevated)",
             border: isActive && isCycleRunning
               ? "1px solid var(--status-info)"
               : isCyclePaused
                 ? "1px solid var(--status-warning, #f59e0b)"
-                : "1px solid var(--border)",
+                : isFailed
+                  ? "1px solid var(--status-error)"
+                  : "1px solid var(--border)",
             cursor: "pointer",
             transition: "background 0.15s, border-color 0.15s",
             textAlign: "left",

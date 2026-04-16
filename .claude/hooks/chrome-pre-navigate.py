@@ -14,7 +14,7 @@ from pathlib import Path
 TEMP_DIR = Path("/tmp/chrome-mcp-hooks")
 
 # Browser window classes to track
-BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome")
+BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome", "Electron")
 
 
 def get_all_browser_con_ids() -> list[int]:

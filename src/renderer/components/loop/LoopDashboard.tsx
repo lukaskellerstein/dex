@@ -30,7 +30,7 @@ export interface LoopDashboardProps {
 
 const CLARIFICATION_STAGE_TYPES = [
   "clarification", "clarification_product", "clarification_technical",
-  "clarification_synthesis", "constitution",
+  "clarification_synthesis", "constitution", "manifest_extraction",
 ];
 
 function deriveActivePhase(
@@ -55,9 +55,10 @@ function deriveActivePhase(
     (s) => CLARIFICATION_STAGE_TYPES.includes(s.type)
   );
   const anyClarificationDone = clarificationStages.some((s) => s.status === "completed");
-  // All 4 expected stages must be completed to advance past clarification:
-  // clarification_product, clarification_technical, clarification_synthesis, constitution
-  const allClarificationDone = clarificationStages.length >= 4
+  // All 5 expected stages must be completed to advance past clarification:
+  // clarification_product, clarification_technical, clarification_synthesis,
+  // constitution, manifest_extraction
+  const allClarificationDone = clarificationStages.length >= 5
     && clarificationStages.every((s) => s.status === "completed");
   if (allClarificationDone && !isClarifying) return "loop";
   // Some done but not all — clarification is still active (paused mid-way)
@@ -207,6 +208,7 @@ function ClarificationView({
   const technicalStage = preCycleStages.find((s) => s.type === "clarification_technical");
   const synthesisStage = preCycleStages.find((s) => s.type === "clarification_synthesis");
   const constitutionStage = preCycleStages.find((s) => s.type === "constitution");
+  const manifestExtractionStage = preCycleStages.find((s) => s.type === "manifest_extraction");
   // Backward compat: old-style single clarification stage
   const legacyClarificationStage = preCycleStages.find((s) => s.type === "clarification");
 
@@ -294,6 +296,18 @@ function ClarificationView({
       status: stageToStatus(constitutionStage, synthesisStage?.status === "completed"),
       onClick: constitutionStage ? () => onStageClick(constitutionStage) : undefined,
       meta: stageMeta(constitutionStage),
+    },
+    {
+      id: "manifest-extraction",
+      title: "Feature Manifest Extraction",
+      description: manifestExtractionStage?.status === "completed"
+        ? "Ordered list of MVP features extracted from the clarified plan."
+        : manifestExtractionStage?.status === "running"
+          ? "Extracting MVP features and descriptions from GOAL_clarified.md..."
+          : "Extract the ordered list of MVP features from the clarified plan.",
+      status: stageToStatus(manifestExtractionStage, constitutionStage?.status === "completed"),
+      onClick: manifestExtractionStage ? () => onStageClick(manifestExtractionStage) : undefined,
+      meta: stageMeta(manifestExtractionStage),
     },
   ];
 

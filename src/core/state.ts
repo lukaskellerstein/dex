@@ -282,9 +282,14 @@ export async function detectStaleState(
   if (!state) return "none";
   if (state.status === "completed") return "completed";
 
+  // Paused state is always resumable — the user explicitly asked to continue.
+  // Branch mismatch (e.g., speckit switched to a feature branch during specify)
+  // is expected and shouldn't invalidate the state.
+  if (state.status === "paused") return "fresh";
+
   try {
     const currentBranch = getCurrentBranch(projectDir);
-    if (state.branchName !== currentBranch) return "stale";
+    if (state.branchName && state.branchName !== currentBranch) return "stale";
   } catch {
     return "stale";
   }

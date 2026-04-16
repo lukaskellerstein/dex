@@ -195,7 +195,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__vex-chrome__navigate_page",
+        "matcher": "mcp__electron-chrome__navigate_page",
         "hooks": [
           {
             "type": "command",
@@ -204,7 +204,7 @@
         ]
       },
       {
-        "matcher": "mcp__vex-chrome__(navigate_page|evaluate_script|take_snapshot)",
+        "matcher": "mcp__electron-chrome__(navigate_page|evaluate_script|take_snapshot)",
         "hooks": [
           {
             "type": "command",
@@ -216,7 +216,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__vex-chrome__(navigate_page|evaluate_script|take_snapshot)",
+        "matcher": "mcp__electron-chrome__(navigate_page|evaluate_script|take_snapshot)",
         "hooks": [
           {
             "type": "command",

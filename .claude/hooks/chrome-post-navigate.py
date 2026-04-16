@@ -21,7 +21,7 @@ WORKSPACE_MAX = 120
 WINDOW_APPEAR_DELAY = 0.5  # seconds to wait for window to appear
 
 # Browser window classes to track
-BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome")
+BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome", "Electron")
 
 # Process names that indicate a chrome-devtools-mcp-spawned browser
 MCP_PROCESS_INDICATORS = ["chrome-devtools", "playwright", "npx", "node", "npm"]

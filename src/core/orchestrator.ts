@@ -967,6 +967,7 @@ async function runStage(
       maxTurns: config.maxTurns,
       permissionMode: "bypassPermissions",
       settingSources: ["project"],
+      abortController: abortController ?? undefined,
       ...(outputFormat ? { outputFormat } : {}),
       canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
         if (toolName === "AskUserQuestion") {
@@ -1125,7 +1126,10 @@ async function runStage(
       },
     },
   })) {
-    if (isAborted()) break;
+    if (isAborted()) {
+      rlog.phase("INFO", `runStage(${stageType}): abort detected in message loop — breaking out (SDK query may continue in background)`);
+      break;
+    }
 
     const message = msg as Record<string, unknown>;
 
@@ -1362,18 +1366,30 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     branchName = createBranch(config.projectDir, config.mode);
   }
 
-  const runId = crypto.randomUUID();
+  // On resume: keep the previous runId so phase_traces from the paused run
+  // continue to be associated with the same run in the DB and UI.
+  let runId: string = crypto.randomUUID();
+  if (config.resume) {
+    const prevState = await loadState(config.projectDir);
+    if (prevState?.runId) {
+      runId = prevState.runId;
+    }
+  }
+
   const projectName = path.basename(config.projectDir);
   const rlog = new RunLogger(projectName, runId);
-  rlog.run("INFO", "run: starting orchestrator", { mode: config.mode, model: config.model, specDir: config.specDir, branch: branchName || "(deferred)", baseBranch: baseBranch || "(deferred)" });
+  rlog.run("INFO", `run: ${config.resume ? "resuming" : "starting"} orchestrator`, { mode: config.mode, model: config.model, specDir: config.specDir, branch: branchName || "(deferred)", baseBranch: baseBranch || "(deferred)", runId });
 
-  createRun({
-    id: runId,
-    projectDir: config.projectDir,
-    specDir: config.specDir,
-    mode: config.mode,
-    model: config.model,
-  });
+  // Only create a new DB row for fresh starts. On resume, the row already exists.
+  if (!config.resume) {
+    createRun({
+      id: runId,
+      projectDir: config.projectDir,
+      specDir: config.specDir,
+      mode: config.mode,
+      model: config.model,
+    });
+  }
 
   activeProjectDir = config.projectDir;
 
@@ -1962,6 +1978,10 @@ async function runLoop(
     baseBranch = getCurrentBranch(config.projectDir);
     branchName = createBranch(config.projectDir, config.mode);
     rlog.run("INFO", `runLoop: created branch ${branchName} from ${baseBranch}`);
+    // Persist branch info to state so detectStaleState can match on resume
+    if (activeProjectDir) {
+      await updateState(activeProjectDir, { branchName, baseBranch });
+    }
   }
 
   // ── Phase A: Multi-Domain Clarification ──
@@ -2191,9 +2211,18 @@ async function runLoop(
         const active = getActiveFeature(manifest);
         const nextPending = getNextFeature(manifest);
 
+        // Emit a synthetic (deterministic, cost=0) gap_analysis stage so the UI shows it completed
+        const emitSyntheticGapAnalysis = (specDir: string) => {
+          const traceId = crypto.randomUUID();
+          createPhaseTrace({ id: traceId, runId, specDir, phaseNumber: cycleNumber, phaseName: "loop:gap_analysis" });
+          emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, specDir });
+          completePhaseTrace(traceId, "completed", 0, 0);
+          emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+        };
+
         if (active) {
           if (active.specDir) {
-            // Active feature with specDir — evaluate RESUME vs REPLAN
+            // Active feature with specDir — evaluate RESUME vs REPLAN (LLM call)
             const evaluationPrompt = buildFeatureEvaluationPrompt(config, active.specDir);
             const evalResult = await runStage(
               config, evaluationPrompt, emit, rlog, runId, cycleNumber,
@@ -2211,7 +2240,8 @@ async function runLoop(
               decision = { type: "RESUME_FEATURE", specDir: active.specDir };
             }
           } else {
-            // Active but no specDir — re-run specify
+            // Active but no specDir — re-run specify for this feature (deterministic)
+            emitSyntheticGapAnalysis("");
             decision = {
               type: "NEXT_FEATURE",
               name: active.title,
@@ -2222,12 +2252,7 @@ async function runLoop(
         } else if (nextPending) {
           // Deterministic — no LLM call needed
           updateFeatureStatus(config.projectDir, nextPending.id, "active");
-          // Emit synthetic gap_analysis stage
-          const traceId = crypto.randomUUID();
-          createPhaseTrace({ id: traceId, runId, specDir: "", phaseNumber: cycleNumber, phaseName: "loop:gap_analysis" });
-          emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId });
-          completePhaseTrace(traceId, "completed", 0, 0);
-          emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+          emitSyntheticGapAnalysis("");
           decision = {
             type: "NEXT_FEATURE",
             name: nextPending.title,
@@ -2251,6 +2276,7 @@ async function runLoop(
     let specDir = decision.type === "RESUME_FEATURE" || decision.type === "REPLAN_FEATURE"
       ? decision.specDir
       : null;
+    let cycleFailed = false;
 
     insertLoopCycle({
       id: cycleId,
@@ -2431,6 +2457,8 @@ async function runLoop(
       let implStageCost = 0;
       let implStageInputTokens = 0;
       let implStageOutputTokens = 0;
+      let activePhaseTraceId: string | null = null;
+      let implStageFailed = false;
 
       // Parse tasks.md to get phases, then run each phase.
       // RunTaskState is created ONCE and reused across all phases so that
@@ -2442,67 +2470,86 @@ async function runLoop(
       // Emit initial task state so the UI can show the spec card immediately
       emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
 
-      for (const phase of phases) {
-        if (abortController?.signal.aborted) break;
-        if (phase.status === "complete") continue;
+      try {
+        for (const phase of phases) {
+          if (abortController?.signal.aborted) break;
+          if (phase.status === "complete") continue;
 
-        const phaseTraceId = crypto.randomUUID();
-        createPhaseTrace({
-          id: phaseTraceId,
-          runId,
-          specDir: implSpecDir,
-          phaseNumber: phase.number,
-          phaseName: phase.name,
-        });
+          const phaseTraceId = crypto.randomUUID();
+          activePhaseTraceId = phaseTraceId;
+          createPhaseTrace({
+            id: phaseTraceId,
+            runId,
+            specDir: implSpecDir,
+            phaseNumber: phase.number,
+            phaseName: phase.name,
+          });
 
-        if (currentRunState) {
-          currentRunState.phaseTraceId = phaseTraceId;
-          currentRunState.phaseNumber = phase.number;
-          currentRunState.phaseName = phase.name;
+          if (currentRunState) {
+            currentRunState.phaseTraceId = phaseTraceId;
+            currentRunState.phaseNumber = phase.number;
+            currentRunState.phaseName = phase.name;
+          }
+
+          emit({ type: "phase_started", phase, iteration: 0, phaseTraceId });
+
+          const phaseResult = await runPhase(implConfig, phase, phaseTraceId, emit, rlog, runTaskState);
+          completePhaseTrace(
+            phaseTraceId,
+            "completed",
+            phaseResult.cost,
+            phaseResult.durationMs,
+            phaseResult.inputTokens || undefined,
+            phaseResult.outputTokens || undefined
+          );
+          activePhaseTraceId = null;
+          cycleCost += phaseResult.cost;
+          implStageCost += phaseResult.cost;
+          implStageInputTokens += phaseResult.inputTokens;
+          implStageOutputTokens += phaseResult.outputTokens;
+
+          // Reconcile task state from disk
+          const freshPhases = parseTasksFile(config.projectDir, implSpecDir);
+          runTaskState.reconcileFromDisk(freshPhases);
+          emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+          emit({
+            type: "phase_completed",
+            phase: { ...phase, status: "complete" },
+            cost: phaseResult.cost,
+            durationMs: phaseResult.durationMs,
+          });
         }
-
-        emit({ type: "phase_started", phase, iteration: 0, phaseTraceId });
-
-        const phaseResult = await runPhase(implConfig, phase, phaseTraceId, emit, rlog, runTaskState);
-        completePhaseTrace(
-          phaseTraceId,
-          "completed",
-          phaseResult.cost,
-          phaseResult.durationMs,
-          phaseResult.inputTokens || undefined,
-          phaseResult.outputTokens || undefined
-        );
-        cycleCost += phaseResult.cost;
-        implStageCost += phaseResult.cost;
-        implStageInputTokens += phaseResult.inputTokens;
-        implStageOutputTokens += phaseResult.outputTokens;
-
-        // Reconcile task state from disk
-        const freshPhases = parseTasksFile(config.projectDir, implSpecDir);
-        runTaskState.reconcileFromDisk(freshPhases);
-        emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+      } catch (implErr) {
+        implStageFailed = true;
+        // Mark any in-flight phase trace as failed so it doesn't dangle as "running"
+        if (activePhaseTraceId) {
+          try {
+            completePhaseTrace(activePhaseTraceId, "failed", 0, Date.now() - implStageStart);
+          } catch { /* best-effort */ }
+        }
+        throw implErr;
+      } finally {
+        // Always close the loop:implement stage trace, even on exception, so the
+        // UI never sees an orphaned "running" implement stage.
+        const implStageDurationMs = Date.now() - implStageStart;
+        const implAborted = abortController?.signal.aborted ?? false;
+        const implFinalStatus = implAborted ? "stopped" : implStageFailed ? "failed" : "completed";
+        completePhaseTrace(implStageTraceId, implFinalStatus, implStageCost, implStageDurationMs, implStageInputTokens || undefined, implStageOutputTokens || undefined);
         emit({
-          type: "phase_completed",
-          phase: { ...phase, status: "complete" },
-          cost: phaseResult.cost,
-          durationMs: phaseResult.durationMs,
+          type: "stage_completed",
+          runId,
+          cycleNumber,
+          stage: "implement",
+          phaseTraceId: implStageTraceId,
+          costUsd: implStageCost,
+          durationMs: implStageDurationMs,
+          ...(implAborted ? { stopped: true } : {}),
         });
       }
 
-      const implStageDurationMs = Date.now() - implStageStart;
+      // The implement stage trace and stage_completed event were already emitted
+      // in the finally block above. Now decide whether to continue to verify/learnings.
       const implAborted = abortController?.signal.aborted ?? false;
-      completePhaseTrace(implStageTraceId, implAborted ? "stopped" : "completed", implStageCost, implStageDurationMs, implStageInputTokens || undefined, implStageOutputTokens || undefined);
-
-      emit({
-        type: "stage_completed",
-        runId,
-        cycleNumber,
-        stage: "implement",
-        phaseTraceId: implStageTraceId,
-        costUsd: implStageCost,
-        durationMs: implStageDurationMs,
-        ...(implAborted ? { stopped: true } : {}),
-      });
 
       if (implAborted) throw new AbortError();
 
@@ -2646,6 +2693,7 @@ async function runLoop(
       if (err instanceof AbortError) {
         rlog.run("INFO", `runLoop: cycle ${cycleNumber} aborted by user`);
       } else {
+        cycleFailed = true;
         // ── Stage failure handling (T040) ──
         const msg = err instanceof Error ? err.message : String(err);
         rlog.run("ERROR", `runLoop: cycle ${cycleNumber} failed: ${msg}`);
@@ -2668,7 +2716,7 @@ async function runLoop(
 
     cumulativeCost += cycleCost;
     const cycleAborted = abortController?.signal.aborted ?? false;
-    const cycleStatus = cycleAborted ? "stopped" : "completed";
+    const cycleStatus = cycleAborted ? "stopped" : cycleFailed ? "failed" : "completed";
     cyclesCompleted++;
 
     updateLoopCycle(cycleId, cycleStatus, cycleCost, Date.now() - cycleStart);
@@ -2730,7 +2778,10 @@ async function runLoop(
 
 export function stopRun(): void {
   if (abortController) {
+    console.log("[stopRun] abort signal sent to orchestrator");
     abortController.abort();
+  } else {
+    console.log("[stopRun] called but no active abortController");
   }
 }
 

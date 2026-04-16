@@ -42,7 +42,7 @@ export interface UiLoopCycle {
   featureName: string | null;
   specDir: string | null;
   decision: string | null;
-  status: "running" | "completed" | "skipped";
+  status: "running" | "completed" | "skipped" | "failed";
   costUsd: number;
   stages: UiLoopStage[];
   implementPhases: ImplementSubPhase[];
@@ -648,12 +648,15 @@ export function useOrchestrator(): OrchestratorHook {
 
     for (const pt of loopTraces) {
       const stageType = pt.phase_name.replace("loop:", "") as LoopStageType;
+      // A "running" phase trace is only an orphan if the run itself is dead.
+      // While the orchestrator is genuinely active, "running" means live.
+      const runningStatus: UiLoopStage["status"] = isCrashed ? "failed" : "running";
       const stage: UiLoopStage = {
         type: stageType,
         status: pt.status === "completed" ? "completed"
           : pt.status === "stopped" ? "stopped"
           : pt.status === "crashed" ? "failed"
-          : pt.status === "running" ? "failed" // orphan "running" from a crash
+          : pt.status === "running" ? runningStatus
           : "failed",
         phaseTraceId: pt.id,
         specDir: pt.spec_dir || undefined,
@@ -707,14 +710,23 @@ export function useOrchestrator(): OrchestratorHook {
       // A cycle is only truly complete if the loop_cycles row says so —
       // stages alone can't tell us (there's no loop:implement stage, and verify/learnings may not exist)
       const cycleExplicitlyCompleted = cycleRow?.status === "completed";
+      const cycleExplicitlyFailed = cycleRow?.status === "failed";
       // For stopped/crashed runs, the last cycle was interrupted — don't trust its "completed" status
       const isLastCycleOfCrashedRun = isCrashed && cycleNumber === maxCycleNumber;
+      // Defensive: if any stage in this cycle is still "running" or "failed", the cycle
+      // cannot be honestly "completed" — orchestrator may have inconsistent state.
+      const anyStageRunning = stages.some((s) => s.status === "running");
+      const anyStageFailed = stages.some((s) => s.status === "failed");
 
       const cycleStatus = cycleRow?.status === "skipped" ? "skipped" as const
         : isLastCycleOfCrashedRun ? "running" as const // paused mid-cycle
+        : cycleExplicitlyFailed ? "failed" as const
+        : anyStageRunning ? "running" as const // override "completed" if a stage is still live
+        : cycleExplicitlyCompleted && anyStageFailed ? "failed" as const
         : cycleExplicitlyCompleted ? "completed" as const
         : isCrashed ? "running" as const // paused mid-cycle
         : allStagesCompleted && implPhases.length === 0 ? "completed" as const
+        : anyStageFailed ? "failed" as const
         : "running" as const;
 
       cycles.push({

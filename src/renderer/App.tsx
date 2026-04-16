@@ -525,40 +525,63 @@ export default function App() {
             fontSize: "0.82rem",
           }}
         >
-          {orchestrator.mode === "loop" && (
-            <>
-              <span
-                onClick={() => setCurrentView("loop-dashboard")}
-                style={{
-                  color: "var(--foreground-muted)",
-                  cursor: "pointer",
-                  transition: "color 0.15s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
-              >
-                Loop
-              </span>
-              <span style={{ color: "var(--foreground-dim)" }}>/</span>
-              {orchestrator.currentCycle != null && (
-                <>
-                  <span
-                    onClick={() => setCurrentView("loop-dashboard")}
-                    style={{
-                      color: "var(--foreground-muted)",
-                      cursor: "pointer",
-                      transition: "color 0.15s",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
-                  >
-                    Cycle {orchestrator.currentCycle}
-                  </span>
-                  <span style={{ color: "var(--foreground-dim)" }}>/</span>
-                </>
-              )}
-            </>
-          )}
+          {orchestrator.mode === "loop" && (() => {
+            // Resolve the spec name for the middle crumb from: selected spec →
+            // current cycle → last cycle with a specDir. Survives pause, which
+            // clears currentCycle via run_completed.
+            const currentCycleObj = orchestrator.currentCycle != null
+              ? orchestrator.loopCycles.find(c => c.cycleNumber === orchestrator.currentCycle)
+              : null;
+            const stripSpecs = (s: string) => s.replace(/^specs\//, "");
+            const fallbackCycle = [...orchestrator.loopCycles]
+              .reverse()
+              .find(c => !!c.specDir);
+            const specName = project.selectedSpec
+              ?? (currentCycleObj?.specDir ? stripSpecs(currentCycleObj.specDir) : null)
+              ?? (fallbackCycle?.specDir ? stripSpecs(fallbackCycle.specDir) : null);
+            const cycleNumber = orchestrator.currentCycle ?? fallbackCycle?.cycleNumber ?? null;
+            const midLabel = cycleNumber != null ? `Cycle ${cycleNumber}` : specName;
+            return (
+              <>
+                <span
+                  onClick={() => setCurrentView("loop-dashboard")}
+                  style={{
+                    color: "var(--foreground-muted)",
+                    cursor: "pointer",
+                    transition: "color 0.15s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
+                >
+                  Loop
+                </span>
+                <span style={{ color: "var(--foreground-dim)" }}>/</span>
+                {midLabel && (
+                  <>
+                    <span
+                      onClick={() => {
+                        if (specName) {
+                          handleSelectSpec(specName);
+                        } else {
+                          setCurrentView("loop-dashboard");
+                        }
+                      }}
+                      style={{
+                        color: "var(--foreground-muted)",
+                        cursor: "pointer",
+                        transition: "color 0.15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
+                    >
+                      {midLabel}
+                    </span>
+                    <span style={{ color: "var(--foreground-dim)" }}>/</span>
+                  </>
+                )}
+              </>
+            );
+          })()}
           {orchestrator.mode !== "loop" && project.selectedSpec && (
             <>
               <span
