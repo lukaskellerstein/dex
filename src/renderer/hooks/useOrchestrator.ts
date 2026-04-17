@@ -76,8 +76,8 @@ export interface OrchestratorHook {
   answerQuestion: (requestId: string, answers: Record<string, string>) => void;
   loadRunHistory: (projectDir: string) => Promise<boolean>;
   loadPhaseTrace: (projectDir: string, specDir: string, phase: Phase) => Promise<boolean>;
-  loadStageTrace: (phaseTraceId: string, stageType: LoopStageType, meta?: { costUsd?: number; durationMs?: number }) => Promise<boolean>;
-  switchToLive: () => Promise<void>;
+  loadStageTrace: (projectDir: string, runId: string, phaseTraceId: string, stageType: LoopStageType, meta?: { costUsd?: number; durationMs?: number }) => Promise<boolean>;
+  switchToLive: (projectDir: string, runId: string) => Promise<void>;
   onPhaseCompleted: (cb: () => void) => void;
   onTasksUpdated: (cb: (phases: Phase[]) => void) => void;
 }
@@ -149,56 +149,56 @@ export function useOrchestrator(): OrchestratorHook {
       }
       if (state.isClarifying) setIsClarifying(true);
 
-      // Rebuild loop dashboard state from DB
+      // Rebuild loop dashboard state from JSON store
       if (state.mode === "loop") {
-        const runData = await window.dexAPI.getRun(state.runId);
+        const runData = await window.dexAPI.getRun(state.projectDir, state.runId);
         if (runData) {
-          const loopTraces = runData.phases.filter((pt) => pt.phase_name.startsWith("loop:"));
-          const implTraces = runData.phases.filter((pt) => !pt.phase_name.startsWith("loop:"));
+          const loopTraces = runData.phases.filter((pt) => pt.phaseName.startsWith("loop:"));
+          const implTraces = runData.phases.filter((pt) => !pt.phaseName.startsWith("loop:"));
           const preCycle: UiLoopStage[] = [];
           const cycleMap = new Map<number, UiLoopStage[]>();
 
           for (const pt of loopTraces) {
-            const stageType = pt.phase_name.replace("loop:", "") as LoopStageType;
+            const stageType = pt.phaseName.replace("loop:", "") as LoopStageType;
             const stage: UiLoopStage = {
               type: stageType,
               status: pt.status === "completed" ? "completed"
                 : pt.status === "stopped" ? "stopped"
                 : pt.status === "running" ? "running"
                 : "failed",
-              phaseTraceId: pt.id,
-              specDir: pt.spec_dir || undefined,
-              costUsd: pt.cost_usd ?? 0,
-              durationMs: pt.duration_ms ?? 0,
-              startedAt: pt.created_at,
-              completedAt: pt.completed_at ?? undefined,
+              phaseTraceId: pt.phaseTraceId,
+              specDir: pt.specDir || undefined,
+              costUsd: pt.costUsd ?? 0,
+              durationMs: pt.durationMs ?? 0,
+              startedAt: pt.startedAt,
+              completedAt: pt.endedAt ?? undefined,
             };
-            if (pt.phase_number === 0) {
+            if (pt.phaseNumber === 0) {
               preCycle.push(stage);
             } else {
-              const existing = cycleMap.get(pt.phase_number) ?? [];
+              const existing = cycleMap.get(pt.phaseNumber) ?? [];
               existing.push(stage);
-              cycleMap.set(pt.phase_number, existing);
+              cycleMap.set(pt.phaseNumber, existing);
             }
           }
 
           setPreCycleStages(preCycle);
 
-          // Group implement sub-phases by spec_dir (each cycle has a unique specDir)
+          // Group implement sub-phases by specDir (each cycle has a unique specDir)
           const implBySpecDir = new Map<string, ImplementSubPhase[]>();
           for (const pt of implTraces) {
-            const sd = pt.spec_dir || "";
+            const sd = pt.specDir || "";
             if (!sd) continue;
             const existing = implBySpecDir.get(sd) ?? [];
             existing.push({
-              phaseNumber: pt.phase_number,
-              phaseName: pt.phase_name,
-              phaseTraceId: pt.id,
+              phaseNumber: pt.phaseNumber,
+              phaseName: pt.phaseName,
+              phaseTraceId: pt.phaseTraceId,
               status: pt.status === "completed" ? "completed" as const
                 : pt.status === "stopped" ? "stopped" as const
                 : "running" as const,
-              costUsd: pt.cost_usd ?? 0,
-              durationMs: pt.duration_ms ?? 0,
+              costUsd: pt.costUsd ?? 0,
+              durationMs: pt.durationMs ?? 0,
             });
             implBySpecDir.set(sd, existing);
           }
@@ -246,31 +246,31 @@ export function useOrchestrator(): OrchestratorHook {
 
       // Reload accumulated steps and subagents for the running phase
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(state.phaseTraceId),
-        window.dexAPI.getPhaseSubagents(state.phaseTraceId),
+        window.dexAPI.getPhaseSteps(state.projectDir, state.runId, state.phaseTraceId),
+        window.dexAPI.getPhaseSubagents(state.projectDir, state.runId, state.phaseTraceId),
       ]);
 
       setLiveSteps(
         stepRows.map((row) => ({
           id: row.id,
-          sequenceIndex: row.sequence_index,
-          type: row.type as AgentStep["type"],
+          sequenceIndex: row.sequenceIndex,
+          type: row.type,
           content: row.content,
-          metadata: row.metadata ? JSON.parse(row.metadata) : null,
-          durationMs: row.duration_ms,
-          tokenCount: row.token_count,
-          createdAt: row.created_at,
+          metadata: row.metadata,
+          durationMs: row.durationMs,
+          tokenCount: row.tokenCount,
+          createdAt: row.createdAt,
         }))
       );
 
       setSubagents(
         subagentRows.map((row) => ({
           id: row.id,
-          subagentId: row.subagent_id,
-          subagentType: row.subagent_type,
+          subagentId: row.id,
+          subagentType: row.type,
           description: row.description,
-          startedAt: row.started_at,
-          completedAt: row.completed_at,
+          startedAt: row.startedAt,
+          completedAt: row.endedAt,
         }))
       );
     });
@@ -624,34 +624,34 @@ export function useOrchestrator(): OrchestratorHook {
   }, []);
 
   const loadRunHistory = useCallback(async (projectDir: string): Promise<boolean> => {
-    const data = await window.dexAPI.getLatestProjectRun(projectDir);
-    if (!data || data.run.mode !== "loop") return false;
+    const run = await window.dexAPI.getLatestProjectRun(projectDir);
+    if (!run || run.mode !== "loop") return false;
 
     // Validate that the project still has artifacts from past runs.
     // If .specify/integration.json doesn't exist, the project was reset — history is stale.
     const specKitMarker = await window.dexAPI.readFile(`${projectDir}/.specify/integration.json`);
     if (!specKitMarker) return false;
 
-    const { run, phases: phaseTraces, loopCycles: cycleRows } = data;
+    const phaseTraces = run.phases;
 
-    setCurrentRunId(run.id);
+    setCurrentRunId(run.runId);
     setMode("loop");
     modeRef.current = "loop";
-    setTotalCost(run.total_cost_usd ?? 0);
-    setTotalDuration(run.total_duration_ms ?? 0);
+    setTotalCost(run.totalCostUsd ?? 0);
+    setTotalDuration(run.totalDurationMs ?? 0);
 
-    // Separate loop stages (phase_name starts with "loop:") from implement phases
-    const loopTraces = phaseTraces.filter((pt) => pt.phase_name.startsWith("loop:"));
-    const implTraces = phaseTraces.filter((pt) => !pt.phase_name.startsWith("loop:"));
+    // Separate loop stages (phaseName starts with "loop:") from implement phases
+    const loopTraces = phaseTraces.filter((pt) => pt.phaseName.startsWith("loop:"));
+    const implTraces = phaseTraces.filter((pt) => !pt.phaseName.startsWith("loop:"));
 
-    // Build pre-cycle stages (phase_number === 0)
+    // Build pre-cycle stages (phaseNumber === 0)
     const preCycle: UiLoopStage[] = [];
     const cycleStageMap = new Map<number, UiLoopStage[]>();
 
     const isCrashed = run.status === "crashed" || run.status === "stopped";
 
     for (const pt of loopTraces) {
-      const stageType = pt.phase_name.replace("loop:", "") as LoopStageType;
+      const stageType = pt.phaseName.replace("loop:", "") as LoopStageType;
       // A "running" phase trace is only an orphan if the run itself is dead.
       // While the orchestrator is genuinely active, "running" means live.
       const runningStatus: UiLoopStage["status"] = isCrashed ? "failed" : "running";
@@ -662,84 +662,72 @@ export function useOrchestrator(): OrchestratorHook {
           : pt.status === "crashed" ? "failed"
           : pt.status === "running" ? runningStatus
           : "failed",
-        phaseTraceId: pt.id,
-        specDir: pt.spec_dir || undefined,
-        costUsd: pt.cost_usd ?? 0,
-        durationMs: pt.duration_ms ?? 0,
-        startedAt: pt.created_at,
-        completedAt: pt.completed_at ?? undefined,
+        phaseTraceId: pt.phaseTraceId,
+        specDir: pt.specDir || undefined,
+        costUsd: pt.costUsd ?? 0,
+        durationMs: pt.durationMs ?? 0,
+        startedAt: pt.startedAt,
+        completedAt: pt.endedAt ?? undefined,
       };
-      if (pt.phase_number === 0) {
+      if (pt.phaseNumber === 0) {
         preCycle.push(stage);
       } else {
-        const existing = cycleStageMap.get(pt.phase_number) ?? [];
+        const existing = cycleStageMap.get(pt.phaseNumber) ?? [];
         existing.push(stage);
-        cycleStageMap.set(pt.phase_number, existing);
+        cycleStageMap.set(pt.phaseNumber, existing);
       }
     }
 
     setPreCycleStages(preCycle);
 
-    // Group implement sub-phases by spec_dir
+    // Group implement sub-phases by specDir
     const implBySpecDir = new Map<string, ImplementSubPhase[]>();
     for (const pt of implTraces) {
-      const sd = pt.spec_dir || "";
+      const sd = pt.specDir || "";
       if (!sd) continue;
       const existing = implBySpecDir.get(sd) ?? [];
       existing.push({
-        phaseNumber: pt.phase_number,
-        phaseName: pt.phase_name,
-        phaseTraceId: pt.id,
+        phaseNumber: pt.phaseNumber,
+        phaseName: pt.phaseName,
+        phaseTraceId: pt.phaseTraceId,
         status: pt.status === "completed" ? "completed" as const
           : pt.status === "stopped" ? "stopped" as const
           : "completed" as const, // crashed impl phases are effectively done for display
-        costUsd: pt.cost_usd ?? 0,
-        durationMs: pt.duration_ms ?? 0,
+        costUsd: pt.costUsd ?? 0,
+        durationMs: pt.durationMs ?? 0,
       });
       implBySpecDir.set(sd, existing);
     }
 
-    // Build cycle entries — prefer loop_cycles table for decision/feature_name, fall back to phase_traces
-    const cycleRowMap = new Map(cycleRows.map((c) => [c.cycle_number, c]));
+    // Build cycle entries — derive cycle status from grouped phases
+    // (007-sqlite-removal: loop_cycles table eliminated; data is derivable).
     const cycles: UiLoopCycle[] = [];
-
     const sortedEntries = Array.from(cycleStageMap.entries()).sort((a, b) => a[0] - b[0]);
     const maxCycleNumber = sortedEntries.length > 0 ? sortedEntries[sortedEntries.length - 1][0] : 0;
 
     for (const [cycleNumber, stages] of sortedEntries) {
-      const cycleRow = cycleRowMap.get(cycleNumber);
-      const specDir = cycleRow?.spec_dir ?? stages.find((s) => s.specDir)?.specDir ?? null;
+      const specDir = stages.find((s) => s.specDir)?.specDir ?? null;
       const implPhases = specDir ? (implBySpecDir.get(specDir) ?? []) : [];
       const allStagesCompleted = stages.every((s) => s.status === "completed");
-      // A cycle is only truly complete if the loop_cycles row says so —
-      // stages alone can't tell us (there's no loop:implement stage, and verify/learnings may not exist)
-      const cycleExplicitlyCompleted = cycleRow?.status === "completed";
-      const cycleExplicitlyFailed = cycleRow?.status === "failed";
-      // For stopped/crashed runs, the last cycle was interrupted — don't trust its "completed" status
       const isLastCycleOfCrashedRun = isCrashed && cycleNumber === maxCycleNumber;
-      // Defensive: if any stage in this cycle is still "running" or "failed", the cycle
-      // cannot be honestly "completed" — orchestrator may have inconsistent state.
       const anyStageRunning = stages.some((s) => s.status === "running");
       const anyStageFailed = stages.some((s) => s.status === "failed");
 
-      const cycleStatus = cycleRow?.status === "skipped" ? "skipped" as const
-        : isLastCycleOfCrashedRun ? "running" as const // paused mid-cycle
-        : cycleExplicitlyFailed ? "failed" as const
-        : anyStageRunning ? "running" as const // override "completed" if a stage is still live
-        : cycleExplicitlyCompleted && anyStageFailed ? "failed" as const
-        : cycleExplicitlyCompleted ? "completed" as const
-        : isCrashed ? "running" as const // paused mid-cycle
+      const cycleStatus = isLastCycleOfCrashedRun ? "running" as const
+        : anyStageRunning ? "running" as const
+        : isCrashed ? "running" as const
         : allStagesCompleted && implPhases.length === 0 ? "completed" as const
         : anyStageFailed ? "failed" as const
-        : "running" as const;
+        : "completed" as const;
 
       cycles.push({
         cycleNumber,
-        featureName: cycleRow?.feature_name ?? specDir,
+        featureName: specDir,
         specDir,
-        decision: cycleRow?.decision ?? null,
+        decision: null,
         status: cycleStatus,
-        costUsd: cycleRow?.cost_usd ?? stages.reduce((sum, s) => sum + s.costUsd, 0),
+        costUsd: stages.reduce((sum, s) => sum + s.costUsd, 0)
+          + implPhases.reduce((sum, p) => sum + p.costUsd, 0),
         stages,
         implementPhases: implPhases,
         startedAt: stages[0]?.startedAt ?? new Date().toISOString(),
@@ -750,19 +738,15 @@ export function useOrchestrator(): OrchestratorHook {
 
     // Only set termination for genuinely completed runs — crashed = paused, not terminated
     if (run.status === "completed") {
-      const completedFeatures = cycleRows
-        .filter((c) => c.status === "completed" && c.decision !== "skipped")
-        .map((c) => c.feature_name ?? c.spec_dir ?? `Cycle ${c.cycle_number}`);
-      const skippedFeatures = cycleRows
-        .filter((c) => c.status === "skipped" || c.decision === "skipped")
-        .map((c) => c.feature_name ?? c.spec_dir ?? `Cycle ${c.cycle_number}`);
-
+      const completedFeatures = cycles
+        .filter((c) => c.status === "completed")
+        .map((c) => c.featureName ?? c.specDir ?? `Cycle ${c.cycleNumber}`);
       setLoopTermination({
         reason: "gaps_complete",
         cyclesCompleted: cycles.filter((c) => c.status === "completed").length,
         featuresCompleted: completedFeatures,
-        featuresSkipped: skippedFeatures,
-        totalCostUsd: run.total_cost_usd ?? 0,
+        featuresSkipped: [],
+        totalCostUsd: run.totalCostUsd ?? 0,
       });
     }
 
@@ -779,72 +763,72 @@ export function useOrchestrator(): OrchestratorHook {
       if (!trace) return false;
 
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(trace.id),
-        window.dexAPI.getPhaseSubagents(trace.id),
+        window.dexAPI.getPhaseSteps(projectDir, trace.runId, trace.phaseTraceId),
+        window.dexAPI.getPhaseSubagents(projectDir, trace.runId, trace.phaseTraceId),
       ]);
 
       const steps: AgentStep[] = stepRows.map((row) => ({
         id: row.id,
-        sequenceIndex: row.sequence_index,
-        type: row.type as AgentStep["type"],
+        sequenceIndex: row.sequenceIndex,
+        type: row.type,
         content: row.content,
-        metadata: row.metadata ? JSON.parse(row.metadata) : null,
-        durationMs: row.duration_ms,
-        tokenCount: row.token_count,
-        createdAt: row.created_at,
+        metadata: row.metadata,
+        durationMs: row.durationMs,
+        tokenCount: row.tokenCount,
+        createdAt: row.createdAt,
       }));
 
       const subs: SubagentInfo[] = subagentRows.map((row) => ({
         id: row.id,
-        subagentId: row.subagent_id,
-        subagentType: row.subagent_type,
+        subagentId: row.id,
+        subagentType: row.type,
         description: row.description,
-        startedAt: row.started_at,
-        completedAt: row.completed_at,
+        startedAt: row.startedAt,
+        completedAt: row.endedAt,
       }));
 
       setLiveSteps(steps);
       setSubagents(subs);
       setCurrentPhase(phase);
-      setCurrentPhaseTraceId(trace.id);
-      setCurrentRunId(trace.run_id);
+      setCurrentPhaseTraceId(trace.phaseTraceId);
+      setCurrentRunId(trace.runId);
       setActiveSpecDir(specDir);
       setViewingHistorical(true);
       viewingHistoricalRef.current = true;
-      setTotalCost(trace.cost_usd ?? 0);
-      setTotalDuration(trace.duration_ms ?? 0);
+      setTotalCost(trace.costUsd ?? 0);
+      setTotalDuration(trace.durationMs ?? 0);
       return true;
     },
     []
   );
 
   const loadStageTrace = useCallback(
-    async (phaseTraceId: string, stageType: LoopStageType, meta?: { costUsd?: number; durationMs?: number }) => {
+    async (projectDir: string, runId: string, phaseTraceId: string, stageType: LoopStageType, meta?: { costUsd?: number; durationMs?: number }) => {
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(phaseTraceId),
-        window.dexAPI.getPhaseSubagents(phaseTraceId),
+        window.dexAPI.getPhaseSteps(projectDir, runId, phaseTraceId),
+        window.dexAPI.getPhaseSubagents(projectDir, runId, phaseTraceId),
       ]);
 
       setLiveSteps(
         stepRows.map((row) => ({
           id: row.id,
-          sequenceIndex: row.sequence_index,
-          type: row.type as AgentStep["type"],
+          sequenceIndex: row.sequenceIndex,
+          type: row.type,
           content: row.content,
-          metadata: row.metadata ? JSON.parse(row.metadata) : null,
-          durationMs: row.duration_ms,
-          tokenCount: row.token_count,
-          createdAt: row.created_at,
+          metadata: row.metadata,
+          durationMs: row.durationMs,
+          tokenCount: row.tokenCount,
+          createdAt: row.createdAt,
         }))
       );
       setSubagents(
         subagentRows.map((row) => ({
           id: row.id,
-          subagentId: row.subagent_id,
-          subagentType: row.subagent_type,
+          subagentId: row.id,
+          subagentType: row.type,
           description: row.description,
-          startedAt: row.started_at,
-          completedAt: row.completed_at,
+          startedAt: row.startedAt,
+          completedAt: row.endedAt,
         }))
       );
       setCurrentPhase({
@@ -865,41 +849,41 @@ export function useOrchestrator(): OrchestratorHook {
     []
   );
 
-  const switchToLive = useCallback(async () => {
+  const switchToLive = useCallback(async (projectDir: string, runId: string) => {
     // Use the ref to get the actual live phaseTraceId — it's never overwritten
     // by loadStageTrace/loadPhaseTrace, so it always points to the running phase.
     const liveId = livePhaseTraceIdRef.current;
 
-    // Reload steps already accumulated for the current phase from DB
+    // Reload steps already accumulated for the current phase from disk
     // so the user sees the full history, not just new events.
     // Keep viewingHistoricalRef true during load to prevent duplicate
     // steps from incoming events; flip it after setLiveSteps.
     if (liveId) {
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(liveId),
-        window.dexAPI.getPhaseSubagents(liveId),
+        window.dexAPI.getPhaseSteps(projectDir, runId, liveId),
+        window.dexAPI.getPhaseSubagents(projectDir, runId, liveId),
       ]);
 
       setLiveSteps(
         stepRows.map((row) => ({
           id: row.id,
-          sequenceIndex: row.sequence_index,
-          type: row.type as AgentStep["type"],
+          sequenceIndex: row.sequenceIndex,
+          type: row.type,
           content: row.content,
-          metadata: row.metadata ? JSON.parse(row.metadata) : null,
-          durationMs: row.duration_ms,
-          tokenCount: row.token_count,
-          createdAt: row.created_at,
+          metadata: row.metadata,
+          durationMs: row.durationMs,
+          tokenCount: row.tokenCount,
+          createdAt: row.createdAt,
         }))
       );
       setSubagents(
         subagentRows.map((row) => ({
           id: row.id,
-          subagentId: row.subagent_id,
-          subagentType: row.subagent_type,
+          subagentId: row.id,
+          subagentType: row.type,
           description: row.description,
-          startedAt: row.started_at,
-          completedAt: row.completed_at,
+          startedAt: row.startedAt,
+          completedAt: row.endedAt,
         }))
       );
       setCurrentPhaseTraceId(liveId);

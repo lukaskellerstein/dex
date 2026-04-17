@@ -177,7 +177,7 @@ Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 **How to get a `runId` / `phaseTraceId` in the first place:**
 
 - From the running app — click the **DEBUG badge** (4f.6); both IDs are in the payload.
-- From the SQLite DB — `SELECT id FROM runs ORDER BY created_at DESC LIMIT 1;` for the latest run, then `SELECT id, phase_number FROM phase_traces WHERE run_id = '<runId>';` for its phases.
+- From the on-disk audit JSON (4f.4) — `ls -t <projectDir>/.dex/runs/*.json | head -1` for the latest run; `jq '.phases[].phaseTraceId' <projectDir>/.dex/runs/<runId>.json` for its phases.
 - From the orchestrator event stream — every event carries `runId` / `phaseTraceId`.
 
 **`~/.dex/logs/_orchestrator.log`** — fallback log written when the orchestrator is in a pre-run state and no run directory exists yet. Rarely interesting; consult only if startup dies before a run directory is created. The underscore prefix keeps it sorted above the per-project run directories inside `~/.dex/logs/`.
@@ -192,43 +192,52 @@ Each project gets its own state directory. For the example project that's `/home
 | `.dex/state.lock` | PID file guarding against concurrent orchestrator processes on the same project. Gitignored. |
 | `.dex/feature-manifest.json` | Feature manifest produced by the structured-outputs flow |
 | `.dex/learnings.md` | Accumulated per-project insights from the loop's learnings phase |
+| `.dex/runs/<runId>.json` | One file per Dex run — full audit summary (phases, subagents, costs). See § 4f.4. Default-not-gitignored; opt in to ignoring per-project. |
 
 `cat` / `jq` the JSON files to answer "what cycle is the loop on?", "what branch did the orchestrator cut?", "which feature is in progress?". Everything in this directory except `state.lock` is committable.
 
-### 4f.4 Audit trail — `~/.dex/db/data.db`
+### 4f.4 Audit trail — per-project JSON files
 
-Global SQLite database (persisted across `dev-setup.sh` restarts and across projects). Every run, phase, step, and subagent is recorded here. Opened by the main process via `better-sqlite3` with WAL mode enabled.
+Retired SQLite in 007-sqlite-removal. Audit data now lives **per project** at `<projectDir>/.dex/runs/<runId>.json` — one file per run. Tool-call-level detail is in `~/.dex/logs/<project>/<runId>/phase-<N>_*/steps.jsonl` (one JSON object per line).
 
-Key tables:
+Schema (see `specs/007-sqlite-removal/contracts/json-schemas.md` for the authoritative shape):
 
-| Table | Row = | Use to answer |
-|---|---|---|
-| `runs` | One Dex run | "What was the last run's totalCost / duration / status?" |
-| `phase_traces` | One phase within a run | "Which phase took longest?", "What was the result of phase N?" |
-| `trace_steps` | One tool call / agent step inside a phase | "What tools did the agent call during phase X?" |
-| `subagents` | One spawned subagent | "Did a subagent fail?", "How many subagents ran?" |
-| `loop_cycles` | One loop cycle (specify → plan → tasks → implement) | "How many cycles completed?", "What did cycle 3 cost?" |
+| File | Contains |
+|---|---|
+| `<projectDir>/.dex/runs/<runId>.json` | One full `RunRecord` — mode, status, total cost, duration, all phases (each with subagents, costs, timings, status). |
+| `~/.dex/logs/<project>/<runId>/phase-<N>_*/steps.jsonl` | Append-only stream of `StepRecord`s for that phase — one JSON object per line. |
 
-**From the agent** — prefer the IPC helpers over raw SQL; they return typed rows:
+**From the agent** — prefer the IPC helpers; they return typed records:
 
-- `window.dexAPI.listRuns(10)` — recent runs
-- `window.dexAPI.getRun(runId)` — run + phase traces
-- `window.dexAPI.getPhaseSteps(phaseTraceId)` — all steps of one phase
-- `window.dexAPI.getPhaseSubagents(phaseTraceId)` — subagents of one phase
+- `window.dexAPI.listRuns(projectDir, 10)` — recent runs for one project
+- `window.dexAPI.getRun(projectDir, runId)` — full `RunRecord` (phases inline)
+- `window.dexAPI.getPhaseSteps(projectDir, runId, phaseTraceId)` — steps for one phase (parsed from `steps.jsonl`)
+- `window.dexAPI.getPhaseSubagents(projectDir, runId, phaseTraceId)` — subagents of one phase
 
 Invoke via `mcp__electron-chrome__evaluate_script`:
 
 ```js
-async () => await window.dexAPI.listRuns(5)
+async () => await window.dexAPI.listRuns("/abs/path/to/project", 5)
 ```
 
-**Raw SQL fallback** (when the app isn't running or you need joins):
+**Plain-shell fallback** (when the app isn't running):
 
 ```bash
-sqlite3 ~/.dex/db/data.db "SELECT id, spec_dir, status, total_cost_usd FROM runs ORDER BY created_at DESC LIMIT 5;"
+# Latest run
+ls -t <projectDir>/.dex/runs/*.json | head -1 | xargs cat | jq
+
+# Just the cost / status / phase count
+cat <projectDir>/.dex/runs/<runId>.json | jq '{mode, status, totalCostUsd, phases: .phases | length}'
+
+# Steps for one phase
+jq -c '.' ~/.dex/logs/<project>/<runId>/phase-<N>_*/steps.jsonl | head
 ```
 
-The SQLite DB and the per-run log tree in 4f.2 share the same IDs — `runId`, `phaseTraceId`, `subagentId`. Use the DB to *find* an ID, then open the corresponding log file for the full event stream.
+Cycle-level summaries (`loop_cycles` in the old SQL world) are derivable from `phases[]` grouped by `cycleNumber` — the renderer computes them via `runs.cycleSummary(run)`.
+
+The JSON files and the per-run log tree in 4f.2 share the same IDs — `runId`, `phaseTraceId`, `subagent.id`. Use the JSON to *find* an ID, then open the corresponding log file for the full event stream.
+
+**Legacy `~/.dex/db/`** — removed on first launch post-007. If still present, that means the app hasn't run since the upgrade; it is safe to `rm -rf` manually.
 
 ### 4f.5 Renderer DevTools console
 

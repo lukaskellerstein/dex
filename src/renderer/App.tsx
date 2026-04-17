@@ -155,22 +155,24 @@ export default function App() {
 
   const handleStageClick = useCallback(
     async (stage: import("./hooks/useOrchestrator.js").UiLoopStage) => {
+      if (!project.projectDir || !orchestrator.currentRunId) return;
       if (stage.status === "running") {
-        await orchestrator.switchToLive();
+        await orchestrator.switchToLive(project.projectDir, orchestrator.currentRunId);
       } else {
-        await orchestrator.loadStageTrace(stage.phaseTraceId, stage.type, { costUsd: stage.costUsd, durationMs: stage.durationMs });
+        await orchestrator.loadStageTrace(project.projectDir, orchestrator.currentRunId, stage.phaseTraceId, stage.type, { costUsd: stage.costUsd, durationMs: stage.durationMs });
       }
       setCurrentView("trace");
     },
-    [orchestrator.switchToLive, orchestrator.loadStageTrace]
+    [project.projectDir, orchestrator.currentRunId, orchestrator.switchToLive, orchestrator.loadStageTrace]
   );
 
   const handleImplPhaseClick = useCallback(
     async (phaseTraceId: string) => {
-      await orchestrator.loadStageTrace(phaseTraceId, "implement");
+      if (!project.projectDir || !orchestrator.currentRunId) return;
+      await orchestrator.loadStageTrace(project.projectDir, orchestrator.currentRunId, phaseTraceId, "implement");
       setCurrentView("trace");
     },
-    [orchestrator.loadStageTrace]
+    [project.projectDir, orchestrator.currentRunId, orchestrator.loadStageTrace]
   );
 
   // Auto-refresh phases when a phase completes or tasks change mid-phase
@@ -330,7 +332,9 @@ export default function App() {
     async (phase: Phase) => {
       // If this is the actively running phase, switch back to live stream
       if (orchestrator.isRunning && orchestrator.currentPhase?.number === phase.number) {
-        orchestrator.switchToLive();
+        if (project.projectDir && orchestrator.currentRunId) {
+          orchestrator.switchToLive(project.projectDir, orchestrator.currentRunId);
+        }
         setCurrentView("trace");
         return;
       }
@@ -344,7 +348,7 @@ export default function App() {
         setCurrentView("trace");
       }
     },
-    [project.projectDir, project.selectedSpec, orchestrator.loadPhaseTrace, orchestrator.switchToLive, orchestrator.isRunning, orchestrator.currentPhase]
+    [project.projectDir, project.selectedSpec, orchestrator.loadPhaseTrace, orchestrator.switchToLive, orchestrator.isRunning, orchestrator.currentPhase, orchestrator.currentRunId]
   );
 
   const debugContext = useMemo<DebugContext>(() => ({

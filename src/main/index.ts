@@ -1,9 +1,20 @@
 import { app, BrowserWindow, ipcMain, globalShortcut } from "electron";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { registerProjectHandlers } from "./ipc/project.js";
 import { registerOrchestratorHandlers } from "./ipc/orchestrator.js";
 import { registerHistoryHandlers } from "./ipc/history.js";
-import { initDatabase, closeDatabase } from "../core/database.js";
+
+// One-shot cleanup of the legacy SQLite directory retired in 007-sqlite-removal.
+// Audit trail now lives per-project in <projectDir>/.dex/runs/.
+function cleanupLegacyDb(): void {
+  const legacyDb = path.join(os.homedir(), ".dex", "db");
+  if (fs.existsSync(legacyDb)) {
+    fs.rmSync(legacyDb, { recursive: true, force: true });
+    console.info("[dex] removed legacy SQLite directory:", legacyDb);
+  }
+}
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -60,8 +71,7 @@ function createWindow(): void {
     mainWindow?.webContents.send("window-maximized-changed", false);
   });
 
-  // Init database and register IPC handlers
-  initDatabase();
+  // Register IPC handlers (audit storage now lives per-project; no global init)
   registerProjectHandlers();
   registerOrchestratorHandlers(() => mainWindow);
   registerHistoryHandlers();
@@ -76,10 +86,12 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  cleanupLegacyDb();
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
-  closeDatabase();
   app.quit();
 });
 

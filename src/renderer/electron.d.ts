@@ -1,13 +1,12 @@
 import type { OrchestratorEvent, Phase, RunConfig, LoopStageType, LoopTermination, UserInputQuestion, DriftSummary } from "../core/types.js";
 import type { DexState } from "../core/state.js";
 import type {
-  RunRow,
-  PhaseTraceRow,
-  TraceStepRow,
-  SubagentRow,
-  LoopCycleRow,
+  RunRecord,
+  PhaseRecord,
+  StepRecord,
+  SubagentRecord,
   SpecStats,
-} from "../core/database.js";
+} from "../core/runs.js";
 
 interface DexAPI {
   // Project
@@ -45,14 +44,14 @@ interface DexAPI {
   // Orchestrator events
   onOrchestratorEvent(cb: (event: OrchestratorEvent) => void): () => void;
 
-  // History
-  listRuns(limit?: number): Promise<RunRow[]>;
-  getRun(runId: string): Promise<{ run: RunRow; phases: PhaseTraceRow[] } | null>;
-  getLatestProjectRun(projectDir: string): Promise<{ run: RunRow; phases: PhaseTraceRow[]; loopCycles: LoopCycleRow[] } | null>;
-  getPhaseSteps(phaseTraceId: string): Promise<TraceStepRow[]>;
-  getPhaseSubagents(phaseTraceId: string): Promise<SubagentRow[]>;
-  getLatestPhaseTrace(projectDir: string, specDir: string, phaseNumber: number): Promise<PhaseTraceRow | null>;
-  getSpecPhaseStats(projectDir: string, specDir: string): Promise<PhaseTraceRow[]>;
+  // History — per-project JSON storage (007-sqlite-removal)
+  listRuns(projectDir: string, limit?: number): Promise<RunRecord[]>;
+  getRun(projectDir: string, runId: string): Promise<RunRecord | null>;
+  getLatestProjectRun(projectDir: string): Promise<RunRecord | null>;
+  getPhaseSteps(projectDir: string, runId: string, phaseTraceId: string): Promise<StepRecord[]>;
+  getPhaseSubagents(projectDir: string, runId: string, phaseTraceId: string): Promise<SubagentRecord[]>;
+  getLatestPhaseTrace(projectDir: string, specDir: string, phaseNumber: number): Promise<PhaseRecord | null>;
+  getSpecPhaseStats(projectDir: string, specDir: string): Promise<PhaseRecord[]>;
   getSpecAggregateStats(projectDir: string, specDir: string): Promise<SpecStats>;
 
   // Window controls

@@ -12,23 +12,7 @@ import type {
   Task,
 } from "./types.js";
 import { parseTasksFile, derivePhaseStatus, extractTaskIds, discoverNewSpecDir } from "./parser.js";
-import {
-  initDatabase,
-  createRun,
-  completeRun,
-  createPhaseTrace,
-  completePhaseTrace,
-  insertStep,
-  insertSubagent,
-  completeSubagent,
-  insertLoopCycle,
-  updateLoopCycle,
-  upsertFailureRecord,
-  getFailureRecord,
-  updateRunLoopsCompleted,
-  getRun,
-  getLoopCycles,
-} from "./database.js";
+import * as runs from "./runs.js";
 import {
   getCurrentBranch,
   createBranch,
@@ -518,6 +502,7 @@ async function runPhase(
   config: RunConfig,
   phase: Phase,
   phaseTraceId: string,
+  runId: string,
   emit: EmitFn,
   rlog: RunLogger,
   runTaskState: RunTaskState
@@ -539,11 +524,12 @@ async function runPhase(
   rlog.phase("INFO", `runPhase: spawning agent for Phase ${phase.number}: ${phase.name}`);
   rlog.phase("DEBUG", "runPhase: prompt", { length: prompt.length, prompt });
 
-  // Dual-write helper: emit to UI via IPC + persist to SQLite
+  // Dual-write helper: emit to UI via IPC + append to per-phase steps.jsonl.
   // Attaches running cost/token totals so the renderer can display live stats.
   // Tags steps with the active subagent ID when exactly one subagent is active.
   // When multiple subagents run in parallel, we can't determine which one owns
   // a step, so we leave the tag empty.
+  const phaseSlug = runs.slugForPhaseName(phase.name);
   const emitAndStore = (step: AgentStep) => {
     const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
     const enriched: AgentStep = {
@@ -558,7 +544,7 @@ async function runPhase(
     };
     rlog.phase("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
     emit({ type: "agent_step", step: enriched });
-    insertStep({ ...enriched, phaseTraceId });
+    runs.appendStep(config.projectDir, runId, phaseSlug, phase.number, { ...enriched, phaseTraceId });
   };
 
   // Emit the initial prompt as a user_message step
@@ -684,7 +670,16 @@ async function runPhase(
                   rawInput: input,
                 });
                 emit({ type: "subagent_started", info });
-                insertSubagent({ ...info, phaseTraceId });
+                runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
+                  id: info.subagentId,
+                  type: info.subagentType,
+                  description: info.description,
+                  status: "running",
+                  startedAt: info.startedAt,
+                  endedAt: null,
+                  durationMs: null,
+                  costUsd: 0,
+                });
                 emitAndStore(
                   makeStep("subagent_spawn", stepIndex++, null, {
                     subagentId: info.subagentId,
@@ -718,7 +713,7 @@ async function runPhase(
                 }
 
                 emit({ type: "subagent_completed", subagentId });
-                completeSubagent(subagentId);
+                runs.completeSubagent(config.projectDir, runId, subagentId);
                 emitAndStore(
                   makeStep("subagent_result", stepIndex++, null, {
                     subagentId,
@@ -913,14 +908,19 @@ async function runStage(
   const knownSubagentIds = new Set<string>();
   const activeSubagentSet = new Set<string>();
 
-  // Create a phase trace for this stage so steps are persisted
+  // Create a phase record for this stage so steps are persisted
   const phaseTraceId = crypto.randomUUID();
-  createPhaseTrace({
-    id: phaseTraceId,
+  runs.startPhase(config.projectDir, runId, {
+    phaseTraceId,
     runId,
-    specDir: specDir ?? "",
+    specDir: specDir ?? null,
     phaseNumber: cycleNumber,
     phaseName: `loop:${stageType}`,
+    stage: stageType,
+    cycleNumber,
+    featureSlug: specDir ? path.basename(specDir) : null,
+    startedAt: new Date().toISOString(),
+    status: "running",
   });
 
   rlog.startPhase(cycleNumber, stageType, phaseTraceId);
@@ -932,6 +932,7 @@ async function runStage(
     currentRunState.phaseTraceId = phaseTraceId;
   }
 
+  const stagePhaseSlug = runs.slugForPhaseName(`loop:${stageType}`);
   const emitAndStore = (step: AgentStep) => {
     const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
     const enriched: AgentStep = {
@@ -945,7 +946,7 @@ async function runStage(
       },
     };
     emit({ type: "agent_step", step: enriched });
-    insertStep({ ...enriched, phaseTraceId });
+    runs.appendStep(config.projectDir, runId, stagePhaseSlug, cycleNumber, { ...enriched, phaseTraceId });
   };
 
   emitAndStore(makeStep("user_message", stepIndex++, prompt));
@@ -1095,7 +1096,16 @@ async function runStage(
                 const info = toSubagentInfo(input);
                 knownSubagentIds.add(info.subagentId);
                 emit({ type: "subagent_started", info });
-                insertSubagent({ ...info, phaseTraceId });
+                runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
+                  id: info.subagentId,
+                  type: info.subagentType,
+                  description: info.description,
+                  status: "running",
+                  startedAt: info.startedAt,
+                  endedAt: null,
+                  durationMs: null,
+                  costUsd: 0,
+                });
                 emitAndStore(
                   makeStep("subagent_spawn", stepIndex++, null, {
                     subagentId: info.subagentId,
@@ -1118,7 +1128,7 @@ async function runStage(
                 activeSubagentSet.delete(subagentId);
                 if (!knownSubagentIds.has(subagentId)) return {};
                 emit({ type: "subagent_completed", subagentId });
-                completeSubagent(subagentId);
+                runs.completeSubagent(config.projectDir, runId, subagentId);
                 emitAndStore(
                   makeStep("subagent_result", stepIndex++, null, { subagentId })
                 );
@@ -1197,7 +1207,13 @@ async function runStage(
   }
 
   const stageStatus = isAborted() ? "stopped" : "completed";
-  completePhaseTrace(phaseTraceId, stageStatus, totalCost, durationMs, totalInputTokens || undefined, totalOutputTokens || undefined);
+  runs.completePhase(config.projectDir, runId, phaseTraceId, {
+    status: stageStatus,
+    costUsd: totalCost,
+    durationMs,
+    inputTokens: totalInputTokens || null,
+    outputTokens: totalOutputTokens || null,
+  });
 
   emit({
     type: "stage_completed",
@@ -1284,12 +1300,17 @@ async function runBuild(
       if (!phase) break;
 
       const phaseTraceId = crypto.randomUUID();
-      createPhaseTrace({
-        id: phaseTraceId,
+      runs.startPhase(config.projectDir, runId, {
+        phaseTraceId,
         runId,
         specDir,
         phaseNumber: phase.number,
         phaseName: phase.name,
+        stage: null,
+        cycleNumber: null,
+        featureSlug: path.basename(specDir),
+        startedAt: new Date().toISOString(),
+        status: "running",
       });
 
       rlog.startPhase(phase.number, phase.name, phaseTraceId);
@@ -1302,16 +1323,15 @@ async function runBuild(
       emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
 
       try {
-        const result = await runPhase(specConfig, phase, phaseTraceId, emit, rlog, runTaskState);
+        const result = await runPhase(specConfig, phase, phaseTraceId, runId, emit, rlog, runTaskState);
 
-        completePhaseTrace(
-          phaseTraceId,
-          "completed",
-          result.cost,
-          result.durationMs,
-          result.inputTokens || undefined,
-          result.outputTokens || undefined
-        );
+        runs.completePhase(config.projectDir, runId, phaseTraceId, {
+          status: "completed",
+          costUsd: result.cost,
+          durationMs: result.durationMs,
+          inputTokens: result.inputTokens || null,
+          outputTokens: result.outputTokens || null,
+        });
 
         phasesCompleted++;
         totalCost += result.cost;
@@ -1332,7 +1352,11 @@ async function runBuild(
         const stack = err instanceof Error ? err.stack : undefined;
         rlog.phase("ERROR", `Phase ${phase.number} failed: ${message}`, { stack });
         rlog.run("ERROR", `Phase ${phase.number} failed: ${message}`);
-        completePhaseTrace(phaseTraceId, "failed", 0, Date.now() - runStart);
+        runs.completePhase(config.projectDir, runId, phaseTraceId, {
+          status: "failed",
+          costUsd: 0,
+          durationMs: Date.now() - runStart,
+        });
         emit({
           type: "error",
           message: `Phase ${phase.number} failed: ${message}`,
@@ -1359,7 +1383,13 @@ async function runBuild(
 // ── Main Entry Point ──
 
 export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
-  initDatabase();
+  // Reconcile any prior runs left in "running" state by a previous crash.
+  // Mirrors the legacy SQLite cleanupOrphanedRuns behavior.
+  try {
+    runs.reconcileCrashedRuns(config.projectDir);
+  } catch (e) {
+    log("WARN", "reconcileCrashedRuns failed", { error: (e as Error).message });
+  }
   abortController = new AbortController();
 
   // For loop mode, defer branch creation to after prerequisites (which may init git).
@@ -1388,14 +1418,20 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
   const rlog = new RunLogger(projectName, runId);
   rlog.run("INFO", `run: ${config.resume ? "resuming" : "starting"} orchestrator`, { mode: config.mode, model: config.model, specDir: config.specDir, branch: branchName || "(deferred)", baseBranch: baseBranch || "(deferred)", runId });
 
-  // Only create a new DB row for fresh starts. On resume, the row already exists.
+  // Only create a new run record for fresh starts. On resume, the file already exists.
   if (!config.resume) {
-    createRun({
-      id: runId,
-      projectDir: config.projectDir,
-      specDir: config.specDir,
+    runs.startRun(config.projectDir, {
+      runId,
       mode: config.mode,
       model: config.model,
+      specDir: config.specDir,
+      startedAt: new Date().toISOString(),
+      status: "running",
+      writerPid: process.pid,
+      description: null,
+      fullPlanPath: null,
+      maxLoopCycles: config.maxLoopCycles ?? null,
+      maxBudgetUsd: config.maxBudgetUsd ?? null,
     });
   }
 
@@ -1457,7 +1493,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
     const totalDuration = Date.now() - runStart;
     const finalStatus = wasStopped ? "stopped" : "completed";
-    completeRun(runId, finalStatus, totalCost, totalDuration, phasesCompleted);
+    runs.completeRun(config.projectDir, runId, finalStatus, totalCost, totalDuration, phasesCompleted);
 
     // Update state file: paused if stopped, clear if completed
     if (activeProjectDir) {
@@ -1534,14 +1570,19 @@ async function runPrerequisites(
   rlog.run("INFO", "runPrerequisites: starting prerequisites checks");
   emit({ type: "prerequisites_started", runId });
 
-  // Create a phase trace so the stage appears in preCycleStages
+  // Create a phase record so the stage appears in preCycleStages
   const phaseTraceId = crypto.randomUUID();
-  createPhaseTrace({
-    id: phaseTraceId,
+  runs.startPhase(config.projectDir, runId, {
+    phaseTraceId,
     runId,
-    specDir: "",
+    specDir: null,
     phaseNumber: 0,
     phaseName: "loop:prerequisites",
+    stage: "prerequisites",
+    cycleNumber: 0,
+    featureSlug: null,
+    startedAt: new Date().toISOString(),
+    status: "running",
   });
 
   emit({
@@ -1824,7 +1865,13 @@ async function runPrerequisites(
 
   const allPassed = failedChecks.length === 0;
   const durationMs = Date.now() - startTime;
-  completePhaseTrace(phaseTraceId, allPassed ? "completed" : "completed", 0, durationMs, 0, 0);
+  runs.completePhase(config.projectDir, runId, phaseTraceId, {
+    status: "completed",
+    costUsd: 0,
+    durationMs,
+    inputTokens: 0,
+    outputTokens: 0,
+  });
 
   emit({
     type: "stage_completed",
@@ -1886,7 +1933,7 @@ async function runLoop(
 
   const persistFailure = (specDir: string) => {
     const record = getOrCreateFailureRecord(specDir);
-    upsertFailureRecord(runId, specDir, record.implFailures, record.replanFailures);
+    runs.upsertFailureCount(config.projectDir, runId, specDir, record.implFailures, record.replanFailures);
     // Also persist to state file
     updateState(config.projectDir, {
       failureCounts: { [specDir]: { implFailures: record.implFailures, replanFailures: record.replanFailures } },
@@ -1997,9 +2044,20 @@ async function runLoop(
   // Helper to emit a synthetic completed stage event (for skipped stages)
   const emitSkippedStage = (stage: import("./types.js").LoopStageType, cycleNum = 0) => {
     const traceId = crypto.randomUUID();
-    createPhaseTrace({ id: traceId, runId, specDir: "", phaseNumber: cycleNum, phaseName: `loop:${stage}` });
+    runs.startPhase(config.projectDir, runId, {
+      phaseTraceId: traceId,
+      runId,
+      specDir: null,
+      phaseNumber: cycleNum,
+      phaseName: `loop:${stage}`,
+      stage,
+      cycleNumber: cycleNum,
+      featureSlug: null,
+      startedAt: new Date().toISOString(),
+      status: "running",
+    });
     emit({ type: "stage_started", runId, cycleNumber: cycleNum, stage, phaseTraceId: traceId });
-    completePhaseTrace(traceId, "completed", 0, 0);
+    runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
     emit({ type: "stage_completed", runId, cycleNumber: cycleNum, stage, phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
   };
 
@@ -2211,9 +2269,20 @@ async function runLoop(
         rlog.run("INFO", `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`);
       }
       const traceId = crypto.randomUUID();
-      createPhaseTrace({ id: traceId, runId, specDir: resumeSpecDir, phaseNumber: cycleNumber, phaseName: "loop:gap_analysis" });
+      runs.startPhase(config.projectDir, runId, {
+        phaseTraceId: traceId,
+        runId,
+        specDir: resumeSpecDir,
+        phaseNumber: cycleNumber,
+        phaseName: "loop:gap_analysis",
+        stage: "gap_analysis",
+        cycleNumber,
+        featureSlug: path.basename(resumeSpecDir),
+        startedAt: new Date().toISOString(),
+        status: "running",
+      });
       emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId });
-      completePhaseTrace(traceId, "completed", 0, 0);
+      runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
       emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
       resumeSpecDir = null;
     } else {
@@ -2233,9 +2302,20 @@ async function runLoop(
         // Emit a synthetic (deterministic, cost=0) gap_analysis stage so the UI shows it completed
         const emitSyntheticGapAnalysis = (specDir: string) => {
           const traceId = crypto.randomUUID();
-          createPhaseTrace({ id: traceId, runId, specDir, phaseNumber: cycleNumber, phaseName: "loop:gap_analysis" });
+          runs.startPhase(config.projectDir, runId, {
+            phaseTraceId: traceId,
+            runId,
+            specDir: specDir || null,
+            phaseNumber: cycleNumber,
+            phaseName: "loop:gap_analysis",
+            stage: "gap_analysis",
+            cycleNumber,
+            featureSlug: specDir ? path.basename(specDir) : null,
+            startedAt: new Date().toISOString(),
+            status: "running",
+          });
           emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, specDir });
-          completePhaseTrace(traceId, "completed", 0, 0);
+          runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
           emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
         };
 
@@ -2299,19 +2379,14 @@ async function runLoop(
       : null;
     let cycleFailed = false;
 
-    insertLoopCycle({
-      id: cycleId,
-      runId,
-      cycleNumber,
-      featureName,
-      specDir,
-      decision: decisionType,
-    });
+    // Cycle metadata (cycleNumber, featureName, decisionType, specDir) is
+    // captured per-phase via PhaseRecord.cycleNumber + featureSlug + stage.
+    // No separate cycle row needed — derived via runs.cycleSummary at read time.
+    void cycleId;
 
     // ── GAPS_COMPLETE → terminate ──
     if (decision.type === "GAPS_COMPLETE") {
       rlog.run("INFO", "runLoop: all gaps complete");
-      updateLoopCycle(cycleId, "completed", 0, Date.now() - cycleStart);
       emit({
         type: "loop_cycle_completed",
         runId,
@@ -2336,7 +2411,7 @@ async function runLoop(
           if (skipEntry) updateFeatureStatus(config.projectDir, skipEntry.id, "skipped");
         }
         featuresSkipped.push(specDir);
-        updateLoopCycle(cycleId, "skipped", 0, Date.now() - cycleStart);
+        // (loop cycle row removed in 007-sqlite-removal — derived from phases)
         emit({
           type: "loop_cycle_completed",
           runId,
@@ -2354,7 +2429,7 @@ async function runLoop(
           } as never).catch(() => {});
         }
         cyclesCompleted++;
-        updateRunLoopsCompleted(runId, cyclesCompleted);
+        runs.updateRunLoopsCompleted(config.projectDir, runId, cyclesCompleted);
         continue;
       }
       if (record.implFailures >= 3) {
@@ -2501,14 +2576,19 @@ async function runLoop(
         } as never).catch(() => {});
       }
 
-      // Create a stage-level phase trace so the UI shows implement in the stage list
+      // Create a stage-level phase record so the UI shows implement in the stage list
       const implStageTraceId = crypto.randomUUID();
-      createPhaseTrace({
-        id: implStageTraceId,
+      runs.startPhase(config.projectDir, runId, {
+        phaseTraceId: implStageTraceId,
         runId,
         specDir: implSpecDir,
         phaseNumber: cycleNumber,
         phaseName: "loop:implement",
+        stage: "implement",
+        cycleNumber,
+        featureSlug: path.basename(implSpecDir),
+        startedAt: new Date().toISOString(),
+        status: "running",
       });
 
       emit({
@@ -2544,12 +2624,17 @@ async function runLoop(
 
           const phaseTraceId = crypto.randomUUID();
           activePhaseTraceId = phaseTraceId;
-          createPhaseTrace({
-            id: phaseTraceId,
+          runs.startPhase(config.projectDir, runId, {
+            phaseTraceId,
             runId,
             specDir: implSpecDir,
             phaseNumber: phase.number,
             phaseName: phase.name,
+            stage: null,
+            cycleNumber,
+            featureSlug: path.basename(implSpecDir),
+            startedAt: new Date().toISOString(),
+            status: "running",
           });
 
           if (currentRunState) {
@@ -2560,15 +2645,14 @@ async function runLoop(
 
           emit({ type: "phase_started", phase, iteration: 0, phaseTraceId });
 
-          const phaseResult = await runPhase(implConfig, phase, phaseTraceId, emit, rlog, runTaskState);
-          completePhaseTrace(
-            phaseTraceId,
-            "completed",
-            phaseResult.cost,
-            phaseResult.durationMs,
-            phaseResult.inputTokens || undefined,
-            phaseResult.outputTokens || undefined
-          );
+          const phaseResult = await runPhase(implConfig, phase, phaseTraceId, runId, emit, rlog, runTaskState);
+          runs.completePhase(config.projectDir, runId, phaseTraceId, {
+            status: "completed",
+            costUsd: phaseResult.cost,
+            durationMs: phaseResult.durationMs,
+            inputTokens: phaseResult.inputTokens || null,
+            outputTokens: phaseResult.outputTokens || null,
+          });
           activePhaseTraceId = null;
           cycleCost += phaseResult.cost;
           implStageCost += phaseResult.cost;
@@ -2591,7 +2675,11 @@ async function runLoop(
         // Mark any in-flight phase trace as failed so it doesn't dangle as "running"
         if (activePhaseTraceId) {
           try {
-            completePhaseTrace(activePhaseTraceId, "failed", 0, Date.now() - implStageStart);
+            runs.completePhase(config.projectDir, runId, activePhaseTraceId, {
+              status: "failed",
+              costUsd: 0,
+              durationMs: Date.now() - implStageStart,
+            });
           } catch { /* best-effort */ }
         }
         throw implErr;
@@ -2601,7 +2689,13 @@ async function runLoop(
         const implStageDurationMs = Date.now() - implStageStart;
         const implAborted = abortController?.signal.aborted ?? false;
         const implFinalStatus = implAborted ? "stopped" : implStageFailed ? "failed" : "completed";
-        completePhaseTrace(implStageTraceId, implFinalStatus, implStageCost, implStageDurationMs, implStageInputTokens || undefined, implStageOutputTokens || undefined);
+        runs.completePhase(config.projectDir, runId, implStageTraceId, {
+          status: implFinalStatus,
+          costUsd: implStageCost,
+          durationMs: implStageDurationMs,
+          inputTokens: implStageInputTokens || null,
+          outputTokens: implStageOutputTokens || null,
+        });
         emit({
           type: "stage_completed",
           runId,
@@ -2791,8 +2885,9 @@ async function runLoop(
       cyclesCompleted++;
     }
 
-    updateLoopCycle(cycleId, cycleStatus, cycleCost, Date.now() - cycleStart);
-    updateRunLoopsCompleted(runId, cyclesCompleted);
+    // (loop cycle row removed in 007-sqlite-removal — cycleCost/duration derived from phases)
+    void cycleStatus;
+    runs.updateRunLoopsCompleted(config.projectDir, runId, cyclesCompleted);
 
     // Update state file with cycle completion
     if (activeProjectDir) {

@@ -9,7 +9,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import type { Phase } from "../../../core/types.js";
-import type { PhaseTraceRow } from "../../../core/database.js";
+import type { PhaseRecord } from "../../../core/runs.js";
 import { TaskRow } from "./TaskRow.js";
 import { StatsBar } from "../shared/StatsBar.js";
 import type { AgentStats } from "../../utils/computeStats.js";
@@ -18,7 +18,7 @@ interface PhaseViewProps {
   phase: Phase;
   isRunning: boolean;
   isSelected: boolean;
-  traceStats?: PhaseTraceRow | null;
+  traceStats?: PhaseRecord | null;
   onViewTrace?: (phase: Phase) => void;
 }
 
@@ -208,15 +208,15 @@ export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrac
       )}
 
       {/* Phase stats from historical trace — hide for not-started and currently-running phases */}
-      {expanded && traceStats && phase.status !== "not_started" && !isRunning && (traceStats.cost_usd != null || traceStats.duration_ms != null) && (
+      {expanded && traceStats && phase.status !== "not_started" && !isRunning && (traceStats.costUsd != null || traceStats.durationMs != null) && (
         <div style={{ padding: "0 14px 8px 44px" }}>
           <StatsBar
             compact
             stats={{
-              durationMs: traceStats.duration_ms,
-              costUsd: traceStats.cost_usd,
-              inputTokens: traceStats.input_tokens,
-              outputTokens: traceStats.output_tokens,
+              durationMs: traceStats.durationMs,
+              costUsd: traceStats.costUsd,
+              inputTokens: traceStats.inputTokens,
+              outputTokens: traceStats.outputTokens,
               stepCount: 0,
               toolCount: 0,
               mcpCount: 0,

@@ -52,15 +52,17 @@ contextBridge.exposeInMainWorld("dexAPI", {
     return () => ipcRenderer.removeListener("orchestrator:event", handler);
   },
 
-  // History
-  listRuns: (limit?: number) => ipcRenderer.invoke("history:list-runs", limit),
-  getRun: (runId: string) => ipcRenderer.invoke("history:get-run", runId),
+  // History — per-project JSON storage (007-sqlite-removal)
+  listRuns: (projectDir: string, limit?: number) =>
+    ipcRenderer.invoke("history:list-runs", projectDir, limit),
+  getRun: (projectDir: string, runId: string) =>
+    ipcRenderer.invoke("history:get-run", projectDir, runId),
   getLatestProjectRun: (projectDir: string) =>
     ipcRenderer.invoke("history:get-latest-project-run", projectDir),
-  getPhaseSteps: (phaseTraceId: string) =>
-    ipcRenderer.invoke("history:get-phase-steps", phaseTraceId),
-  getPhaseSubagents: (phaseTraceId: string) =>
-    ipcRenderer.invoke("history:get-phase-subagents", phaseTraceId),
+  getPhaseSteps: (projectDir: string, runId: string, phaseTraceId: string) =>
+    ipcRenderer.invoke("history:get-phase-steps", projectDir, runId, phaseTraceId),
+  getPhaseSubagents: (projectDir: string, runId: string, phaseTraceId: string) =>
+    ipcRenderer.invoke("history:get-phase-subagents", projectDir, runId, phaseTraceId),
   getLatestPhaseTrace: (projectDir: string, specDir: string, phaseNumber: number) =>
     ipcRenderer.invoke("history:get-latest-phase-trace", projectDir, specDir, phaseNumber),
   getSpecPhaseStats: (projectDir: string, specDir: string) =>

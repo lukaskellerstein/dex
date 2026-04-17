@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Phase } from "../../core/types.js";
-import type { PhaseTraceRow, SpecStats } from "../../core/database.js";
+import type { PhaseRecord, SpecStats } from "../../core/runs.js";
 
 export interface SpecSummary {
   name: string;
@@ -12,8 +12,8 @@ export interface SpecSummary {
   stats?: SpecStats;
 }
 
-/** Map of phaseNumber → latest PhaseTraceRow (for displaying per-phase stats) */
-export type PhaseStatsMap = Map<number, PhaseTraceRow>;
+/** Map of phaseNumber → latest PhaseRecord (for displaying per-phase stats) */
+export type PhaseStatsMap = Map<number, PhaseRecord>;
 
 export function useProject() {
   const [projectDir, setProjectDir] = useState<string | null>(null);
@@ -114,11 +114,11 @@ export function useProject() {
     setSelectedSpec(specName);
     const [parsed, traceRows] = await Promise.all([
       window.dexAPI.parseSpec(projectDir, specName),
-      window.dexAPI.getSpecPhaseStats(projectDir, specName).catch(() => [] as PhaseTraceRow[]),
+      window.dexAPI.getSpecPhaseStats(projectDir, specName).catch(() => [] as PhaseRecord[]),
     ]);
     setPhases(parsed);
-    const statsMap = new Map<number, PhaseTraceRow>();
-    for (const row of traceRows) statsMap.set(row.phase_number, row);
+    const statsMap = new Map<number, PhaseRecord>();
+    for (const row of traceRows) statsMap.set(row.phaseNumber, row);
     setPhaseStats(statsMap);
   };
 
