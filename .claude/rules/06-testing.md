@@ -37,22 +37,39 @@ For any test that exercises the full loop (welcome screen → loop start → aut
 
 ### Step 1 — Reset the example project
 
-The repo is a GitHub project. Before every test run, bring it back to a clean state: only `GOAL.md` tracked on `main`, no feature branches checked out, no leftover `.dex/` / `.specify/` / `.claude/` from prior runs. Running the loop will create its own branch automatically — do **not** create one manually.
+Before every test run, restore `dex-ecommerce` to a known state. The project ships a single entry point for this — `dex/scripts/reset-example-to.sh` — which supports three checkpoints:
 
 ```bash
-cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
-git checkout main
-git reset --hard HEAD
-git clean -fdx
+./dex/scripts/reset-example-to.sh <checkpoint>
 ```
 
-Sanity check — after reset, `git status` must be clean and `ls` must show only `GOAL.md` and `.git/`:
+| Checkpoint | Skips | Approx. time saved |
+|---|---|---|
+| `clean` | nothing — full run from `prerequisites` | baseline |
+| `after-clarification` | `prerequisites`, `clarification_*`, `constitution`, `manifest_extraction` | ~5–10 min |
+| `after-tasks` | everything above plus `gap_analysis`, `specify`, `plan`, `tasks` | ~15–20 min |
+
+**Picking a checkpoint**:
+
+- Your change only touches the implement loop or later (`implement`, `implement_fix`, `verify`, `learnings`) → use `after-tasks`.
+- Your change only touches `gap_analysis`, `specify`, `plan`, or `tasks` → use `after-clarification`.
+- Your change touches `prerequisites`, any `clarification_*`, `constitution`, or `manifest_extraction`, or you're validating non-regression → use `clean`.
+
+After restoring a fixture, the welcome submit button reads **Open Existing** (because the folder exists) and the loop page's primary button reads **Resume** (because loop history is present). Clicking **Resume** auto-routes to `config.resume=true` — the orchestrator skips `prerequisites`, reuses the existing `runId`, and resumes from the next stage after `state.lastCompletedStage`.
+
+Sanity check — after reset, inspect the workspace:
 
 ```bash
 cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce && git status --short && ls
 ```
 
-These destructive git commands are **authorized as part of the testing protocol**. You do not need to ask before running them against `dex-ecommerce`. Never run them against any other repo.
+For `clean`, `ls` must show only `GOAL.md` and `.git/`. For fixtures, the tree matches the committed fixture branch.
+
+**Fixture branch reservation**: `fixture/*` is a reserved branch namespace on `dex-ecommerce`. Exactly two fixtures exist at all times: `fixture/after-clarification` and `fixture/after-tasks`. They are refreshed by force-moving the pointer in place (`git branch -f`) — versioned variants (`fixture/after-tasks-v2`, etc.) are not created. See [specs/005-testing-improvements/quickstart.md §1](../../specs/005-testing-improvements/quickstart.md) for the full refresh workflow and [contracts/README.md](../../specs/005-testing-improvements/contracts/README.md) for the script's exit-code contract.
+
+**Branch hygiene**: autonomous runs leave behind `dex/YYYY-MM-DD-xxxxxx` branches. Run `./dex/scripts/prune-example-branches.sh` periodically to delete `dex/*` branches older than 7 days (`main`, `fixture/*`, and `lukas/*` are always preserved).
+
+`reset-example-to.sh` and `prune-example-branches.sh` are the **only authorized destructive paths** against `dex-ecommerce` — they inherit the trust boundary of the legacy reset procedure. You do not need to ask before running them against `dex-ecommerce`. Never run them against any other repo.
 
 ### Step 2 — Ensure the dev server is running
 

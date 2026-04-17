@@ -922,6 +922,7 @@ async function runStage(
     phaseName: `loop:${stageType}`,
   });
 
+  rlog.startPhase(cycleNumber, stageType, phaseTraceId);
   rlog.phase("INFO", `runStage: ${stageType} for cycle ${cycleNumber}`);
 
   // Keep currentRunState in sync so the renderer can recover after refresh
@@ -1211,10 +1212,14 @@ async function runStage(
   // Checkpoint: update state file and commit after each completed stage
   if (!isAborted() && activeProjectDir) {
     try {
+      // Only overwrite currentSpecDir when this stage carries one (plan, tasks,
+      // implement, …). Specify and clarification stages don't have an input
+      // specDir — they'd clobber the active feature pointer with null, which
+      // breaks mid-cycle resume.
       await updateState(activeProjectDir, {
         lastCompletedStage: stageType,
         currentCycleNumber: cycleNumber,
-        currentSpecDir: specDir ?? null,
+        ...(specDir ? { currentSpecDir: specDir } : {}),
       });
       const sha = commitCheckpoint(activeProjectDir, stageType, cycleNumber, specDir ?? null, totalCost);
       await updateState(activeProjectDir, {

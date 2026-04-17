@@ -8,6 +8,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - `.dex/state.json` (filesystem state), `.dex/feature-manifest.json` (new — feature manifest), SQLite (run/phase/step audit trail) (003-structured-outputs)
 - TypeScript 5.6+ (strict mode) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `better-sqlite3` ^12.9.0, Electron ^41.2.1, React 18. Migration uses only `node:fs`, `node:path`, `node:os` (no new dependency). (004-logs-alignment)
 - `~/.dex/db/data.db` (+ WAL/SHM) — SQLite audit trail (moved). `~/.dex/logs/` — text log tree (root moves conceptually; inner layout unchanged). `<projectDir>/.dex/` — per-project state (adds `learnings.md`). (004-logs-alignment)
+- Bash (POSIX + git + jq), no TypeScript. Existing project is TypeScript 5.6+ strict but this feature adds zero TS. + `bash`, `git`, `jq`. No npm dependency added. Implicitly depends on the orchestrator's existing state-reconciliation code paths (`src/core/state.ts:435-654` `reconcileState`, `src/core/state.ts:290-295` `detectStaleState`, `src/core/orchestrator.ts:1850-1945` resume entry, `src/renderer/App.tsx:297-304` / `src/renderer/components/Topbar.tsx:250` UI resume detection) as stable unchanged contracts. (005-testing-improvements)
+- Git fixture branches on `dex-ecommerce` (two total, long-lived, force-updatable): `fixture/after-clarification`, `fixture/after-tasks`. No new on-disk Dex state. `.dex/` and `.specify/` inside the example repo are committed into each fixture branch. (005-testing-improvements)
 
 - TypeScript (strict mode), Node.js (Electron 30+) + `@anthropic-ai/claude-agent-sdk` ^0.1.0, `better-sqlite3` ^12.9.0, Electron ^30.0.0, React 18, GSAP, Lucide React (001-autonomous-loop)
 
@@ -27,9 +29,9 @@ npm test && npm run lint
 TypeScript (strict mode), Node.js (Electron 30+): Follow standard conventions
 
 ## Recent Changes
+- 005-testing-improvements: Added Bash (POSIX + git + jq), no TypeScript. Existing project is TypeScript 5.6+ strict but this feature adds zero TS. + `bash`, `git`, `jq`. No npm dependency added. Implicitly depends on the orchestrator's existing state-reconciliation code paths (`src/core/state.ts:435-654` `reconcileState`, `src/core/state.ts:290-295` `detectStaleState`, `src/core/orchestrator.ts:1850-1945` resume entry, `src/renderer/App.tsx:297-304` / `src/renderer/components/Topbar.tsx:250` UI resume detection) as stable unchanged contracts.
 - 004-logs-alignment: Added TypeScript 5.6+ (strict mode) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `better-sqlite3` ^12.9.0, Electron ^41.2.1, React 18. Migration uses only `node:fs`, `node:path`, `node:os` (no new dependency).
 - 003-structured-outputs: Added TypeScript 5.6+ (strict mode) + `@anthropic-ai/claude-agent-sdk` ^0.1.45 (upgrade from ^0.1.0), `better-sqlite3` ^12.9.0, Electron ^41.2.1, React 18
-- 002-filesystem-state-management: Added TypeScript (strict mode), Node.js (Electron 30+) + `@anthropic-ai/claude-agent-sdk` ^0.1.0, `better-sqlite3` ^12.9.0, Electron ^30.0.0, React 18
 
 
 <!-- MANUAL ADDITIONS START -->

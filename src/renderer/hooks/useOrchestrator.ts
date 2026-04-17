@@ -601,7 +601,11 @@ export function useOrchestrator(): OrchestratorHook {
           }
 
           case "loop_terminated":
-            setLoopTermination(event.termination);
+            // Treat user_abort as a pause, not a terminal state — the run is
+            // resumable and the Topbar button should read "Resume", not "Start".
+            if (event.termination.reason !== "user_abort") {
+              setLoopTermination(event.termination);
+            }
             break;
 
           case "state_reconciled":
@@ -803,6 +807,8 @@ export function useOrchestrator(): OrchestratorHook {
       setSubagents(subs);
       setCurrentPhase(phase);
       setCurrentPhaseTraceId(trace.id);
+      setCurrentRunId(trace.run_id);
+      setActiveSpecDir(specDir);
       setViewingHistorical(true);
       viewingHistoricalRef.current = true;
       setTotalCost(trace.cost_usd ?? 0);
@@ -849,6 +855,7 @@ export function useOrchestrator(): OrchestratorHook {
         status: "complete",
       });
       setCurrentPhaseTraceId(phaseTraceId);
+      setCurrentStage(stageType);
       setViewingHistorical(true);
       viewingHistoricalRef.current = true;
       if (meta?.costUsd != null) setTotalCost(meta.costUsd);
