@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { migrateIfNeeded } from "./paths.js";
 
 // ── Types ──
 
@@ -120,7 +121,11 @@ export function appendLearnings(
   insights: LearningEntry[],
   maxPerCategory = 20
 ): void {
-  const filePath = path.join(projectDir, ".claude", "rules", "learnings.md");
+  const filePath = path.join(projectDir, ".dex", "learnings.md");
+  migrateIfNeeded(
+    path.join(projectDir, ".claude", "rules", "learnings.md"),
+    filePath,
+  );
 
   let existingContent = "";
   if (fs.existsSync(filePath)) {

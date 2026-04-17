@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # --- Directories ---
-LOG_DIR="/tmp/dex-logs"
+LOG_DIR="${HOME}/.dex/dev-logs"
 mkdir -p "$LOG_DIR"
 
 # Truncate old logs

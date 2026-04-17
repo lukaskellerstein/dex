@@ -1,20 +1,18 @@
 import crypto from "node:crypto";
 import Database from "better-sqlite3";
-import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import path from "node:path";
+import { DB_DIR, DB_PATH, DEX_HOME, migrateIfNeeded } from "./paths.js";
 
 let db: Database.Database | null = null;
 
-function getDbPath(): string {
-  const dir = path.join(os.homedir(), ".dex");
-  fs.mkdirSync(dir, { recursive: true });
-  return path.join(dir, "data.db");
-}
-
 export function initDatabase(): void {
   if (db) return;
-  db = new Database(getDbPath());
+  fs.mkdirSync(DB_DIR, { recursive: true });
+  for (const name of ["data.db", "data.db-wal", "data.db-shm"]) {
+    migrateIfNeeded(path.join(DEX_HOME, name), path.join(DB_DIR, name));
+  }
+  db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 

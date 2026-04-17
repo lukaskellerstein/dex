@@ -84,7 +84,7 @@ On the Autonomous Loop page:
 2. Toggle **Automatic Clarification** on (the switch next to "Skip interactive Q&A — agent auto-selects recommended options based on GOAL.md context").
 3. Click **Start Autonomous Loop**.
 
-From here the orchestrator takes over: it creates its own branch, runs clarification, planning, and the implement loop. Observe via snapshots, screenshots, `/tmp/dex-logs/*.log`, and the live trace view.
+From here the orchestrator takes over: it creates its own branch, runs clarification, planning, and the implement loop. Observe via snapshots, screenshots, `~/.dex/dev-logs/*.log`, and the live trace view.
 
 ## 4d. Test
 
@@ -99,7 +99,7 @@ From here the orchestrator takes over: it creates its own branch, runs clarifica
 3. If the change affects UI behavior, verify via `electron-chrome` MCP following section **4c**.
 
 **IPC / Main process changes**:
-1. Verify the Electron app starts without errors (check `/tmp/dex-logs/electron.log`).
+1. Verify the Electron app starts without errors (check `~/.dex/dev-logs/electron.log`).
 2. Test IPC round-trips via `mcp__electron-chrome__evaluate_script` calling `window.dexAPI.*` methods.
 
 **Non-testable changes** (docs, config, build scripts): explicitly state why no runtime test is needed.
@@ -112,14 +112,14 @@ If a test fails: fix the issue, then retest. Repeat until all DoD items pass. If
 
 When something looks wrong, check these sources in order. They are listed from cheapest to most expensive, and each one answers a different class of question. **The fastest path from "something's wrong" to the right log file is: click the DEBUG badge (4f.6) → copy the `RunID` and `PhaseTraceID` → open `~/.dex/logs/<project>/<RunID>/phase-<N>_<slug>/agent.log`.**
 
-### 4f.1 Process logs — `/tmp/dex-logs/`
+### 4f.1 Process logs — `~/.dex/dev-logs/`
 
 `dev-setup.sh` truncates both files on every restart, so they always reflect the current session. Read them with the `Read` tool (don't `tail -f` — they're static snapshots).
 
 | File | Source | Contains |
 |---|---|---|
-| `/tmp/dex-logs/vite.log` | Vite dev server | Bundler output, HMR events, build errors, the `ready in …` banner and `Local: http://localhost:5500/` line |
-| `/tmp/dex-logs/electron.log` | Electron main process stdout/stderr | `DevTools listening on ws://127.0.0.1:9333/...`, unhandled errors, IPC handler throws, `console.*` from anything in `src/main/`, orchestrator stdout |
+| `~/.dex/dev-logs/vite.log` | Vite dev server | Bundler output, HMR events, build errors, the `ready in …` banner and `Local: http://localhost:5500/` line |
+| `~/.dex/dev-logs/electron.log` | Electron main process stdout/stderr | `DevTools listening on ws://127.0.0.1:9333/...`, unhandled errors, IPC handler throws, `console.*` from anything in `src/main/`, orchestrator stdout |
 
 **What to look for:**
 
@@ -163,7 +163,7 @@ Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 - From the SQLite DB — `SELECT id FROM runs ORDER BY created_at DESC LIMIT 1;` for the latest run, then `SELECT id, phase_number FROM phase_traces WHERE run_id = '<runId>';` for its phases.
 - From the orchestrator event stream — every event carries `runId` / `phaseTraceId`.
 
-**`~/.dex/orchestrator.log`** — fallback log written when the orchestrator is in a pre-run state and no run directory exists yet. Rarely interesting; consult only if startup dies before a run directory is created.
+**`~/.dex/logs/_orchestrator.log`** — fallback log written when the orchestrator is in a pre-run state and no run directory exists yet. Rarely interesting; consult only if startup dies before a run directory is created. The underscore prefix keeps it sorted above the per-project run directories inside `~/.dex/logs/`.
 
 ### 4f.3 Per-project state — `<projectDir>/.dex/`
 
@@ -172,12 +172,13 @@ Each project gets its own state directory. For the example project that's `/home
 | File | Contains |
 |---|---|
 | `.dex/state.json` | Primary filesystem state — current cycle, stage, branch, pending clarification, active feature |
+| `.dex/state.lock` | PID file guarding against concurrent orchestrator processes on the same project. Gitignored. |
 | `.dex/feature-manifest.json` | Feature manifest produced by the structured-outputs flow |
-| `.dex/artifacts/` (when present) | Phase artifacts with SHA-256 integrity hashes |
+| `.dex/learnings.md` | Accumulated per-project insights from the loop's learnings phase |
 
-`cat` / `jq` these files to answer "what cycle is the loop on?", "what branch did the orchestrator cut?", "which feature is in progress?". They are JSON.
+`cat` / `jq` the JSON files to answer "what cycle is the loop on?", "what branch did the orchestrator cut?", "which feature is in progress?". Everything in this directory except `state.lock` is committable.
 
-### 4f.4 Audit trail — `~/.dex/data.db`
+### 4f.4 Audit trail — `~/.dex/db/data.db`
 
 Global SQLite database (persisted across `dev-setup.sh` restarts and across projects). Every run, phase, step, and subagent is recorded here. Opened by the main process via `better-sqlite3` with WAL mode enabled.
 
@@ -207,7 +208,7 @@ async () => await window.dexAPI.listRuns(5)
 **Raw SQL fallback** (when the app isn't running or you need joins):
 
 ```bash
-sqlite3 ~/.dex/data.db "SELECT id, spec_dir, status, total_cost_usd FROM runs ORDER BY created_at DESC LIMIT 5;"
+sqlite3 ~/.dex/db/data.db "SELECT id, spec_dir, status, total_cost_usd FROM runs ORDER BY created_at DESC LIMIT 5;"
 ```
 
 The SQLite DB and the per-run log tree in 4f.2 share the same IDs — `runId`, `phaseTraceId`, `subagentId`. Use the DB to *find* an ID, then open the corresponding log file for the full event stream.
@@ -219,7 +220,7 @@ For errors that happen in the React app (render exceptions, unhandled rejections
 - `mcp__electron-chrome__list_console_messages` — all console output the page has emitted this session.
 - `mcp__electron-chrome__get_console_message` — inspect a single entry.
 
-This is the **only** place renderer errors surface — they are not in `/tmp/dex-logs/electron.log` and not in the per-run orchestrator logs.
+This is the **only** place renderer errors surface — they are not in `~/.dex/dev-logs/electron.log` and not in the per-run orchestrator logs.
 
 ### 4f.6 The DEBUG badge in the UI
 

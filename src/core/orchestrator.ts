@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { DEX_HOME, LOGS_ROOT, FALLBACK_LOG, migrateIfNeeded } from "./paths.js";
 import type {
   AgentStep,
   EmitFn,
@@ -95,8 +95,6 @@ import type {
 
 // ── Logging ──
 
-const LOGS_ROOT = path.join(os.homedir(), ".dex", "logs");
-
 function formatLogLine(level: string, msg: string, data?: unknown): string {
   const ts = new Date().toISOString();
   return data
@@ -168,8 +166,12 @@ class RunLogger {
 }
 
 /** Fallback logger used before a run starts (global orchestrator log). */
-const FALLBACK_LOG = path.join(os.homedir(), ".dex", "orchestrator.log");
+let fallbackMigrated = false;
 function log(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
+  if (!fallbackMigrated) {
+    migrateIfNeeded(path.join(DEX_HOME, "orchestrator.log"), FALLBACK_LOG);
+    fallbackMigrated = true;
+  }
   fs.mkdirSync(path.dirname(FALLBACK_LOG), { recursive: true });
   fs.appendFileSync(FALLBACK_LOG, formatLogLine(level, msg, data));
 }
