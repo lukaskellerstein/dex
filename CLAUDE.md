@@ -1,6 +1,6 @@
 # Dex Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-17
+Auto-generated from all feature plans. Last updated: 2026-04-18
 
 ## Active Technologies
 - `better-sqlite3` (audit trail, unchanged), `.dex/state.json` (new — primary state), filesystem artifacts with SHA-256 integrity hashing (002-filesystem-state-management)
@@ -13,6 +13,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - TypeScript 5.6+ (strict mode). + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `better-sqlite3` ^12.9.0, `electron` ^41.2.1, `react` ^18.3.1. No additions. (006-mid-cycle-resume)
 - Unchanged — `<projectDir>/.dex/state.json` (filesystem state, in particular `cyclesCompleted`, `currentSpecDir`, `lastCompletedStage`, `artifacts.features`), `~/.dex/db/data.db` (SQLite audit trail — `runs`, `phase_traces`, `loop_cycles` tables are read to pin cycle identity on resume). (006-mid-cycle-resume)
 - TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0. **Removed** — `better-sqlite3` ^12.9.0 + `@types/better-sqlite3` ^7.6.13. Implementation uses only `node:fs`, `node:path`, `node:os`, `node:crypto`. (007-sqlite-removal)
+- TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45 (used only by `ClaudeAgentRunner`), `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0. **No new dependencies.** Mock uses `node:fs`, `node:path`, `node:crypto` only. (009-testing-checkpointing)
+- Project-local filesystem only — `<projectDir>/.dex/dex-config.json` (new, gitignored), `<projectDir>/.dex/mock-config.json` (new, gitignored), `fixtures/mock-run/` in the Dex repo (committed). No new per-run persistence; existing `.dex/state.json`, `.dex/feature-manifest.json`, `.dex/learnings.md`, `.dex/runs/<runId>.json`, and `~/.dex/logs/<project>/<runId>/…` continue unchanged. (009-testing-checkpointing)
 
 - TypeScript (strict mode), Node.js (Electron 30+) + `@anthropic-ai/claude-agent-sdk` ^0.1.0, `better-sqlite3` ^12.9.0, Electron ^30.0.0, React 18, GSAP, Lucide React (001-autonomous-loop)
 
@@ -32,9 +34,9 @@ npm test && npm run lint
 TypeScript (strict mode), Node.js (Electron 30+): Follow standard conventions
 
 ## Recent Changes
+- 009-testing-checkpointing: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45 (used only by `ClaudeAgentRunner`), `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0. **No new dependencies.** Mock uses `node:fs`, `node:path`, `node:crypto` only.
 - 008-interactive-checkpoint: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime).
 - 007-sqlite-removal: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0. **Removed** — `better-sqlite3` ^12.9.0 + `@types/better-sqlite3` ^7.6.13. Implementation uses only `node:fs`, `node:path`, `node:os`, `node:crypto`.
-- 006-mid-cycle-resume: Added TypeScript 5.6+ (strict mode). + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `better-sqlite3` ^12.9.0, `electron` ^41.2.1, `react` ^18.3.1. No additions.
 
 
 <!-- MANUAL ADDITIONS START -->

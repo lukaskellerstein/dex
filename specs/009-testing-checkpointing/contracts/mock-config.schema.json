@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dex.local/schemas/009/mock-config.schema.json",
+  "title": "MockConfig",
+  "description": "Scripted playback configuration for MockAgentRunner. Written to <projectDir>/.dex/mock-config.json. Gitignored. Mirrors the orchestrator's four phases: prerequisites, clarification, dex_loop (with explicit cycles[]), completion.",
+  "type": "object",
+  "required": ["enabled", "prerequisites", "clarification", "dex_loop", "completion"],
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Master kill switch. If false while dex-config selects 'mock', startup fails with MockDisabledError."
+    },
+    "fixtureDir": {
+      "type": "string",
+      "description": "Base directory for `writes[].from` paths. Defaults to '<dexRepo>/fixtures/mock-run/'. Absolute paths supported; relative paths resolve against projectDir."
+    },
+    "prerequisites": {
+      "$ref": "#/$defs/PhaseEntry",
+      "description": "Stage descriptors for the prerequisites phase. Expected stage keys: prerequisites."
+    },
+    "clarification": {
+      "$ref": "#/$defs/PhaseEntry",
+      "description": "Stage descriptors for the clarification phase. Expected keys: clarification_product, clarification_technical, clarification_synthesis, constitution, manifest_extraction."
+    },
+    "dex_loop": {
+      "type": "object",
+      "required": ["cycles"],
+      "additionalProperties": false,
+      "properties": {
+        "cycles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/CycleEntry" }
+        }
+      }
+    },
+    "completion": {
+      "$ref": "#/$defs/PhaseEntry",
+      "description": "Reserved for future post-loop stages. Empty object today."
+    }
+  },
+  "$defs": {
+    "PhaseEntry": {
+      "type": "object",
+      "description": "Map from stage name to StepDescriptor. Unknown stage names are allowed at load time but cause MockConfigMissingEntryError (or unused entries) at run time.",
+      "additionalProperties": { "$ref": "#/$defs/StepDescriptor" }
+    },
+    "CycleEntry": {
+      "type": "object",
+      "required": ["feature", "stages"],
+      "additionalProperties": false,
+      "properties": {
+        "feature": {
+          "type": "object",
+          "required": ["id", "title"],
+          "additionalProperties": false,
+          "properties": {
+            "id":    { "type": "string", "minLength": 1 },
+            "title": { "type": "string", "minLength": 1 }
+          }
+        },
+        "stages": {
+          "type": "object",
+          "required": ["gap_analysis", "specify", "plan", "tasks", "implement", "verify", "learnings"],
+          "additionalProperties": false,
+          "properties": {
+            "gap_analysis":   { "$ref": "#/$defs/StepDescriptor" },
+            "specify":        { "$ref": "#/$defs/StepDescriptor" },
+            "plan":           { "$ref": "#/$defs/StepDescriptor" },
+            "tasks":          { "$ref": "#/$defs/StepDescriptor" },
+            "implement":      { "$ref": "#/$defs/StepDescriptor" },
+            "implement_fix":  { "$ref": "#/$defs/StepDescriptor" },
+            "verify":         { "$ref": "#/$defs/StepDescriptor" },
+            "learnings":      { "$ref": "#/$defs/StepDescriptor" }
+          }
+        }
+      }
+    },
+    "StepDescriptor": {
+      "type": "object",
+      "required": ["delay"],
+      "additionalProperties": false,
+      "properties": {
+        "delay": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Milliseconds to sleep before producing side effects. Zero allowed. No default — author must state it."
+        },
+        "writes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WriteSpec" }
+        },
+        "appends": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AppendSpec" }
+        },
+        "structured_output": {
+          "type": "object",
+          "description": "Required on stages whose real counterparts return JSON-schema-constrained output (gap_analysis, verify). Returned verbatim; no schema validation by mock."
+        }
+      }
+    },
+    "WriteSpec": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Destination path, relative to projectDir. Substitution tokens: {specDir}, {cycle}, {feature}. Unknown tokens → MockConfigInvalidPathError."
+        },
+        "from": {
+          "type": "string",
+          "description": "Fixture path, relative to fixtureDir. Exactly one of from|content."
+        },
+        "content": {
+          "type": "string",
+          "description": "Literal content. Exactly one of from|content."
+        }
+      },
+      "oneOf": [
+        { "required": ["from"],    "not": { "required": ["content"] } },
+        { "required": ["content"], "not": { "required": ["from"] } }
+      ]
+    },
+    "AppendSpec": {
+      "type": "object",
+      "required": ["path", "line"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Destination, relative to projectDir. Same substitution tokens as WriteSpec.path."
+        },
+        "line": {
+          "type": "string",
+          "description": "Line to append. Trailing newline added if absent."
+        }
+      }
+    }
+  }
+}

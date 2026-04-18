@@ -193,6 +193,10 @@ export interface RunConfig {
   // Step mode: when true, orchestrator pauses after every stage awaiting
   // user Keep/Try again/Try N ways decision. Distinct from user_abort.
   stepMode?: boolean;
+
+  // Agent backend override (009). When set, wins over .dex/dex-config.json.
+  // Must match a name registered in AGENT_REGISTRY ("claude" | "mock" | future providers).
+  agent?: string;
 }
 
 // ── Events: Orchestrator → UI ──

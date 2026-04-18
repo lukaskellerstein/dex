@@ -2,13 +2,19 @@ import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { DEX_HOME, LOGS_ROOT, FALLBACK_LOG, migrateIfNeeded } from "./paths.js";
+import { RunLogger, fallbackLog as log } from "./log.js";
+import { submitUserAnswer, waitForUserInput } from "./userInput.js";
+import { createAgentRunner } from "./agent/index.js";
+import { loadDexConfig } from "./dexConfig.js";
+import type { AgentRunner } from "./agent/AgentRunner.js";
+
+// Keep submitUserAnswer accessible to IPC callers that import it from this
+// module (backwards compatibility — it used to be defined here).
+export { submitUserAnswer };
 import type {
-  AgentStep,
   EmitFn,
   Phase,
   RunConfig,
-  SubagentInfo,
   Task,
 } from "./types.js";
 import { parseTasksFile, derivePhaseStatus, extractTaskIds, discoverNewSpecDir } from "./parser.js";
@@ -84,91 +90,19 @@ import type {
 } from "./types.js";
 
 // ── Logging ──
-
-function formatLogLine(level: string, msg: string, data?: unknown): string {
-  const ts = new Date().toISOString();
-  return data
-    ? `[${ts}] [${level}] ${msg} ${JSON.stringify(data, null, 0)}\n`
-    : `[${ts}] [${level}] ${msg}\n`;
-}
-
-/**
- * Structured per-run logger.
- *
- * Directory layout:
- *   ~/.dex/logs/<project-name>/<run-id>/
- *     run.log                          — run-level lifecycle events
- *     phase-<N>_<slug>/
- *       agent.log                      — all events for this phase's agent
- *       subagents/
- *         <subagent-id>.log            — per-subagent lifecycle + raw SDK input
- */
-class RunLogger {
-  private runDir: string;
-  private phaseDir: string | null = null;
-
-  constructor(projectName: string, runId: string) {
-    this.runDir = path.join(LOGS_ROOT, projectName, runId);
-    fs.mkdirSync(this.runDir, { recursive: true });
-  }
-
-  /** Log to run.log (run-level events) */
-  run(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    fs.appendFileSync(path.join(this.runDir, "run.log"), formatLogLine(level, msg, data));
-  }
-
-  /** Set the active phase directory — call at phase start */
-  startPhase(phaseNumber: number, phaseName: string, phaseTraceId: string): void {
-    const slug = phaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    this.phaseDir = path.join(this.runDir, `phase-${phaseNumber}_${slug}`);
-    fs.mkdirSync(path.join(this.phaseDir, "subagents"), { recursive: true });
-    this.run("INFO", `Phase ${phaseNumber} started: ${phaseName}`, { phaseTraceId });
-    this.phase("INFO", `Phase ${phaseNumber}: ${phaseName} — phaseTraceId=${phaseTraceId}`);
-  }
-
-  /** Log to the current phase's agent.log */
-  phase(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    if (!this.phaseDir) {
-      this.run(level, msg, data);
-      return;
-    }
-    fs.appendFileSync(path.join(this.phaseDir, "agent.log"), formatLogLine(level, msg, data));
-  }
-
-  /** Log to a subagent's dedicated log file within the current phase */
-  subagent(subagentId: string, level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    if (!this.phaseDir) {
-      this.run(level, `[subagent:${subagentId}] ${msg}`, data);
-      return;
-    }
-    const file = path.join(this.phaseDir, "subagents", `${subagentId}.log`);
-    fs.appendFileSync(file, formatLogLine(level, msg, data));
-  }
-
-  /** Convenience: log to both phase agent.log AND subagent file */
-  subagentEvent(subagentId: string, level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    this.phase(level, `[subagent:${subagentId}] ${msg}`, data);
-    this.subagent(subagentId, level, msg, data);
-  }
-
-  get currentRunDir(): string { return this.runDir; }
-  get currentPhaseDir(): string | null { return this.phaseDir; }
-}
-
-/** Fallback logger used before a run starts (global orchestrator log). */
-let fallbackMigrated = false;
-function log(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-  if (!fallbackMigrated) {
-    migrateIfNeeded(path.join(DEX_HOME, "orchestrator.log"), FALLBACK_LOG);
-    fallbackMigrated = true;
-  }
-  fs.mkdirSync(path.dirname(FALLBACK_LOG), { recursive: true });
-  fs.appendFileSync(FALLBACK_LOG, formatLogLine(level, msg, data));
-}
+// RunLogger and fallback log moved to ./log.ts so agent runners can share them
+// without importing from this orchestrator module (avoids an import cycle).
 
 let abortController: AbortController | null = null;
 let activeProjectDir: string | null = null;
 let releaseLock: (() => void) | null = null;
+
+/**
+ * The agent backend resolved at run start via dex-config.json (or RunConfig.agent
+ * override). All runStage/runPhase calls in this module delegate to it.
+ * Set to non-null for the duration of a run; cleared on run completion/abort.
+ */
+let currentRunner: AgentRunner | null = null;
 
 /** Sentinel error thrown when abort is detected between stages to skip remaining work. */
 class AbortError extends Error {
@@ -207,144 +141,11 @@ export function getRunState(): RunState | null {
   return currentRunState;
 }
 
-// ── User Input (AskUserQuestion) ──
-
-/** Pending question resolvers — keyed by requestId */
-const pendingQuestions = new Map<string, (answers: Record<string, string>) => void>();
-
-/**
- * Called from IPC when the user submits answers to a clarification question.
- */
-export function submitUserAnswer(requestId: string, answers: Record<string, string>): void {
-  const resolver = pendingQuestions.get(requestId);
-  if (resolver) {
-    resolver(answers);
-    pendingQuestions.delete(requestId);
-  } else {
-    log("WARN", `submitUserAnswer: no pending question for requestId=${requestId}`);
-  }
-}
-
-/**
- * Waits for user input. Emits the question event, then blocks until the user responds.
- */
-function waitForUserInput(
-  emit: EmitFn,
-  runId: string,
-  questions: import("./types.js").UserInputQuestion[]
-): Promise<Record<string, string>> {
-  const requestId = crypto.randomUUID();
-
-  // Persist pending question to state file so it survives crashes
-  if (activeProjectDir) {
-    updateState(activeProjectDir, {
-      pendingQuestion: {
-        id: requestId,
-        question: questions.map(q => q.question).join("; "),
-        context: `runId:${runId}`,
-        askedAt: new Date().toISOString(),
-      },
-    }).catch(() => {});
-  }
-
-  emit({ type: "user_input_request", runId, requestId, questions });
-  return new Promise<Record<string, string>>((resolve) => {
-    pendingQuestions.set(requestId, (answers) => {
-      // Clear pending question from state file on answer
-      if (activeProjectDir) {
-        updateState(activeProjectDir, { pendingQuestion: null }).catch(() => {});
-      }
-      resolve(answers);
-    });
-  });
-}
-
-// ── Pricing (USD per 1M tokens) ──
-
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  "claude-sonnet-4-5-20250514": { input: 3, output: 15 },
-  "claude-sonnet-4-6":          { input: 3, output: 15 },
-  "claude-opus-4-5-20250414":   { input: 15, output: 75 },
-  "claude-opus-4-6":            { input: 15, output: 75 },
-  "claude-haiku-4-5-20251001":  { input: 0.80, output: 4 },
-};
-
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  // Match by prefix — e.g. "claude-sonnet-4-5-20250514" matches "claude-sonnet-4-5"
-  const pricing = MODEL_PRICING[model]
-    ?? Object.entries(MODEL_PRICING).find(([k]) => model.startsWith(k))?.[1];
-  if (!pricing) return 0;
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
-}
-
-// ── Step Construction Helpers ──
-
-function makeStep(
-  type: AgentStep["type"],
-  sequenceIndex: number,
-  content: string | null,
-  metadata: Record<string, unknown> | null = null
-): AgentStep {
-  return {
-    id: crypto.randomUUID(),
-    sequenceIndex,
-    type,
-    content,
-    metadata,
-    durationMs: null,
-    tokenCount: null,
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function toToolCallStep(
-  input: Record<string, unknown>,
-  idx: number
-): AgentStep {
-  return makeStep("tool_call", idx, null, {
-    toolName: input.tool_name ?? "unknown",
-    toolInput: input.tool_input ?? {},
-    toolUseId: input.tool_use_id ?? null,
-  });
-}
-
-function stringifyResponse(response: unknown): string {
-  if (typeof response === "string") return response;
-  try {
-    return JSON.stringify(response, null, 2);
-  } catch {
-    return String(response);
-  }
-}
-
-function toToolResultStep(
-  input: Record<string, unknown>,
-  idx: number
-): AgentStep {
-  const response = input.tool_response ?? input.tool_result ?? "";
-  const text = stringifyResponse(response);
-  const isError = typeof response === "string" && response.startsWith("Error");
-  return makeStep(
-    isError ? "tool_error" : "tool_result",
-    idx,
-    text,
-    {
-      toolName: input.tool_name ?? "unknown",
-      toolUseId: input.tool_use_id ?? null,
-    }
-  );
-}
-
-function toSubagentInfo(input: Record<string, unknown>): SubagentInfo {
-  return {
-    id: crypto.randomUUID(),
-    subagentId: String(input.subagent_id ?? input.agent_id ?? crypto.randomUUID()),
-    subagentType: String(input.subagent_type ?? input.agent_type ?? "unknown"),
-    description: input.description ? String(input.description) : null,
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-  };
-}
+// ── User Input, pricing, step helpers moved to sibling modules ──
+// — submitUserAnswer / waitForUserInput → ./userInput.ts
+// — MODEL_PRICING / estimateCost / makeStep / toToolCallStep / toToolResultStep /
+//   toSubagentInfo / stringifyResponse → ./agent/steps.ts
+// They're re-imported at the top of this file.
 
 // ── Spec Discovery ──
 
@@ -512,382 +313,29 @@ async function runPhase(
   rlog: RunLogger,
   runTaskState: RunTaskState
 ): Promise<{ cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
-  const startTime = Date.now();
-  let stepIndex = 0;
-  let totalCost = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  const knownSubagentIds = new Set<string>();
-  const activeSubagentSet = new Set<string>();
-
-  const skillName = config.mode === "plan" ? "speckit-plan" : "speckit-implement";
-  const specPath = config.specDir.startsWith("/")
-    ? config.specDir
-    : `${config.projectDir}/${config.specDir}`;
+  if (!currentRunner) {
+    throw new Error("runPhase called before currentRunner was resolved — run() must set it");
+  }
 
   const prompt = buildPrompt(config, phase);
-  rlog.phase("INFO", `runPhase: spawning agent for Phase ${phase.number}: ${phase.name}`);
-  rlog.phase("DEBUG", "runPhase: prompt", { length: prompt.length, prompt });
 
-  // Dual-write helper: emit to UI via IPC + append to per-phase steps.jsonl.
-  // Attaches running cost/token totals so the renderer can display live stats.
-  // Tags steps with the active subagent ID when exactly one subagent is active.
-  // When multiple subagents run in parallel, we can't determine which one owns
-  // a step, so we leave the tag empty.
-  const phaseSlug = runs.slugForPhaseName(phase.name);
-  const emitAndStore = (step: AgentStep) => {
-    const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
-    const enriched: AgentStep = {
-      ...step,
-      metadata: {
-        ...step.metadata,
-        costUsd: totalCost || null,
-        inputTokens: totalInputTokens || null,
-        outputTokens: totalOutputTokens || null,
-        ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
-      },
-    };
-    rlog.phase("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
-    emit({ type: "agent_step", step: enriched });
-    runs.appendStep(config.projectDir, runId, phaseSlug, phase.number, { ...enriched, phaseTraceId });
-  };
-
-  // Emit the initial prompt as a user_message step
-  emitAndStore(makeStep("user_message", stepIndex++, prompt));
-
-  // Emit skill_invoke step to show which skill is being expanded
-  emitAndStore(
-    makeStep("skill_invoke", stepIndex++, null, {
-      skillName,
-      skillArgs: `${specPath} --phase ${phase.number}`,
-    })
-  );
-
-  const { query } = await import("@anthropic-ai/claude-agent-sdk");
-  rlog.phase("DEBUG", "runPhase: SDK imported, calling query()");
-
-  const isAborted = () => abortController?.signal.aborted ?? false;
-  let sessionId: string | null = null;
-
-  for await (const msg of query({
+  // Delegate SDK invocation to the resolved agent runner. TodoWrite detection
+  // stays in the orchestrator via the onTodoWrite callback — runTaskState is
+  // orchestrator-owned, not runner-owned.
+  return currentRunner.runPhase({
+    config,
     prompt,
-    options: {
-      model: config.model,
-      cwd: config.projectDir,
-      maxTurns: config.maxTurns,
-      permissionMode: "bypassPermissions",
-      settingSources: ["project"],
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                rlog.phase("DEBUG", `PreToolUse: ${toolName}`, { toolUseId: input.tool_use_id, toolInput: input.tool_input });
-
-                // Emit skill_invoke for Skill tool calls
-                if (toolName === "Skill") {
-                  const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
-                  emitAndStore(
-                    makeStep("skill_invoke", stepIndex++, null, {
-                      skillName: toolInput.skill ?? "",
-                      skillArgs: toolInput.args ?? "",
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolCallStep(input, stepIndex++));
-                }
-
-                if (isAborted()) {
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: "PreToolUse",
-                      permissionDecision: "deny",
-                      permissionDecisionReason: "Run stopped by user",
-                    },
-                  };
-                }
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: "PreToolUse",
-                    permissionDecision: "allow",
-                  },
-                };
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                rlog.phase("DEBUG", `PostToolUse: ${toolName}`, { toolUseId: input.tool_use_id });
-
-                // Emit skill_result for Skill tool results
-                if (toolName === "Skill") {
-                  const response = input.tool_response ?? input.tool_result ?? "";
-                  emitAndStore(
-                    makeStep("skill_result", stepIndex++, stringifyResponse(response), {
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolResultStep(input, stepIndex++));
-                }
-
-                // Detect TodoWrite — update in-memory task state (sole source of truth during run)
-                if (toolName === "TodoWrite") {
-                  try {
-                    const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
-                    const todos = (toolInput.todos ?? []) as Array<{
-                      content?: string;
-                      status?: string;
-                    }>;
-                    const updatedPhases = runTaskState.updateFromTodoWrite(todos);
-                    emit({ type: "tasks_updated", phases: updatedPhases });
-                    rlog.phase("DEBUG", "PostToolUse: TodoWrite detected, emitted tasks_updated");
-                  } catch (err) {
-                    rlog.phase("WARN", "PostToolUse: failed to process TodoWrite", { err: String(err) });
-                  }
-                }
-
-                return {
-                  hookSpecificOutput: { hookEventName: "PostToolUse" },
-                };
-              },
-            ],
-          },
-        ],
-        SubagentStart: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const info = toSubagentInfo(input);
-                knownSubagentIds.add(info.subagentId);
-                rlog.subagentEvent(info.subagentId, "INFO", "SubagentStart", {
-                  subagentType: info.subagentType,
-                  description: info.description,
-                  rawInput: input,
-                });
-                emit({ type: "subagent_started", info });
-                runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
-                  id: info.subagentId,
-                  type: info.subagentType,
-                  description: info.description,
-                  status: "running",
-                  startedAt: info.startedAt,
-                  endedAt: null,
-                  durationMs: null,
-                  costUsd: 0,
-                });
-                emitAndStore(
-                  makeStep("subagent_spawn", stepIndex++, null, {
-                    subagentId: info.subagentId,
-                    subagentType: info.subagentType,
-                    description: info.description,
-                  })
-                );
-                // Add AFTER emitting spawn step so the spawn itself isn't tagged
-                activeSubagentSet.add(info.subagentId);
-                return {};
-              },
-            ],
-          },
-        ],
-        SubagentStop: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const subagentId = String(input.subagent_id ?? input.agent_id ?? "unknown");
-                rlog.subagentEvent(subagentId, "INFO", "SubagentStop", { rawInput: input });
-
-                // Remove BEFORE emitting result step so the result itself isn't tagged
-                activeSubagentSet.delete(subagentId);
-
-                // Skip subagents we never saw start — these are session-init
-                // subagents spawned before our hooks were registered.
-                if (!knownSubagentIds.has(subagentId)) {
-                  rlog.phase("DEBUG", `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`);
-                  return {};
-                }
-
-                emit({ type: "subagent_completed", subagentId });
-                runs.completeSubagent(config.projectDir, runId, subagentId);
-                emitAndStore(
-                  makeStep("subagent_result", stepIndex++, null, {
-                    subagentId,
-                  })
-                );
-                return {};
-              },
-            ],
-          },
-        ],
-      },
+    runId,
+    phase,
+    phaseTraceId,
+    abortController,
+    emit,
+    rlog,
+    onTodoWrite: (todos) => {
+      const updatedPhases = runTaskState.updateFromTodoWrite(todos);
+      emit({ type: "tasks_updated", phases: updatedPhases });
     },
-  })) {
-    // Break out of streaming when abort requested
-    if (isAborted()) {
-      rlog.phase("INFO", "runPhase: abort detected in message loop, breaking");
-      break;
-    }
-
-    const message = msg as Record<string, unknown>;
-
-    // Log system init message — shows what skills/plugins/tools the agent sees
-    if (message.type === "system") {
-      const skills = message.skills as unknown[] | undefined;
-      const plugins = message.plugins as unknown[] | undefined;
-      const tools = message.tools as unknown[] | undefined;
-      const agents = message.agents as unknown[] | undefined;
-      const slashCommands = message.slash_commands as unknown[] | undefined;
-      const model = message.model as string | undefined;
-      rlog.phase("INFO", "runPhase: system init", {
-        model,
-        toolCount: tools?.length ?? 0,
-        skillCount: skills?.length ?? 0,
-        pluginCount: plugins?.length ?? 0,
-        agentCount: agents?.length ?? 0,
-        slashCommandCount: slashCommands?.length ?? 0,
-      });
-      if (skills && skills.length > 0) {
-        rlog.phase("INFO", "runPhase: available skills", { skills });
-      } else {
-        rlog.phase("WARN", "runPhase: NO SKILLS available to agent");
-      }
-      if (plugins && plugins.length > 0) {
-        rlog.phase("INFO", "runPhase: available plugins", { plugins });
-      }
-      if (slashCommands && slashCommands.length > 0) {
-        rlog.phase("INFO", "runPhase: available slash commands", { slashCommands });
-      }
-
-      // Extract tool names and separate MCP servers from built-in tools
-      const toolNames: string[] = [];
-      const mcpServers = new Map<string, string[]>();
-      if (tools) {
-        for (const t of tools) {
-          const name = typeof t === "object" && t !== null
-            ? String((t as Record<string, unknown>).name ?? t)
-            : String(t);
-          toolNames.push(name);
-          if (name.startsWith("mcp__")) {
-            // Format: mcp__<server>__<tool>
-            const parts = name.split("__");
-            if (parts.length >= 3) {
-              const server = parts[1];
-              if (!mcpServers.has(server)) mcpServers.set(server, []);
-              mcpServers.get(server)!.push(parts.slice(2).join("__"));
-            }
-          }
-        }
-        rlog.phase("DEBUG", "runPhase: available tools", { tools: toolNames });
-      }
-
-      // Emit debug step with all agent capabilities
-      emitAndStore(
-        makeStep("debug", stepIndex++, null, {
-          model: model ?? null,
-          mcpServers: Object.fromEntries(mcpServers),
-          skills: skills ?? [],
-          plugins: plugins ?? [],
-          agents: agents ?? [],
-          slashCommands: slashCommands ?? [],
-          toolCount: toolNames.length,
-        })
-      );
-    }
-
-    // Capture session_id from the first message that carries it
-    if (!sessionId && typeof message.session_id === "string") {
-      sessionId = message.session_id;
-      rlog.phase("INFO", `runPhase: session_id=${sessionId}`);
-      emitAndStore(
-        makeStep("text", stepIndex++, `Session: ${sessionId}`, { sessionId })
-      );
-    }
-
-    if (message.type === "assistant") {
-      // Content blocks live at message.message.content (SDK wraps the API response)
-      const innerMsg = message.message as Record<string, unknown> | undefined;
-      const content = innerMsg?.content as
-        | Array<Record<string, unknown>>
-        | undefined;
-
-      // Accumulate per-turn token usage from the API response
-      // Try inner message (API response wrapper) first, then outer message
-      const usage = (innerMsg?.usage ?? message.usage) as Record<string, unknown> | undefined;
-      if (usage) {
-        if (typeof usage.input_tokens === "number") totalInputTokens += usage.input_tokens;
-        if (typeof usage.output_tokens === "number") totalOutputTokens += usage.output_tokens;
-        totalCost = estimateCost(config.model, totalInputTokens, totalOutputTokens);
-      }
-
-      rlog.phase("DEBUG", "assistant message", {
-        outerKeys: Object.keys(message),
-        innerKeys: innerMsg ? Object.keys(innerMsg) : null,
-        blockTypes: content?.map((b) => b.type) ?? [],
-        usage: usage ?? null,
-        runningTokens: { input: totalInputTokens, output: totalOutputTokens },
-      });
-      if (content) {
-        for (const block of content) {
-          if (block.type === "text" && typeof block.text === "string") {
-            emitAndStore(makeStep("text", stepIndex++, block.text));
-          }
-          if (
-            block.type === "thinking" &&
-            typeof block.thinking === "string"
-          ) {
-            emitAndStore(makeStep("thinking", stepIndex++, block.thinking));
-          }
-        }
-      }
-    }
-
-    if (message.type === "result") {
-      const costUsd = message.total_cost_usd;
-      if (typeof costUsd === "number") totalCost = costUsd;
-
-      // Extract token totals from result.usage (authoritative final values)
-      const resultUsage = message.usage as Record<string, unknown> | undefined;
-      if (resultUsage) {
-        if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
-        if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
-      }
-
-      rlog.phase("INFO", `runPhase: result received`, {
-        cost: costUsd,
-        durationMs: message.duration_ms,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-        usage: resultUsage ?? null,
-        isError: message.is_error,
-        subtype: message.subtype,
-        result: typeof message.result === "string" ? message.result.slice(0, 500) : message.result,
-        numTurns: message.num_turns,
-      });
-    }
-  }
-
-  const durationMs = Date.now() - startTime;
-  rlog.phase("INFO", `runPhase: completed, cost=$${totalCost}, duration=${durationMs}ms`);
-
-  // Emit a completed step at the end
-  if (!isAborted()) {
-    emitAndStore(makeStep("completed", stepIndex++, `Phase ${phase.number}: ${phase.name} completed`, {
-      inputTokens: totalInputTokens || null,
-      outputTokens: totalOutputTokens || null,
-    }));
-  }
-
-  return { cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+  });
 }
 
 // ── Stage Runner (lightweight query() wrapper for loop stages) ──
@@ -903,15 +351,9 @@ async function runStage(
   specDir?: string,
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> }
 ): Promise<{ result: string; structuredOutput: unknown | null; cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
-  const startTime = Date.now();
-  let stepIndex = 0;
-  let totalCost = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let resultText = "";
-  let structuredOutput: unknown | null = null;
-  const knownSubagentIds = new Set<string>();
-  const activeSubagentSet = new Set<string>();
+  if (!currentRunner) {
+    throw new Error("runStage called before currentRunner was resolved — run() must set it");
+  }
 
   // Create a phase record for this stage so steps are persisted
   const phaseTraceId = crypto.randomUUID();
@@ -937,25 +379,6 @@ async function runStage(
     currentRunState.phaseTraceId = phaseTraceId;
   }
 
-  const stagePhaseSlug = runs.slugForPhaseName(`loop:${stageType}`);
-  const emitAndStore = (step: AgentStep) => {
-    const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
-    const enriched: AgentStep = {
-      ...step,
-      metadata: {
-        ...step.metadata,
-        costUsd: totalCost || null,
-        inputTokens: totalInputTokens || null,
-        outputTokens: totalOutputTokens || null,
-        ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
-      },
-    };
-    emit({ type: "agent_step", step: enriched });
-    runs.appendStep(config.projectDir, runId, stagePhaseSlug, cycleNumber, { ...enriched, phaseTraceId });
-  };
-
-  emitAndStore(makeStep("user_message", stepIndex++, prompt));
-
   emit({
     type: "stage_started",
     runId,
@@ -967,249 +390,25 @@ async function runStage(
 
   const isAborted = () => abortController?.signal.aborted ?? false;
 
-  const { query } = await import("@anthropic-ai/claude-agent-sdk");
-
-  for await (const msg of query({
+  // Delegate the SDK work to the resolved agent runner. Runner is responsible
+  // for emitting agent_step events (user_message, tool_call, etc.), returning
+  // the final cost/duration/structured output. Orchestrator owns phase-level
+  // lifecycle (startPhase/completePhase, stage_started/stage_completed events)
+  // and the post-stage checkpoint machinery below.
+  const stageResult = await currentRunner.runStage({
+    config,
     prompt,
-    options: {
-      model: config.model,
-      cwd: config.projectDir,
-      maxTurns: config.maxTurns,
-      permissionMode: "bypassPermissions",
-      settingSources: ["project"],
-      abortController: abortController ?? undefined,
-      ...(outputFormat ? { outputFormat } : {}),
-      canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
-        if (toolName === "AskUserQuestion") {
-          rlog.phase("INFO", "canUseTool: AskUserQuestion intercepted");
-
-          // Parse SDK question format into our typed format
-          const rawQuestions = (toolInput.questions ?? []) as Array<Record<string, unknown>>;
-          const questions: import("./types.js").UserInputQuestion[] = rawQuestions.map((q) => ({
-            question: String(q.question ?? ""),
-            header: String(q.header ?? ""),
-            options: ((q.options ?? []) as Array<Record<string, unknown>>).map((o) => ({
-              label: String(o.label ?? ""),
-              description: String(o.description ?? ""),
-              recommended: Boolean(o.recommended),
-            })),
-            multiSelect: Boolean(q.multiSelect),
-          }));
-
-          let answers: Record<string, string>;
-
-          if (config.autoClarification) {
-            // Auto-answer with recommended options
-            answers = {};
-            for (const q of questions) {
-              const recommended = q.options.find((o) => o.recommended);
-              if (recommended) {
-                answers[q.question] = recommended.label;
-              } else if (q.options.length > 0) {
-                // Fallback: pick the first option if no recommended
-                answers[q.question] = q.options[0].label;
-                rlog.phase("WARN", `canUseTool: no recommended option for "${q.question}", using first option`);
-              }
-            }
-            // Still emit the event so the UI can show what was auto-selected
-            const requestId = crypto.randomUUID();
-            emit({ type: "user_input_request", runId, requestId, questions });
-            emit({ type: "user_input_response", requestId, answers });
-            rlog.phase("INFO", "canUseTool: auto-answered (autoClarification)", { answers });
-          } else {
-            // Interactive: emit event and wait for user answer
-            answers = await waitForUserInput(emit, runId, questions);
-            rlog.phase("INFO", "canUseTool: user answered", { answers });
-          }
-
-          return {
-            behavior: "allow" as const,
-            updatedInput: { questions: rawQuestions, answers },
-          };
-        }
-
-        // All other tools: auto-approve (bypassPermissions handles this too, belt-and-suspenders)
-        return { behavior: "allow" as const, updatedInput: toolInput };
-      },
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                rlog.phase("DEBUG", `runStage PreToolUse: ${toolName}`);
-
-                if (toolName === "Skill") {
-                  const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
-                  emitAndStore(
-                    makeStep("skill_invoke", stepIndex++, null, {
-                      skillName: toolInput.skill ?? "",
-                      skillArgs: toolInput.args ?? "",
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolCallStep(input, stepIndex++));
-                }
-
-                if (isAborted()) {
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: "PreToolUse",
-                      permissionDecision: "deny",
-                      permissionDecisionReason: "Run stopped by user",
-                    },
-                  };
-                }
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: "PreToolUse",
-                    permissionDecision: "allow",
-                  },
-                };
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                if (toolName === "Skill") {
-                  const response = input.tool_response ?? input.tool_result ?? "";
-                  emitAndStore(
-                    makeStep("skill_result", stepIndex++, stringifyResponse(response), {
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolResultStep(input, stepIndex++));
-                }
-                return { hookSpecificOutput: { hookEventName: "PostToolUse" } };
-              },
-            ],
-          },
-        ],
-        SubagentStart: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const info = toSubagentInfo(input);
-                knownSubagentIds.add(info.subagentId);
-                emit({ type: "subagent_started", info });
-                runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
-                  id: info.subagentId,
-                  type: info.subagentType,
-                  description: info.description,
-                  status: "running",
-                  startedAt: info.startedAt,
-                  endedAt: null,
-                  durationMs: null,
-                  costUsd: 0,
-                });
-                emitAndStore(
-                  makeStep("subagent_spawn", stepIndex++, null, {
-                    subagentId: info.subagentId,
-                    subagentType: info.subagentType,
-                    description: info.description,
-                  })
-                );
-                activeSubagentSet.add(info.subagentId);
-                return {};
-              },
-            ],
-          },
-        ],
-        SubagentStop: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const subagentId = String(input.subagent_id ?? input.agent_id ?? "unknown");
-                activeSubagentSet.delete(subagentId);
-                if (!knownSubagentIds.has(subagentId)) return {};
-                emit({ type: "subagent_completed", subagentId });
-                runs.completeSubagent(config.projectDir, runId, subagentId);
-                emitAndStore(
-                  makeStep("subagent_result", stepIndex++, null, { subagentId })
-                );
-                return {};
-              },
-            ],
-          },
-        ],
-      },
-    },
-  })) {
-    if (isAborted()) {
-      rlog.phase("INFO", `runStage(${stageType}): abort detected in message loop — breaking out (SDK query may continue in background)`);
-      break;
-    }
-
-    const message = msg as Record<string, unknown>;
-
-    if (message.type === "assistant") {
-      const innerMsg = message.message as Record<string, unknown> | undefined;
-      const content = innerMsg?.content as Array<Record<string, unknown>> | undefined;
-      const usage = (innerMsg?.usage ?? message.usage) as Record<string, unknown> | undefined;
-      if (usage) {
-        if (typeof usage.input_tokens === "number") totalInputTokens += usage.input_tokens;
-        if (typeof usage.output_tokens === "number") totalOutputTokens += usage.output_tokens;
-        totalCost = estimateCost(config.model, totalInputTokens, totalOutputTokens);
-      }
-      if (content) {
-        for (const block of content) {
-          if (block.type === "text" && typeof block.text === "string") {
-            emitAndStore(makeStep("text", stepIndex++, block.text));
-          }
-          if (block.type === "thinking" && typeof block.thinking === "string") {
-            emitAndStore(makeStep("thinking", stepIndex++, block.thinking));
-          }
-        }
-      }
-    }
-
-    if (message.type === "result") {
-      if (typeof message.total_cost_usd === "number") totalCost = message.total_cost_usd;
-      const resultUsage = message.usage as Record<string, unknown> | undefined;
-      if (resultUsage) {
-        if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
-        if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
-      }
-      if (typeof message.result === "string") resultText = message.result;
-
-      // Structured output handling
-      if (outputFormat) {
-        if (message.subtype === "error_max_structured_output_retries") {
-          rlog.phase("ERROR", `runStage(${stageType}): structured output validation failed after max retries`);
-          throw new Error(`Structured output validation failed for ${stageType} — agent could not produce valid JSON matching the schema`);
-        }
-        structuredOutput = (message as Record<string, unknown>).structured_output ?? null;
-        if (structuredOutput === null) {
-          rlog.phase("WARN", `runStage(${stageType}): outputFormat requested but structured_output is null — falling back to raw text`);
-        }
-      }
-
-      rlog.phase("INFO", `runStage: ${stageType} result received`, {
-        cost: totalCost,
-        resultPreview: resultText.slice(0, 200),
-      });
-    }
-  }
-
-  const durationMs = Date.now() - startTime;
-
-  // Emit a completed step so the UI timeline ends cleanly (mirrors runPhase behavior)
-  if (!isAborted()) {
-    emitAndStore(makeStep("completed", stepIndex++, `Stage ${stageType} completed`, {
-      inputTokens: totalInputTokens || null,
-      outputTokens: totalOutputTokens || null,
-    }));
-  }
+    runId,
+    cycleNumber,
+    stage: stageType,
+    phaseTraceId,
+    specDir: specDir ?? null,
+    outputFormat,
+    abortController,
+    emit,
+    rlog,
+  });
+  const { result: resultText, structuredOutput, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens } = stageResult;
 
   const stageStatus = isAborted() ? "stopped" : "completed";
   runs.completePhase(config.projectDir, runId, phaseTraceId, {
@@ -1537,6 +736,17 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
   activeProjectDir = config.projectDir;
 
+  // Resolve which agent backend drives this run. Precedence: RunConfig.agent
+  // override > .dex/dex-config.json > built-in default ("claude").
+  // createAgentRunner throws UnknownAgentError if the name isn't registered;
+  // that error surfaces to the caller via the outer try/catch below.
+  {
+    const dexCfg = loadDexConfig(config.projectDir);
+    const agentName = config.agent ?? dexCfg.agent;
+    rlog.run("INFO", `run: resolving agent backend`, { agent: agentName, source: config.agent ? "RunConfig" : "dex-config.json" });
+    currentRunner = createAgentRunner(agentName, config, config.projectDir);
+  }
+
   // Acquire state lock to prevent concurrent writes
   try {
     releaseLock = await acquireStateLock(config.projectDir);
@@ -1562,6 +772,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     emit({ type: "error", message: lockErr instanceof Error ? lockErr.message : String(lockErr) });
     abortController = null;
     activeProjectDir = null;
+    currentRunner = null;
     return;
   }
 
@@ -1625,6 +836,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     const wasStopped = abortController?.signal.aborted ?? false;
     abortController = null;
     currentRunState = null;
+    currentRunner = null;
 
     const totalDuration = Date.now() - runStart;
     const finalStatus = wasStopped ? "stopped" : "completed";
@@ -1757,7 +969,7 @@ async function runPrerequisites(
     let resolved = false;
     while (!resolved) {
       if (abortController?.signal.aborted) return;
-      const answers = await waitForUserInput(emit, runId, [{
+      const answers = await waitForUserInput(config.projectDir, emit, runId, [{
         question: "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
         header: "Missing: Claude CLI",
         options: [
@@ -1798,7 +1010,7 @@ async function runPrerequisites(
     let resolved = false;
     while (!resolved) {
       if (abortController?.signal.aborted) return;
-      const answers = await waitForUserInput(emit, runId, [{
+      const answers = await waitForUserInput(config.projectDir, emit, runId, [{
         question: "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
         header: "Missing: Spec-Kit CLI",
         options: [
@@ -1935,7 +1147,7 @@ async function runPrerequisites(
         checkResults.set("github_repo", "fixed");
       } else {
         if (abortController?.signal.aborted) return;
-        const answers = await waitForUserInput(emit, runId, [{
+        const answers = await waitForUserInput(config.projectDir, emit, runId, [{
           question: "Would you like to create a GitHub repository for this project?",
           header: "GitHub Repository (optional)",
           options: [
@@ -1951,7 +1163,7 @@ async function runPrerequisites(
           checkResults.set("github_repo", "fixed");
         } else {
           if (abortController?.signal.aborted) return;
-          const repoAnswers = await waitForUserInput(emit, runId, [{
+          const repoAnswers = await waitForUserInput(config.projectDir, emit, runId, [{
             question: "Enter the name for your new GitHub repository:",
             header: "Repository Name",
             options: [
@@ -1994,7 +1206,7 @@ async function runPrerequisites(
     const failedNames = failedChecks.map(([name]) => name).join(", ");
     rlog.run("WARN", `runPrerequisites: ${failedChecks.length} check(s) failed: ${failedNames}`);
 
-    await waitForUserInput(emit, runId, [{
+    await waitForUserInput(config.projectDir, emit, runId, [{
       question: `${failedChecks.length} prerequisite check(s) failed: ${failedNames}. You can continue, but the loop may not work correctly.`,
       header: "Prerequisites incomplete",
       options: [

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dex.local/schemas/009/dex-config.schema.json",
+  "title": "DexConfig",
+  "description": "Project-level agent-backend selector. Written to <projectDir>/.dex/dex-config.json. Gitignored. Absent file is equivalent to { \"agent\": \"claude\" }.",
+  "type": "object",
+  "required": ["agent"],
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Name of the registered agent runner. Must match an entry in AGENT_REGISTRY at runtime. Built-in names: 'claude', 'mock'. Future: 'codex', 'gemini'. Unknown names cause UnknownAgentError at run start.",
+      "type": "string",
+      "minLength": 1,
+      "examples": ["claude", "mock"]
+    }
+  },
+  "examples": [
+    { "agent": "claude" },
+    { "agent": "mock" }
+  ]
+}
