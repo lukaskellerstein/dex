@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bug, Check, RotateCw, FolderOpen } from "lucide-react";
-import type { Phase, Task, RunConfig, SubagentInfo } from "../core/types.js";
+import type { TaskPhase, Task, RunConfig, SubagentInfo } from "../core/types.js";
 import { AgentStepList } from "./components/agent-trace/AgentStepList.js";
 import { SubagentDetailView } from "./components/agent-trace/SubagentDetailView.js";
 import { AppShell } from "./components/layout/AppShell.js";
+import { TopTabBar, type TopTab } from "./components/layout/TopTabBar.js";
+import { TimelineView } from "./components/checkpoints/TimelineView.js";
 import { ProjectOverview } from "./components/project-overview/ProjectOverview.js";
 import { PhaseView } from "./components/task-board/PhaseView.js";
 import { ProgressBar } from "./components/task-board/ProgressBar.js";
@@ -16,10 +18,10 @@ import { CheckpointsEnvelope } from "./components/checkpoints/CheckpointsEnvelop
 
 interface DebugContext {
   runId: string | null;
-  phaseTraceId: string | null;
+  agentRunId: string | null;
   mode: string | null;
   cycle: number | null;
-  stage: string | null;
+  step: string | null;
   specDir: string | null;
   phase: string | null;
   projectDir: string | null;
@@ -38,12 +40,12 @@ function buildDebugPayload(ctx: DebugContext): string {
     if (val != null && val !== "") lines.push(`${label.padEnd(16)} ${val}`);
   };
   add("RunID:", ctx.runId);
-  add("PhaseTraceID:", ctx.phaseTraceId);
+  add("AgentRunID:", ctx.agentRunId);
   add("Mode:", ctx.mode);
   add("Cycle:", ctx.cycle);
-  add("Stage:", ctx.stage);
+  add("Stage:", ctx.step);
   add("SpecDir:", ctx.specDir);
-  add("Phase:", ctx.phase);
+  add("TaskPhase:", ctx.phase);
   add("ProjectDir:", ctx.projectDir);
   add("View:", ctx.view);
   add("IsRunning:", ctx.isRunning);
@@ -95,6 +97,7 @@ export default function App() {
   const project = useProject();
   const orchestrator = useOrchestrator();
   const [currentView, setCurrentView] = useState<View>("overview");
+  const [topTab, setTopTab] = useState<TopTab>("steps");
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
 
   // Derive selectedSubagent from live data so completedAt updates propagate
@@ -103,10 +106,24 @@ export default function App() {
     [selectedSubagentId, orchestrator.subagents]
   );
   const [, setTick] = useState(0);
-  const [welcomePath, setWelcomePath] = useState("~/Projects/Temp");
-  const [welcomeName, setWelcomeName] = useState(() => `project-${Math.random().toString(36).slice(2, 10)}`);
+  const [welcomePath, setWelcomePath] = useState("");
+  const [welcomeName, setWelcomeName] = useState("");
   const [welcomeError, setWelcomeError] = useState<string | null>(null);
   const [welcomeTargetExists, setWelcomeTargetExists] = useState(false);
+
+  // Populate the welcome inputs from ~/.dex/app-config.json on mount.
+  // The random postfix in the name template is freshly expanded each load.
+  useEffect(() => {
+    if (project.projectDir) return;
+    let cancelled = false;
+    (async () => {
+      const defaults = await window.dexAPI.getWelcomeDefaults();
+      if (cancelled) return;
+      setWelcomePath((current) => current || defaults.defaultLocation);
+      setWelcomeName((current) => current || defaults.defaultName);
+    })();
+    return () => { cancelled = true; };
+  }, [project.projectDir]);
 
   const handleOpenProject = useCallback(async () => {
     const dir = await project.openProject();
@@ -162,12 +179,12 @@ export default function App() {
   }, []);
 
   const handleStageClick = useCallback(
-    async (stage: import("./hooks/useOrchestrator.js").UiLoopStage) => {
+    async (step: import("./hooks/useOrchestrator.js").UiLoopStage) => {
       if (!project.projectDir || !orchestrator.currentRunId) return;
-      if (stage.status === "running") {
+      if (step.status === "running") {
         await orchestrator.switchToLive(project.projectDir, orchestrator.currentRunId);
       } else {
-        await orchestrator.loadStageTrace(project.projectDir, orchestrator.currentRunId, stage.phaseTraceId, stage.type, { costUsd: stage.costUsd, durationMs: stage.durationMs });
+        await orchestrator.loadStageTrace(project.projectDir, orchestrator.currentRunId, step.agentRunId, step.type, { costUsd: step.costUsd, durationMs: step.durationMs });
       }
       setCurrentView("trace");
     },
@@ -200,7 +217,7 @@ export default function App() {
     });
   });
 
-  // Refresh project when entering implement stage so the newly-created spec
+  // Refresh project when entering implement step so the newly-created spec
   // appears in specSummaries (the spec was created during specify/plan/tasks).
   const prevStageRef = useRef<string | null>(null);
   useEffect(() => {
@@ -276,7 +293,7 @@ export default function App() {
       model: "claude-opus-4-6",
       maxIterations: 50,
       maxTurns: 75,
-      phases: "all",
+      taskPhases: "all",
       ...rest,
       ...(resume ? { resume: true } : {}),
     };
@@ -328,7 +345,7 @@ export default function App() {
       model: "claude-opus-4-6",
       maxIterations: 20,
       maxTurns: 75,
-      phases: "all",
+      taskPhases: "all",
       runAllSpecs: true,
     };
     window.dexAPI.startRun(config);
@@ -337,7 +354,7 @@ export default function App() {
 
 
   const handleViewPhaseTrace = useCallback(
-    async (phase: Phase) => {
+    async (phase: TaskPhase) => {
       // If this is the actively running phase, switch back to live stream
       if (orchestrator.isRunning && orchestrator.currentPhase?.number === phase.number) {
         if (project.projectDir && orchestrator.currentRunId) {
@@ -391,10 +408,10 @@ export default function App() {
 
   const debugContext = useMemo<DebugContext>(() => ({
     runId: orchestrator.currentRunId,
-    phaseTraceId: orchestrator.currentPhaseTraceId,
+    agentRunId: orchestrator.currentPhaseTraceId,
     mode: orchestrator.mode,
     cycle: orchestrator.currentCycle,
-    stage: orchestrator.currentStage,
+    step: orchestrator.currentStage,
     specDir: orchestrator.activeSpecDir,
     phase: orchestrator.currentPhase
       ? `${orchestrator.currentPhase.number} - ${orchestrator.currentPhase.name}`
@@ -649,7 +666,7 @@ export default function App() {
             <span style={{ fontWeight: 600, color: "var(--foreground)" }}>
               {orchestrator.currentPhase.name.startsWith("loop:")
                 ? orchestrator.currentPhase.name.replace("loop:", "").replace("_", " ")
-                : `Phase ${orchestrator.currentPhase.number}: ${orchestrator.currentPhase.name}`}
+                : `TaskPhase ${orchestrator.currentPhase.number}: ${orchestrator.currentPhase.name}`}
             </span>
           )}
           {/* Center: loop indicators */}
@@ -811,6 +828,17 @@ export default function App() {
     );
   }
 
+  const tabs = project.projectDir ? (
+    <TopTabBar active={topTab} onChange={setTopTab} />
+  ) : null;
+
+  const shellContent =
+    topTab === "timeline" && project.projectDir ? (
+      <TimelineView projectDir={project.projectDir} />
+    ) : (
+      content
+    );
+
   return (
     <>
       <AppShell
@@ -824,7 +852,8 @@ export default function App() {
         onDeselectSpec={handleDeselectSpec}
         onStart={handleStart}
         onStop={() => window.dexAPI.stopRun()}
-        content={content}
+        tabs={tabs}
+        content={shellContent}
       />
       {orchestrator.pendingQuestion && (
         <ClarificationPanel

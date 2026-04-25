@@ -32,7 +32,7 @@ export function ContinueVariantGroupModal({ group, onContinue, onDiscard }: Prop
       }
     >
       <p style={{ marginBottom: 8 }}>
-        A previous session left a <code>{group.stage}</code> variant group mid-flight.
+        A previous session left a <code>{group.step}</code> variant group mid-flight.
       </p>
       <ul style={{ marginLeft: 20, fontSize: 13 }}>
         <li>{pending} pending</li>

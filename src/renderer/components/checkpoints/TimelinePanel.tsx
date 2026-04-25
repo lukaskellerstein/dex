@@ -70,7 +70,7 @@ export function TimelinePanel({
     async (tag: string) => {
       const ok = await performGoBack(tag);
       if (!ok) return;
-      // Caller (LoopDashboard) can pick up the "re-run the stage" from onAttemptSwitched
+      // Caller (LoopDashboard) can pick up the "re-run the step" from onAttemptSwitched
       // — we don't automatically start the orchestrator here; that's a cross-cutting decision.
     },
     [performGoBack],

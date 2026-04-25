@@ -13,11 +13,11 @@ import type { AgentRunner } from "./agent/AgentRunner.js";
 export { submitUserAnswer };
 import type {
   EmitFn,
-  Phase,
+  TaskPhase,
   RunConfig,
   Task,
 } from "./types.js";
-import { parseTasksFile, derivePhaseStatus, extractTaskIds, discoverNewSpecDir } from "./parser.js";
+import { parseTasksFile, deriveTaskPhaseStatus, extractTaskIds, discoverNewSpecDir } from "./parser.js";
 import * as runs from "./runs.js";
 import {
   getCurrentBranch,
@@ -44,7 +44,7 @@ import {
   acquireStateLock,
   resolveWorkingTreeConflict,
   reconcileState,
-  STAGE_ORDER,
+  STEP_ORDER,
 } from "./state.js";
 import type { DexState } from "./state.js";
 import {
@@ -80,7 +80,7 @@ import {
 } from "./manifest.js";
 import type { FeatureManifest } from "./manifest.js";
 import type {
-  LoopStageType,
+  StepType,
   GapAnalysisDecision,
   FailureRecord,
   LoopTermination,
@@ -120,14 +120,14 @@ interface RunState {
   specDir: string;
   mode: string;
   model: string;
-  phaseTraceId: string;
-  phaseNumber: number;
-  phaseName: string;
+  agentRunId: string;
+  taskPhaseNumber: number;
+  taskPhaseName: string;
   // Loop-mode fields
   currentCycle?: number;
-  currentStage?: LoopStageType;
+  currentStep?: StepType;
   isClarifying?: boolean;
-  loopsCompleted?: number;
+  cyclesCompleted?: number;
 }
 
 let currentRunState: RunState | null = null;
@@ -184,10 +184,10 @@ const STATUS_RANK: Record<string, number> = {
 };
 
 class RunTaskState {
-  private phases: Phase[];
+  private phases: TaskPhase[];
   private taskMap: Map<string, Task>;
 
-  constructor(initialPhases: Phase[]) {
+  constructor(initialPhases: TaskPhase[]) {
     // Deep-clone so mutations don't affect the caller's data
     this.phases = JSON.parse(JSON.stringify(initialPhases));
     this.taskMap = new Map();
@@ -201,7 +201,7 @@ class RunTaskState {
   /** Apply TodoWrite statuses. Promotes only (never demotes). Returns current phases. */
   updateFromTodoWrite(
     todos: Array<{ content?: string; status?: string }>
-  ): Phase[] {
+  ): TaskPhase[] {
     const updates = new Map<string, "in_progress" | "done">();
 
     for (const todo of todos) {
@@ -226,7 +226,7 @@ class RunTaskState {
 
     // Re-derive phase statuses
     for (const p of this.phases) {
-      p.status = derivePhaseStatus(p.tasks);
+      p.status = deriveTaskPhaseStatus(p.tasks);
     }
 
     return this.phases;
@@ -238,7 +238,7 @@ class RunTaskState {
    * gets promoted. A task that is "done" in memory stays "done" even if
    * disk says otherwise (agent may have used TodoWrite earlier).
    */
-  reconcileFromDisk(freshPhases: Phase[]): Phase[] {
+  reconcileFromDisk(freshPhases: TaskPhase[]): TaskPhase[] {
     for (const freshPhase of freshPhases) {
       for (const freshTask of freshPhase.tasks) {
         const memTask = this.taskMap.get(freshTask.id);
@@ -249,17 +249,17 @@ class RunTaskState {
     }
 
     for (const p of this.phases) {
-      p.status = derivePhaseStatus(p.tasks);
+      p.status = deriveTaskPhaseStatus(p.tasks);
     }
 
     return this.phases;
   }
 
-  getPhases(): Phase[] {
+  getPhases(): TaskPhase[] {
     return this.phases;
   }
 
-  getIncompletePhases(filter: "all" | number[]): Phase[] {
+  getIncompletePhases(filter: "all" | number[]): TaskPhase[] {
     if (filter === "all") {
       return this.phases.filter((p) => p.status !== "complete");
     }
@@ -271,7 +271,7 @@ class RunTaskState {
 
 // ── Prompt Builders ──
 
-function buildPrompt(config: RunConfig, phase: Phase): string {
+function buildPrompt(config: RunConfig, phase: TaskPhase): string {
   // Resolve the spec directory to an absolute path so the agent knows exactly
   // which spec to work on (specDir may be relative like "specs/001-product-catalog").
   const specPath = config.specDir.startsWith("/")
@@ -287,7 +287,7 @@ function buildPrompt(config: RunConfig, phase: Phase): string {
     ? `After analyzing:
 - Update ${specPath}/tasks.md with accurate task statuses
 - If you learned operational patterns, update CLAUDE.md
-- Commit: git add -A -- ':!.dex/' && git commit -m "plan: Phase ${phase.number} gap analysis"`
+- Commit: git add -A -- ':!.dex/' && git commit -m "plan: TaskPhase ${phase.number} gap analysis"`
     : `IMPORTANT — update tasks.md incrementally:
 - After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md before moving to the next task. This drives a real-time progress UI.
 
@@ -306,8 +306,8 @@ ${afterSteps}`;
 
 async function runPhase(
   config: RunConfig,
-  phase: Phase,
-  phaseTraceId: string,
+  phase: TaskPhase,
+  agentRunId: string,
   runId: string,
   emit: EmitFn,
   rlog: RunLogger,
@@ -322,18 +322,18 @@ async function runPhase(
   // Delegate SDK invocation to the resolved agent runner. TodoWrite detection
   // stays in the orchestrator via the onTodoWrite callback — runTaskState is
   // orchestrator-owned, not runner-owned.
-  return currentRunner.runPhase({
+  return currentRunner.runTaskPhase({
     config,
     prompt,
     runId,
-    phase,
-    phaseTraceId,
+    taskPhase: phase,
+    agentRunId,
     abortController,
     emit,
     rlog,
     onTodoWrite: (todos) => {
       const updatedPhases = runTaskState.updateFromTodoWrite(todos);
-      emit({ type: "tasks_updated", phases: updatedPhases });
+      emit({ type: "tasks_updated", taskPhases: updatedPhases });
     },
   });
 }
@@ -347,7 +347,7 @@ async function runStage(
   rlog: RunLogger,
   runId: string,
   cycleNumber: number,
-  stageType: import("./types.js").LoopStageType,
+  stageType: import("./types.js").StepType,
   specDir?: string,
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> }
 ): Promise<{ result: string; structuredOutput: unknown | null; cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
@@ -356,35 +356,35 @@ async function runStage(
   }
 
   // Create a phase record for this stage so steps are persisted
-  const phaseTraceId = crypto.randomUUID();
-  runs.startPhase(config.projectDir, runId, {
-    phaseTraceId,
+  const agentRunId = crypto.randomUUID();
+  runs.startAgentRun(config.projectDir, runId, {
+    agentRunId,
     runId,
     specDir: specDir ?? null,
-    phaseNumber: cycleNumber,
-    phaseName: `loop:${stageType}`,
-    stage: stageType,
+    taskPhaseNumber: cycleNumber,
+    taskPhaseName: `loop:${stageType}`,
+    step: stageType,
     cycleNumber,
     featureSlug: specDir ? path.basename(specDir) : null,
     startedAt: new Date().toISOString(),
     status: "running",
   });
 
-  rlog.startPhase(cycleNumber, stageType, phaseTraceId);
-  rlog.phase("INFO", `runStage: ${stageType} for cycle ${cycleNumber}`);
+  rlog.startAgentRun(cycleNumber, stageType, agentRunId);
+  rlog.agentRun("INFO", `runStage: ${stageType} for cycle ${cycleNumber}`);
 
   // Keep currentRunState in sync so the renderer can recover after refresh
   if (currentRunState) {
-    currentRunState.currentStage = stageType;
-    currentRunState.phaseTraceId = phaseTraceId;
+    currentRunState.currentStep = stageType;
+    currentRunState.agentRunId = agentRunId;
   }
 
   emit({
-    type: "stage_started",
+    type: "step_started",
     runId,
     cycleNumber,
-    stage: stageType,
-    phaseTraceId,
+    step: stageType,
+    agentRunId,
     specDir,
   });
 
@@ -395,13 +395,13 @@ async function runStage(
   // the final cost/duration/structured output. Orchestrator owns phase-level
   // lifecycle (startPhase/completePhase, stage_started/stage_completed events)
   // and the post-stage checkpoint machinery below.
-  const stageResult = await currentRunner.runStage({
+  const stageResult = await currentRunner.runStep({
     config,
     prompt,
     runId,
     cycleNumber,
-    stage: stageType,
-    phaseTraceId,
+    step: stageType,
+    agentRunId,
     specDir: specDir ?? null,
     outputFormat,
     abortController,
@@ -411,7 +411,7 @@ async function runStage(
   const { result: resultText, structuredOutput, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens } = stageResult;
 
   const stageStatus = isAborted() ? "stopped" : "completed";
-  runs.completePhase(config.projectDir, runId, phaseTraceId, {
+  runs.completeAgentRun(config.projectDir, runId, agentRunId, {
     status: stageStatus,
     costUsd: totalCost,
     durationMs,
@@ -420,11 +420,11 @@ async function runStage(
   });
 
   emit({
-    type: "stage_completed",
+    type: "step_completed",
     runId,
     cycleNumber,
-    stage: stageType,
-    phaseTraceId,
+    step: stageType,
+    agentRunId,
     costUsd: totalCost,
     durationMs,
     ...(isAborted() ? { stopped: true } : {}),
@@ -438,7 +438,7 @@ async function runStage(
       // specDir — they'd clobber the active feature pointer with null, which
       // breaks mid-cycle resume.
       await updateState(activeProjectDir, {
-        lastCompletedStage: stageType,
+        lastCompletedStep: stageType,
         currentCycleNumber: cycleNumber,
         ...(specDir ? { currentSpecDir: specDir } : {}),
       });
@@ -461,7 +461,7 @@ async function runStage(
         updatePhaseCheckpointInfo(
           activeProjectDir,
           runId,
-          phaseTraceId,
+          agentRunId,
           checkpointTag,
           sha,
         );
@@ -469,10 +469,10 @@ async function runStage(
         // non-fatal
       }
       emit({
-        type: "stage_candidate",
+        type: "step_candidate",
         runId,
         cycleNumber,
-        stage: stageType,
+        step: stageType,
         checkpointTag,
         candidateSha: sha,
         attemptBranch,
@@ -500,7 +500,7 @@ async function runStage(
           type: "paused",
           runId,
           reason: "step_mode",
-          stage: stageType,
+          step: stageType,
         });
         abortController?.abort();
       }
@@ -533,13 +533,13 @@ async function readRecordMode(projectDir: string): Promise<boolean> {
 function updatePhaseCheckpointInfo(
   projectDir: string,
   runId: string,
-  phaseTraceId: string,
+  agentRunId: string,
   checkpointTag: string,
   candidateSha: string,
 ): void {
   try {
     runs.updateRun(projectDir, runId, (r) => {
-      const ph = r.phases.find((p) => p.phaseTraceId === phaseTraceId);
+      const ph = r.agentRuns.find((p) => p.agentRunId === agentRunId);
       if (!ph) return;
       ph.checkpointTag = checkpointTag;
       ph.candidateSha = candidateSha;
@@ -556,8 +556,8 @@ async function runBuild(
   emit: EmitFn,
   runId: string,
   rlog: RunLogger
-): Promise<{ phasesCompleted: number; totalCost: number }> {
-  let phasesCompleted = 0;
+): Promise<{ taskPhasesCompleted: number; totalCost: number }> {
+  let taskPhasesCompleted = 0;
   let totalCost = 0;
   const runStart = Date.now();
 
@@ -570,7 +570,7 @@ async function runBuild(
 
   if (specDirs.length === 0) {
     rlog.run("INFO", "runBuild: no unfinished specs found");
-    return { phasesCompleted, totalCost };
+    return { taskPhasesCompleted, totalCost };
   }
 
   rlog.run("INFO", `runBuild: will process ${specDirs.length} spec(s)`, { specDirs });
@@ -593,38 +593,38 @@ async function runBuild(
     while (iteration < config.maxIterations) {
       if (abortController?.signal.aborted) break;
 
-      const targetPhases = runTaskState.getIncompletePhases(config.phases);
+      const targetPhases = runTaskState.getIncompletePhases(config.taskPhases);
 
       const phase = targetPhases[0];
       if (!phase) break;
 
-      const phaseTraceId = crypto.randomUUID();
-      runs.startPhase(config.projectDir, runId, {
-        phaseTraceId,
+      const agentRunId = crypto.randomUUID();
+      runs.startAgentRun(config.projectDir, runId, {
+        agentRunId,
         runId,
         specDir,
-        phaseNumber: phase.number,
-        phaseName: phase.name,
-        stage: null,
+        taskPhaseNumber: phase.number,
+        taskPhaseName: phase.name,
+        step: null,
         cycleNumber: null,
         featureSlug: path.basename(specDir),
         startedAt: new Date().toISOString(),
         status: "running",
       });
 
-      rlog.startPhase(phase.number, phase.name, phaseTraceId);
+      rlog.startAgentRun(phase.number, phase.name, agentRunId);
       if (currentRunState) {
-        currentRunState.phaseTraceId = phaseTraceId;
-        currentRunState.phaseNumber = phase.number;
-        currentRunState.phaseName = phase.name;
+        currentRunState.agentRunId = agentRunId;
+        currentRunState.taskPhaseNumber = phase.number;
+        currentRunState.taskPhaseName = phase.name;
       }
-      emit({ type: "phase_started", phase, iteration, phaseTraceId });
-      emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+      emit({ type: "task_phase_started", taskPhase: phase, iteration, agentRunId });
+      emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
 
       try {
-        const result = await runPhase(specConfig, phase, phaseTraceId, runId, emit, rlog, runTaskState);
+        const result = await runPhase(specConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
 
-        runs.completePhase(config.projectDir, runId, phaseTraceId, {
+        runs.completeAgentRun(config.projectDir, runId, agentRunId, {
           status: "completed",
           costUsd: result.cost,
           durationMs: result.durationMs,
@@ -632,16 +632,16 @@ async function runBuild(
           outputTokens: result.outputTokens || null,
         });
 
-        phasesCompleted++;
+        taskPhasesCompleted++;
         totalCost += result.cost;
 
         const freshPhases = parseTasksFile(config.projectDir, specDir);
         const reconciledPhases = runTaskState.reconcileFromDisk(freshPhases);
-        emit({ type: "tasks_updated", phases: reconciledPhases });
+        emit({ type: "tasks_updated", taskPhases: reconciledPhases });
 
         emit({
-          type: "phase_completed",
-          phase: { ...phase, status: "complete" },
+          type: "task_phase_completed",
+          taskPhase: { ...phase, status: "complete" },
           cost: result.cost,
           durationMs: result.durationMs,
         });
@@ -649,9 +649,9 @@ async function runBuild(
         const message =
           err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;
-        rlog.phase("ERROR", `Phase ${phase.number} failed: ${message}`, { stack });
+        rlog.agentRun("ERROR", `Phase ${phase.number} failed: ${message}`, { stack });
         rlog.run("ERROR", `Phase ${phase.number} failed: ${message}`);
-        runs.completePhase(config.projectDir, runId, phaseTraceId, {
+        runs.completeAgentRun(config.projectDir, runId, agentRunId, {
           status: "failed",
           costUsd: 0,
           durationMs: Date.now() - runStart,
@@ -659,7 +659,7 @@ async function runBuild(
         emit({
           type: "error",
           message: `Phase ${phase.number} failed: ${message}`,
-          phaseNumber: phase.number,
+          taskPhaseNumber: phase.number,
         });
         specFailed = true;
         break;
@@ -670,13 +670,13 @@ async function runBuild(
 
     if (!specFailed && !abortController?.signal.aborted) {
       rlog.run("INFO", `runBuild: spec ${specDir} completed`);
-      emit({ type: "spec_completed", specDir, phasesCompleted });
+      emit({ type: "spec_completed", specDir, taskPhasesCompleted });
     }
 
     if (specFailed) break;
   }
 
-  return { phasesCompleted, totalCost };
+  return { taskPhasesCompleted, totalCost };
 }
 
 // ── Main Entry Point ──
@@ -761,7 +761,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
           type: "variant_group_resume_needed",
           projectDir: config.projectDir,
           groupId: g.groupId,
-          stage: g.stage,
+          step: g.step,
           pendingCount: g.variants.filter((v) => v.status === "pending").length,
           runningCount: g.variants.filter((v) => v.status === "running").length,
         });
@@ -790,7 +790,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
         type: "variant_group_resume_needed",
         projectDir: config.projectDir,
         groupId: g.groupId,
-        stage: g.stage,
+        step: g.step,
         pendingCount: g.variants.filter((v) => v.status === "pending").length,
         runningCount: g.variants.filter((v) => v.status === "running").length,
       });
@@ -807,26 +807,26 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     specDir: config.specDir,
     mode: config.mode,
     model: config.model,
-    phaseTraceId: "",
-    phaseNumber: 0,
-    phaseName: "",
+    agentRunId: "",
+    taskPhaseNumber: 0,
+    taskPhaseName: "",
   };
 
-  let phasesCompleted = 0;
+  let taskPhasesCompleted = 0;
   let totalCost = 0;
   const runStart = Date.now();
 
   try {
     if (config.mode === "loop") {
       const result = await runLoop(config, emit, runId, rlog);
-      phasesCompleted = result.phasesCompleted;
+      taskPhasesCompleted = result.taskPhasesCompleted;
       totalCost = result.totalCost;
       // Branch was created inside runLoop after prerequisites
       baseBranch = result.baseBranch;
       branchName = result.branchName;
     } else {
       const result = await runBuild(config, emit, runId, rlog);
-      phasesCompleted = result.phasesCompleted;
+      taskPhasesCompleted = result.taskPhasesCompleted;
       totalCost = result.totalCost;
     }
   } catch (err) {
@@ -840,7 +840,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
     const totalDuration = Date.now() - runStart;
     const finalStatus = wasStopped ? "stopped" : "completed";
-    runs.completeRun(config.projectDir, runId, finalStatus, totalCost, totalDuration, phasesCompleted);
+    runs.completeRun(config.projectDir, runId, finalStatus, totalCost, totalDuration, taskPhasesCompleted);
 
     // Update state file: paused if stopped, clear if completed
     if (activeProjectDir) {
@@ -873,14 +873,14 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     activeProjectDir = null;
 
     let prUrl: string | null = null;
-    if (!wasStopped && phasesCompleted > 0 && branchName) {
+    if (!wasStopped && taskPhasesCompleted > 0 && branchName) {
       rlog.run("INFO", `run: creating PR for branch ${branchName}`);
       prUrl = createPullRequest(
         config.projectDir,
         branchName,
         baseBranch,
         config.mode,
-        phasesCompleted,
+        taskPhasesCompleted,
         totalCost,
         totalDuration
       );
@@ -891,7 +891,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       type: "run_completed",
       totalCost,
       totalDuration,
-      phasesCompleted,
+      taskPhasesCompleted,
       branchName,
       prUrl,
     });
@@ -924,14 +924,14 @@ async function runPrerequisites(
   emit({ type: "prerequisites_started", runId });
 
   // Create a phase record so the stage appears in preCycleStages
-  const phaseTraceId = crypto.randomUUID();
-  runs.startPhase(config.projectDir, runId, {
-    phaseTraceId,
+  const agentRunId = crypto.randomUUID();
+  runs.startAgentRun(config.projectDir, runId, {
+    agentRunId,
     runId,
     specDir: null,
-    phaseNumber: 0,
-    phaseName: "loop:prerequisites",
-    stage: "prerequisites",
+    taskPhaseNumber: 0,
+    taskPhaseName: "loop:prerequisites",
+    step: "prerequisites",
     cycleNumber: 0,
     featureSlug: null,
     startedAt: new Date().toISOString(),
@@ -939,11 +939,11 @@ async function runPrerequisites(
   });
 
   emit({
-    type: "stage_started",
+    type: "step_started",
     runId,
     cycleNumber: 0,
-    stage: "prerequisites",
-    phaseTraceId,
+    step: "prerequisites",
+    agentRunId,
   });
 
   const startTime = Date.now();
@@ -1218,7 +1218,7 @@ async function runPrerequisites(
 
   const allPassed = failedChecks.length === 0;
   const durationMs = Date.now() - startTime;
-  runs.completePhase(config.projectDir, runId, phaseTraceId, {
+  runs.completeAgentRun(config.projectDir, runId, agentRunId, {
     status: "completed",
     costUsd: 0,
     durationMs,
@@ -1227,11 +1227,11 @@ async function runPrerequisites(
   });
 
   emit({
-    type: "stage_completed",
+    type: "step_completed",
     runId,
     cycleNumber: 0,
-    stage: "prerequisites",
-    phaseTraceId,
+    step: "prerequisites",
+    agentRunId,
     costUsd: 0,
     durationMs,
   });
@@ -1247,7 +1247,7 @@ async function runLoop(
   emit: EmitFn,
   runId: string,
   rlog: RunLogger
-): Promise<{ phasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
+): Promise<{ taskPhasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
   // Validate: loop mode requires a GOAL.md input
   const goalPath = config.descriptionFile ?? path.join(config.projectDir, "GOAL.md");
   if (!fs.existsSync(goalPath)) {
@@ -1319,7 +1319,7 @@ async function runLoop(
 
       // Restore position from state file
       resumeSpecDir = savedState.currentSpecDir;
-      resumeLastStage = savedState.lastCompletedStage;
+      resumeLastStage = savedState.lastCompletedStep;
       cumulativeCost = savedState.cumulativeCostUsd;
       cyclesCompleted = savedState.cyclesCompleted;
       featuresCompleted.push(...savedState.featuresCompleted);
@@ -1357,15 +1357,15 @@ async function runLoop(
     await runPrerequisites(config, emit, runId, rlog);
     if (abortController?.signal.aborted) {
       emit({ type: "loop_terminated", runId, termination: { reason: "user_abort", cyclesCompleted: 0, totalCostUsd: 0, totalDurationMs: 0, featuresCompleted: [], featuresSkipped: [] } });
-      return { phasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
+      return { taskPhasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
     }
   } else {
     rlog.run("INFO", "runLoop: skipping prerequisites (resume)");
     // Emit synthetic events so the UI can reconstruct the stepper state
     emit({ type: "prerequisites_started", runId });
     const prereqTraceId = crypto.randomUUID();
-    emit({ type: "stage_started", runId, cycleNumber: 0, stage: "prerequisites", phaseTraceId: prereqTraceId });
-    emit({ type: "stage_completed", runId, cycleNumber: 0, stage: "prerequisites", phaseTraceId: prereqTraceId, costUsd: 0, durationMs: 0 });
+    emit({ type: "step_started", runId, cycleNumber: 0, step: "prerequisites", agentRunId: prereqTraceId });
+    emit({ type: "step_completed", runId, cycleNumber: 0, step: "prerequisites", agentRunId: prereqTraceId, costUsd: 0, durationMs: 0 });
     emit({ type: "prerequisites_completed", runId });
   }
 
@@ -1396,23 +1396,23 @@ async function runLoop(
   // ── Phase A: Multi-Domain Clarification ──
   // Skip if specs already exist (resume mode) — use existing GOAL_clarified.md
   // Helper to emit a synthetic completed stage event (for skipped stages)
-  const emitSkippedStage = (stage: import("./types.js").LoopStageType, cycleNum = 0) => {
+  const emitSkippedStep = (step: import("./types.js").StepType, cycleNum = 0) => {
     const traceId = crypto.randomUUID();
-    runs.startPhase(config.projectDir, runId, {
-      phaseTraceId: traceId,
+    runs.startAgentRun(config.projectDir, runId, {
+      agentRunId: traceId,
       runId,
       specDir: null,
-      phaseNumber: cycleNum,
-      phaseName: `loop:${stage}`,
-      stage,
+      taskPhaseNumber: cycleNum,
+      taskPhaseName: `loop:${step}`,
+      step,
       cycleNumber: cycleNum,
       featureSlug: null,
       startedAt: new Date().toISOString(),
       status: "running",
     });
-    emit({ type: "stage_started", runId, cycleNumber: cycleNum, stage, phaseTraceId: traceId });
-    runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-    emit({ type: "stage_completed", runId, cycleNumber: cycleNum, stage, phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+    emit({ type: "step_started", runId, cycleNumber: cycleNum, step, agentRunId: traceId });
+    runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
+    emit({ type: "step_completed", runId, cycleNumber: cycleNum, step, agentRunId: traceId, costUsd: 0, durationMs: 0 });
   };
 
   const existingSpecsAtStart = listSpecDirs(config.projectDir);
@@ -1421,10 +1421,10 @@ async function runLoop(
     rlog.run("INFO", `runLoop: specs exist (${existingSpecsAtStart.length}), skipping clarification, using ${clarifiedPath}`);
     // Emit synthetic clarification events so the UI stepper advances past clarification
     emit({ type: "clarification_started", runId });
-    emitSkippedStage("clarification_product");
-    emitSkippedStage("clarification_technical");
-    emitSkippedStage("clarification_synthesis");
-    emitSkippedStage("constitution");
+    emitSkippedStep("clarification_product");
+    emitSkippedStep("clarification_technical");
+    emitSkippedStep("clarification_synthesis");
+    emitSkippedStep("constitution");
     emit({ type: "clarification_completed", runId, fullPlanPath: clarifiedPath });
   } else {
     emit({ type: "clarification_started", runId });
@@ -1447,7 +1447,7 @@ async function runLoop(
       }
     } else {
       rlog.run("INFO", "runLoop: GOAL_product_domain.md exists, skipping product clarification");
-      emitSkippedStage("clarification_product");
+      emitSkippedStep("clarification_product");
     }
 
     // Step 2: Technical domain clarification
@@ -1464,7 +1464,7 @@ async function runLoop(
       }
     } else {
       rlog.run("INFO", "runLoop: GOAL_technical_domain.md exists, skipping technical clarification");
-      emitSkippedStage("clarification_technical");
+      emitSkippedStep("clarification_technical");
     }
 
     // Step 3: Synthesis → GOAL_clarified.md + CLAUDE.md (with structured confirmation)
@@ -1495,7 +1495,7 @@ async function runLoop(
       }
     } else {
       rlog.run("INFO", "runLoop: GOAL_clarified.md exists, skipping synthesis");
-      emitSkippedStage("clarification_synthesis");
+      emitSkippedStep("clarification_synthesis");
     }
 
     fullPlanPath = clarifiedPath;
@@ -1514,7 +1514,7 @@ async function runLoop(
       cumulativeCost += result.cost;
     } else {
       rlog.run("INFO", "runLoop: constitution already filled, skipping");
-      emitSkippedStage("constitution");
+      emitSkippedStep("constitution");
     }
 
     emit({ type: "clarification_completed", runId, fullPlanPath });
@@ -1609,35 +1609,35 @@ async function runLoop(
     // ── Gap Analysis — Deterministic Manifest Walk ──
     let decision: GapAnalysisDecision;
     if (resumeSpecDir && cycleNumber === cyclesCompleted + 1) {
-      // Mid-cycle resume: pick RESUME_AT_STAGE when a pre-implement stage
+      // Mid-cycle resume: pick RESUME_AT_STEP when a pre-implement stage
       // (specify or plan) completed before the abort. A completed "tasks"
       // stage means the pre-implement triad is done → classic RESUME_FEATURE
       // (jump straight to implement). Any later stage or null also maps to
       // RESUME_FEATURE since implement/verify/learnings have their own
       // resume paths.
       if (resumeLastStage === "specify" || resumeLastStage === "plan") {
-        decision = { type: "RESUME_AT_STAGE", specDir: resumeSpecDir, resumeAtStage: resumeLastStage };
-        rlog.run("INFO", `runLoop: resume — using RESUME_AT_STAGE(${resumeLastStage}) for ${resumeSpecDir}`);
+        decision = { type: "RESUME_AT_STEP", specDir: resumeSpecDir, resumeAtStep: resumeLastStage };
+        rlog.run("INFO", `runLoop: resume — using RESUME_AT_STEP(${resumeLastStage}) for ${resumeSpecDir}`);
       } else {
         decision = { type: "RESUME_FEATURE", specDir: resumeSpecDir };
         rlog.run("INFO", `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`);
       }
       const traceId = crypto.randomUUID();
-      runs.startPhase(config.projectDir, runId, {
-        phaseTraceId: traceId,
+      runs.startAgentRun(config.projectDir, runId, {
+        agentRunId: traceId,
         runId,
         specDir: resumeSpecDir,
-        phaseNumber: cycleNumber,
-        phaseName: "loop:gap_analysis",
-        stage: "gap_analysis",
+        taskPhaseNumber: cycleNumber,
+        taskPhaseName: "loop:gap_analysis",
+        step: "gap_analysis",
         cycleNumber,
         featureSlug: path.basename(resumeSpecDir),
         startedAt: new Date().toISOString(),
         status: "running",
       });
-      emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId });
-      runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-      emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+      emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId });
+      runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
+      emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
       resumeSpecDir = null;
     } else {
       try {
@@ -1647,7 +1647,7 @@ async function runLoop(
         }
 
         if (currentRunState) {
-          currentRunState.currentStage = "gap_analysis";
+          currentRunState.currentStep = "gap_analysis";
         }
 
         const active = getActiveFeature(manifest);
@@ -1656,21 +1656,21 @@ async function runLoop(
         // Emit a synthetic (deterministic, cost=0) gap_analysis stage so the UI shows it completed
         const emitSyntheticGapAnalysis = (specDir: string) => {
           const traceId = crypto.randomUUID();
-          runs.startPhase(config.projectDir, runId, {
-            phaseTraceId: traceId,
+          runs.startAgentRun(config.projectDir, runId, {
+            agentRunId: traceId,
             runId,
             specDir: specDir || null,
-            phaseNumber: cycleNumber,
-            phaseName: "loop:gap_analysis",
-            stage: "gap_analysis",
+            taskPhaseNumber: cycleNumber,
+            taskPhaseName: "loop:gap_analysis",
+            step: "gap_analysis",
             cycleNumber,
             featureSlug: specDir ? path.basename(specDir) : null,
             startedAt: new Date().toISOString(),
             status: "running",
           });
-          emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, specDir });
-          runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-          emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+          emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, specDir });
+          runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
+          emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
         };
 
         if (active) {
@@ -1728,7 +1728,7 @@ async function runLoop(
     const featureName = decision.type === "NEXT_FEATURE" ? decision.name : null;
     let specDir = decision.type === "RESUME_FEATURE"
       || decision.type === "REPLAN_FEATURE"
-      || decision.type === "RESUME_AT_STAGE"
+      || decision.type === "RESUME_AT_STEP"
       ? decision.specDir
       : null;
     let cycleFailed = false;
@@ -1783,7 +1783,7 @@ async function runLoop(
           } as never).catch(() => {});
         }
         cyclesCompleted++;
-        runs.updateRunLoopsCompleted(config.projectDir, runId, cyclesCompleted);
+        runs.updateRunCyclesCompleted(config.projectDir, runId, cyclesCompleted);
         continue;
       }
       if (record.implFailures >= 3) {
@@ -1802,17 +1802,17 @@ async function runLoop(
     // GAPS_COMPLETE is already handled by the early `break` above, so the
     // narrowed type at this point excludes it — the switch below is
     // exhaustive over the remaining four variants.
-    const shouldRun = (stage: LoopStageType): boolean => {
+    const shouldRun = (step: StepType): boolean => {
       switch (decision.type) {
         case "NEXT_FEATURE":
-          return stage !== "gap_analysis";
+          return step !== "gap_analysis";
         case "REPLAN_FEATURE":
-          return stage === "plan" || stage === "tasks" || stage === "implement"
-            || stage === "verify" || stage === "learnings";
+          return step === "plan" || step === "tasks" || step === "implement"
+            || step === "verify" || step === "learnings";
         case "RESUME_FEATURE":
-          return stage === "implement" || stage === "verify" || stage === "learnings";
-        case "RESUME_AT_STAGE":
-          return STAGE_ORDER.indexOf(stage) > STAGE_ORDER.indexOf(decision.resumeAtStage);
+          return step === "implement" || step === "verify" || step === "learnings";
+        case "RESUME_AT_STEP":
+          return STEP_ORDER.indexOf(step) > STEP_ORDER.indexOf(decision.resumeAtStep);
       }
     };
 
@@ -1820,14 +1820,14 @@ async function runLoop(
       // Emit synthetic completed events for stages that won't actually run,
       // so the UI stepper shows them ✓ instead of missing/stuck.
       if (decision.type === "RESUME_FEATURE") {
-        emitSkippedStage("specify", cycleNumber);
-        emitSkippedStage("plan", cycleNumber);
-        emitSkippedStage("tasks", cycleNumber);
-      } else if (decision.type === "RESUME_AT_STAGE") {
-        const resumeOrdinal = STAGE_ORDER.indexOf(decision.resumeAtStage);
+        emitSkippedStep("specify", cycleNumber);
+        emitSkippedStep("plan", cycleNumber);
+        emitSkippedStep("tasks", cycleNumber);
+      } else if (decision.type === "RESUME_AT_STEP") {
+        const resumeOrdinal = STEP_ORDER.indexOf(decision.resumeAtStep);
         for (const s of ["specify", "plan", "tasks"] as const) {
-          if (STAGE_ORDER.indexOf(s) <= resumeOrdinal) {
-            emitSkippedStage(s, cycleNumber);
+          if (STEP_ORDER.indexOf(s) <= resumeOrdinal) {
+            emitSkippedStep(s, cycleNumber);
           }
         }
       }
@@ -1836,7 +1836,7 @@ async function runLoop(
       if (decision.type === "NEXT_FEATURE") {
         // Specify (T030)
         if (currentRunState) {
-          currentRunState.currentStage = "specify";
+          currentRunState.currentStep = "specify";
         }
         const knownSpecs = listSpecDirs(config.projectDir);
         const specifyPrompt = buildSpecifyPrompt(decision.name, decision.description);
@@ -1856,7 +1856,7 @@ async function runLoop(
 
         // Persist the new spec directory to state immediately so a pause
         // between specify and plan is recoverable — the emitter reads
-        // currentSpecDir on the next resume to pick RESUME_AT_STAGE.
+        // currentSpecDir on the next resume to pick RESUME_AT_STEP.
         // Must run BEFORE the abort check below, otherwise a Stop click
         // right after specify completes orphans the new spec dir.
         if (activeProjectDir) {
@@ -1869,7 +1869,7 @@ async function runLoop(
         if (abortController?.signal.aborted) throw new AbortError();
       }
 
-      // Plan (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STAGE(specify)
+      // Plan (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STEP(specify)
       if (shouldRun("plan")) {
         if (abortController?.signal.aborted) throw new AbortError();
 
@@ -1879,7 +1879,7 @@ async function runLoop(
           : path.join(config.projectDir, targetSpecDir);
 
         if (currentRunState) {
-          currentRunState.currentStage = "plan";
+          currentRunState.currentStep = "plan";
         }
         // Update FeatureArtifacts.status to "planning"
         if (activeProjectDir && targetSpecDir) {
@@ -1894,7 +1894,7 @@ async function runLoop(
         if (abortController?.signal.aborted) throw new AbortError();
       }
 
-      // Tasks (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STAGE(specify|plan)
+      // Tasks (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STEP(specify|plan)
       if (shouldRun("tasks")) {
         if (abortController?.signal.aborted) throw new AbortError();
 
@@ -1904,7 +1904,7 @@ async function runLoop(
           : path.join(config.projectDir, targetSpecDir);
 
         if (currentRunState) {
-          currentRunState.currentStage = "tasks";
+          currentRunState.currentStep = "tasks";
         }
         const tasksPrompt = buildLoopTasksPrompt(config, specPath);
         const tasksResult = await runStage(config, tasksPrompt, emit, rlog, runId, cycleNumber, "tasks", targetSpecDir);
@@ -1920,7 +1920,7 @@ async function runLoop(
         : path.join(config.projectDir, implSpecDir);
 
       if (currentRunState) {
-        currentRunState.currentStage = "implement";
+        currentRunState.currentStep = "implement";
         currentRunState.specDir = implSpecDir;
       }
       // Update FeatureArtifacts.status to "implementing"
@@ -1932,13 +1932,13 @@ async function runLoop(
 
       // Create a stage-level phase record so the UI shows implement in the stage list
       const implStageTraceId = crypto.randomUUID();
-      runs.startPhase(config.projectDir, runId, {
-        phaseTraceId: implStageTraceId,
+      runs.startAgentRun(config.projectDir, runId, {
+        agentRunId: implStageTraceId,
         runId,
         specDir: implSpecDir,
-        phaseNumber: cycleNumber,
-        phaseName: "loop:implement",
-        stage: "implement",
+        taskPhaseNumber: cycleNumber,
+        taskPhaseName: "loop:implement",
+        step: "implement",
         cycleNumber,
         featureSlug: path.basename(implSpecDir),
         startedAt: new Date().toISOString(),
@@ -1946,11 +1946,11 @@ async function runLoop(
       });
 
       emit({
-        type: "stage_started",
+        type: "step_started",
         runId,
         cycleNumber,
-        stage: "implement",
-        phaseTraceId: implStageTraceId,
+        step: "implement",
+        agentRunId: implStageTraceId,
         specDir: implSpecDir,
       });
 
@@ -1969,22 +1969,22 @@ async function runLoop(
       const runTaskState = new RunTaskState(phases);
 
       // Emit initial task state so the UI can show the spec card immediately
-      emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+      emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
 
       try {
         for (const phase of phases) {
           if (abortController?.signal.aborted) break;
           if (phase.status === "complete") continue;
 
-          const phaseTraceId = crypto.randomUUID();
-          activePhaseTraceId = phaseTraceId;
-          runs.startPhase(config.projectDir, runId, {
-            phaseTraceId,
+          const agentRunId = crypto.randomUUID();
+          activePhaseTraceId = agentRunId;
+          runs.startAgentRun(config.projectDir, runId, {
+            agentRunId,
             runId,
             specDir: implSpecDir,
-            phaseNumber: phase.number,
-            phaseName: phase.name,
-            stage: null,
+            taskPhaseNumber: phase.number,
+            taskPhaseName: phase.name,
+            step: null,
             cycleNumber,
             featureSlug: path.basename(implSpecDir),
             startedAt: new Date().toISOString(),
@@ -1992,15 +1992,15 @@ async function runLoop(
           });
 
           if (currentRunState) {
-            currentRunState.phaseTraceId = phaseTraceId;
-            currentRunState.phaseNumber = phase.number;
-            currentRunState.phaseName = phase.name;
+            currentRunState.agentRunId = agentRunId;
+            currentRunState.taskPhaseNumber = phase.number;
+            currentRunState.taskPhaseName = phase.name;
           }
 
-          emit({ type: "phase_started", phase, iteration: 0, phaseTraceId });
+          emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
 
-          const phaseResult = await runPhase(implConfig, phase, phaseTraceId, runId, emit, rlog, runTaskState);
-          runs.completePhase(config.projectDir, runId, phaseTraceId, {
+          const phaseResult = await runPhase(implConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
+          runs.completeAgentRun(config.projectDir, runId, agentRunId, {
             status: "completed",
             costUsd: phaseResult.cost,
             durationMs: phaseResult.durationMs,
@@ -2016,10 +2016,10 @@ async function runLoop(
           // Reconcile task state from disk
           const freshPhases = parseTasksFile(config.projectDir, implSpecDir);
           runTaskState.reconcileFromDisk(freshPhases);
-          emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+          emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
           emit({
-            type: "phase_completed",
-            phase: { ...phase, status: "complete" },
+            type: "task_phase_completed",
+            taskPhase: { ...phase, status: "complete" },
             cost: phaseResult.cost,
             durationMs: phaseResult.durationMs,
           });
@@ -2029,7 +2029,7 @@ async function runLoop(
         // Mark any in-flight phase trace as failed so it doesn't dangle as "running"
         if (activePhaseTraceId) {
           try {
-            runs.completePhase(config.projectDir, runId, activePhaseTraceId, {
+            runs.completeAgentRun(config.projectDir, runId, activePhaseTraceId, {
               status: "failed",
               costUsd: 0,
               durationMs: Date.now() - implStageStart,
@@ -2043,7 +2043,7 @@ async function runLoop(
         const implStageDurationMs = Date.now() - implStageStart;
         const implAborted = abortController?.signal.aborted ?? false;
         const implFinalStatus = implAborted ? "stopped" : implStageFailed ? "failed" : "completed";
-        runs.completePhase(config.projectDir, runId, implStageTraceId, {
+        runs.completeAgentRun(config.projectDir, runId, implStageTraceId, {
           status: implFinalStatus,
           costUsd: implStageCost,
           durationMs: implStageDurationMs,
@@ -2051,11 +2051,11 @@ async function runLoop(
           outputTokens: implStageOutputTokens || null,
         });
         emit({
-          type: "stage_completed",
+          type: "step_completed",
           runId,
           cycleNumber,
-          stage: "implement",
-          phaseTraceId: implStageTraceId,
+          step: "implement",
+          agentRunId: implStageTraceId,
           costUsd: implStageCost,
           durationMs: implStageDurationMs,
           ...(implAborted ? { stopped: true } : {}),
@@ -2070,7 +2070,7 @@ async function runLoop(
 
       // Verify — structured output with fix-reverify loop
       if (currentRunState) {
-        currentRunState.currentStage = "verify";
+        currentRunState.currentStep = "verify";
       }
       // Update FeatureArtifacts.status to "verifying"
       if (activeProjectDir && implSpecDir) {
@@ -2147,7 +2147,7 @@ async function runLoop(
 
       // Learnings — structured output with dedup
       if (currentRunState) {
-        currentRunState.currentStage = "learnings";
+        currentRunState.currentStep = "learnings";
       }
       const learningsPrompt = buildLearningsPrompt(config, implSpecPath);
       const learningsResult = await runStage(
@@ -2216,8 +2216,8 @@ async function runLoop(
         if (specDir) {
           const record = getOrCreateFailureRecord(specDir);
           // Determine which counter to increment based on the current stage
-          const currentStage = currentRunState?.currentStage;
-          if (currentStage === "plan" || currentStage === "tasks") {
+          const currentStep = currentRunState?.currentStep;
+          if (currentStep === "plan" || currentStep === "tasks") {
             record.replanFailures++;
           } else {
             record.implFailures++;
@@ -2241,7 +2241,7 @@ async function runLoop(
 
     // (loop cycle row removed in 007-sqlite-removal — cycleCost/duration derived from phases)
     void cycleStatus;
-    runs.updateRunLoopsCompleted(config.projectDir, runId, cyclesCompleted);
+    runs.updateRunCyclesCompleted(config.projectDir, runId, cyclesCompleted);
 
     // Update state file with cycle completion
     if (activeProjectDir) {
@@ -2253,7 +2253,7 @@ async function runLoop(
     }
 
     if (currentRunState) {
-      currentRunState.loopsCompleted = cyclesCompleted;
+      currentRunState.cyclesCompleted = cyclesCompleted;
     }
 
     emit({
@@ -2316,7 +2316,7 @@ async function runLoop(
     }
   }
 
-  return { phasesCompleted: cyclesCompleted, totalCost: cumulativeCost, baseBranch, branchName };
+  return { taskPhasesCompleted: cyclesCompleted, totalCost: cumulativeCost, baseBranch, branchName };
 }
 
 export function stopRun(): void {

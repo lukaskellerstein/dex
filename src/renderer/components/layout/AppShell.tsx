@@ -4,9 +4,10 @@ import { Topbar, type TopbarProps } from "./Topbar.js";
 
 interface AppShellProps extends TopbarProps {
   content: ReactNode;
+  tabs?: ReactNode;
 }
 
-export function AppShell({ content, ...topbarProps }: AppShellProps) {
+export function AppShell({ content, tabs, ...topbarProps }: AppShellProps) {
   return (
     <div
       style={{
@@ -31,6 +32,9 @@ export function AppShell({ content, ...topbarProps }: AppShellProps) {
         <Topbar {...topbarProps} />
         <WindowControls />
       </div>
+
+      {/* Tabs (optional) */}
+      {tabs}
 
       {/* Content */}
       <div

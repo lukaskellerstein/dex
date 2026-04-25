@@ -9,6 +9,7 @@ const EMPTY: TimelineSnapshot = {
   currentAttempt: null,
   pending: [],
   captureBranches: [],
+  startingPoint: null,
 };
 
 export function useTimeline(projectDir: string | null): {
@@ -52,7 +53,7 @@ export function useTimeline(projectDir: string | null): {
     };
   }, [projectDir, refresh]);
 
-  // Invalidate on orchestrator stage events (triggered externally via refresh())
+  // Invalidate on orchestrator step events (triggered externally via refresh())
   useEffect(() => {
     if (!projectDir) return;
     const off = window.dexAPI.onOrchestratorEvent((e) => {

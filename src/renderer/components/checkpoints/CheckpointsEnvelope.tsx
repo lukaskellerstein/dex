@@ -5,7 +5,7 @@ import { CandidatePrompt } from "./CandidatePrompt";
 import { VariantCompareModal } from "./VariantCompareModal";
 import { ContinueVariantGroupModal } from "./ContinueVariantGroupModal";
 import type { VariantGroupFile } from "../../../core/checkpoints.js";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 
 interface Props {
   projectDir: string | null;
@@ -15,7 +15,7 @@ interface Props {
 
 interface CandidateInfo {
   runId: string;
-  stage: LoopStageType;
+  step: StepType;
   cycleNumber: number;
   checkpointTag: string;
   candidateSha: string;
@@ -71,7 +71,7 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
         type?: string;
         runId?: string;
         cycleNumber?: number;
-        stage?: LoopStageType;
+        step?: StepType;
         checkpointTag?: string;
         candidateSha?: string;
         attemptBranch?: string;
@@ -83,14 +83,14 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
           if (
             e.checkpointTag &&
             e.candidateSha &&
-            e.stage &&
+            e.step &&
             e.runId &&
             e.attemptBranch !== undefined &&
             e.cycleNumber !== undefined
           ) {
             lastStageRef.current = {
               runId: e.runId,
-              stage: e.stage,
+              step: e.step,
               cycleNumber: e.cycleNumber,
               checkpointTag: e.checkpointTag,
               candidateSha: e.candidateSha,
@@ -166,7 +166,7 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
   const handleTryAgainCandidate = useCallback(async () => {
     if (!projectDir || !candidate) return;
     // The candidate's checkpointTag is the *would-be* tag; for "Try again" we
-    // need to roll back to the *previous* stage's checkpoint. Since we don't
+    // need to roll back to the *previous* step's checkpoint. Since we don't
     // have its identifier here, we go back to the fresh candidate (no tag
     // moved) — the user's next Start picks up from this checkpoint anyway.
     // Real "Try again" flow lands in a future slice that threads the parent
@@ -180,13 +180,13 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
       const variant = variantCompare.variants.find((v) => v.letter === letter);
       if (!variant || !variant.candidateSha) return;
       // Promote the picked variant's candidate to the checkpoint that was
-      // being fanned out. The group's `stage` + fromCheckpoint tell us which.
+      // being fanned out. The group's `step` + fromCheckpoint tell us which.
       // fromCheckpoint is the parent; the new canonical tag is determined by
       // the stage_candidate event that fired at variant completion. We use
-      // the checkpointTag computed from stage + cycleNumber of fromCheckpoint + 1
+      // the checkpointTag computed from step + cycleNumber of fromCheckpoint + 1
       // — but since we don't have cycle context here, we pick the variant's
       // candidate's matching checkpoint tag via the orchestrator's emission.
-      // Simpler approach: promote the tag we'd expect (same stage, same cycle
+      // Simpler approach: promote the tag we'd expect (same step, same cycle
       // extracted from the parent). For MVP we just tag with
       // `checkpoint/variant-<groupId>-<letter>`.
       const tag = `checkpoint/variant-${variantCompare.groupId.slice(0, 6)}-${letter}`;
@@ -249,7 +249,7 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
       )}
       {candidate && (
         <CandidatePrompt
-          stage={candidate.stage}
+          step={candidate.step}
           cycleNumber={candidate.cycleNumber}
           checkpointTag={candidate.checkpointTag}
           candidateSha={candidate.candidateSha}

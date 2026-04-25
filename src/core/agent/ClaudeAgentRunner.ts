@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { AgentRunner, PhaseContext, PhaseResult, StageContext, StageResult } from "./AgentRunner.js";
+import type { AgentRunner, TaskPhaseContext, TaskPhaseResult, StepContext, StepResult } from "./AgentRunner.js";
 import type { AgentStep, RunConfig, UserInputQuestion } from "../types.js";
 import * as runs from "../runs.js";
 import { waitForUserInput } from "../userInput.js";
@@ -14,7 +14,7 @@ import {
 
 /**
  * Claude Code backend — wraps `@anthropic-ai/claude-agent-sdk` `query()`.
- * Construction is cheap: no SDK import until `runStage`/`runPhase` is called.
+ * Construction is cheap: no SDK import until `runStep`/`runTaskPhase` is called.
  */
 export class ClaudeAgentRunner implements AgentRunner {
   // These are held for future use (e.g., per-runner model overrides). They're
@@ -27,8 +27,8 @@ export class ClaudeAgentRunner implements AgentRunner {
     this.projectDir = projectDir;
   }
 
-  async runStage(ctx: StageContext): Promise<StageResult> {
-    const { config, prompt, runId, cycleNumber, stage, phaseTraceId, outputFormat, abortController, emit, rlog } = ctx;
+  async runStep(ctx: StepContext): Promise<StepResult> {
+    const { config, prompt, runId, cycleNumber, step, agentRunId, outputFormat, abortController, emit, rlog } = ctx;
     const startTime = Date.now();
     let stepIndex = 0;
     let totalCost = 0;
@@ -39,21 +39,21 @@ export class ClaudeAgentRunner implements AgentRunner {
     const knownSubagentIds = new Set<string>();
     const activeSubagentSet = new Set<string>();
 
-    const stagePhaseSlug = runs.slugForPhaseName(`loop:${stage}`);
-    const emitAndStore = (step: AgentStep) => {
+    const stepSlug = runs.slugForTaskPhaseName(`loop:${step}`);
+    const emitAndStore = (agentStep: AgentStep) => {
       const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
       const enriched: AgentStep = {
-        ...step,
+        ...agentStep,
         metadata: {
-          ...step.metadata,
+          ...agentStep.metadata,
           costUsd: totalCost || null,
           inputTokens: totalInputTokens || null,
           outputTokens: totalOutputTokens || null,
           ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
         },
       };
-      emit({ type: "agent_step", step: enriched });
-      runs.appendStep(config.projectDir, runId, stagePhaseSlug, cycleNumber, { ...enriched, phaseTraceId });
+      emit({ type: "agent_step", agentStep: enriched });
+      runs.appendAgentStep(config.projectDir, runId, stepSlug, cycleNumber, { ...enriched, agentRunId });
     };
 
     emitAndStore(makeStep("user_message", stepIndex++, prompt));
@@ -74,7 +74,7 @@ export class ClaudeAgentRunner implements AgentRunner {
         ...(outputFormat ? { outputFormat } : {}),
         canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
           if (toolName === "AskUserQuestion") {
-            rlog.phase("INFO", "canUseTool: AskUserQuestion intercepted");
+            rlog.agentRun("INFO", "canUseTool: AskUserQuestion intercepted");
 
             // Parse SDK question format into our typed format
             const rawQuestions = (toolInput.questions ?? []) as Array<Record<string, unknown>>;
@@ -101,18 +101,18 @@ export class ClaudeAgentRunner implements AgentRunner {
                 } else if (q.options.length > 0) {
                   // Fallback: pick the first option if no recommended
                   answers[q.question] = q.options[0].label;
-                  rlog.phase("WARN", `canUseTool: no recommended option for "${q.question}", using first option`);
+                  rlog.agentRun("WARN", `canUseTool: no recommended option for "${q.question}", using first option`);
                 }
               }
               // Still emit the event so the UI can show what was auto-selected
               const requestId = crypto.randomUUID();
               emit({ type: "user_input_request", runId, requestId, questions });
               emit({ type: "user_input_response", requestId, answers });
-              rlog.phase("INFO", "canUseTool: auto-answered (autoClarification)", { answers });
+              rlog.agentRun("INFO", "canUseTool: auto-answered (autoClarification)", { answers });
             } else {
               // Interactive: emit event and wait for user answer
               answers = await waitForUserInput(config.projectDir, emit, runId, questions);
-              rlog.phase("INFO", "canUseTool: user answered", { answers });
+              rlog.agentRun("INFO", "canUseTool: user answered", { answers });
             }
 
             return {
@@ -131,7 +131,7 @@ export class ClaudeAgentRunner implements AgentRunner {
               hooks: [
                 async (input: Record<string, unknown>) => {
                   const toolName = String(input.tool_name ?? "unknown");
-                  rlog.phase("DEBUG", `runStage PreToolUse: ${toolName}`);
+                  rlog.agentRun("DEBUG", `runStep PreToolUse: ${toolName}`);
 
                   if (toolName === "Skill") {
                     const hookToolInput = (input.tool_input ?? {}) as Record<string, unknown>;
@@ -194,7 +194,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                   const info = toSubagentInfo(input);
                   knownSubagentIds.add(info.subagentId);
                   emit({ type: "subagent_started", info });
-                  runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
+                  runs.recordSubagent(config.projectDir, runId, agentRunId, {
                     id: info.subagentId,
                     type: info.subagentType,
                     description: info.description,
@@ -239,7 +239,7 @@ export class ClaudeAgentRunner implements AgentRunner {
       },
     })) {
       if (isAborted()) {
-        rlog.phase("INFO", `runStage(${stage}): abort detected in message loop — breaking out (SDK query may continue in background)`);
+        rlog.agentRun("INFO", `runStep(${step}): abort detected in message loop — breaking out (SDK query may continue in background)`);
         break;
       }
 
@@ -278,16 +278,16 @@ export class ClaudeAgentRunner implements AgentRunner {
         // Structured output handling
         if (outputFormat) {
           if (message.subtype === "error_max_structured_output_retries") {
-            rlog.phase("ERROR", `runStage(${stage}): structured output validation failed after max retries`);
-            throw new Error(`Structured output validation failed for ${stage} — agent could not produce valid JSON matching the schema`);
+            rlog.agentRun("ERROR", `runStep(${step}): structured output validation failed after max retries`);
+            throw new Error(`Structured output validation failed for ${step} — agent could not produce valid JSON matching the schema`);
           }
           structuredOutput = (message as Record<string, unknown>).structured_output ?? null;
           if (structuredOutput === null) {
-            rlog.phase("WARN", `runStage(${stage}): outputFormat requested but structured_output is null — falling back to raw text`);
+            rlog.agentRun("WARN", `runStep(${step}): outputFormat requested but structured_output is null — falling back to raw text`);
           }
         }
 
-        rlog.phase("INFO", `runStage: ${stage} result received`, {
+        rlog.agentRun("INFO", `runStep: ${step} result received`, {
           cost: totalCost,
           resultPreview: resultText.slice(0, 200),
         });
@@ -296,9 +296,9 @@ export class ClaudeAgentRunner implements AgentRunner {
 
     const durationMs = Date.now() - startTime;
 
-    // Emit a completed step so the UI timeline ends cleanly (mirrors runPhase behavior)
+    // Emit a completed step so the UI timeline ends cleanly (mirrors runTaskPhase behavior)
     if (!isAborted()) {
-      emitAndStore(makeStep("completed", stepIndex++, `Stage ${stage} completed`, {
+      emitAndStore(makeStep("completed", stepIndex++, `Step ${step} completed`, {
         inputTokens: totalInputTokens || null,
         outputTokens: totalOutputTokens || null,
       }));
@@ -315,8 +315,8 @@ export class ClaudeAgentRunner implements AgentRunner {
     };
   }
 
-  async runPhase(ctx: PhaseContext): Promise<PhaseResult> {
-    const { config, prompt, runId, phase, phaseTraceId, abortController, emit, rlog, onTodoWrite } = ctx;
+  async runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult> {
+    const { config, prompt, runId, taskPhase, agentRunId, abortController, emit, rlog, onTodoWrite } = ctx;
     const startTime = Date.now();
     let stepIndex = 0;
     let totalCost = 0;
@@ -330,25 +330,25 @@ export class ClaudeAgentRunner implements AgentRunner {
       ? config.specDir
       : `${config.projectDir}/${config.specDir}`;
 
-    rlog.phase("INFO", `runPhase: spawning agent for Phase ${phase.number}: ${phase.name}`);
-    rlog.phase("DEBUG", "runPhase: prompt", { length: prompt.length, prompt });
+    rlog.agentRun("INFO", `runTaskPhase: spawning agent for Phase ${taskPhase.number}: ${taskPhase.name}`);
+    rlog.agentRun("DEBUG", "runTaskPhase: prompt", { length: prompt.length, prompt });
 
-    const phaseSlug = runs.slugForPhaseName(phase.name);
-    const emitAndStore = (step: AgentStep) => {
+    const taskPhaseSlug = runs.slugForTaskPhaseName(taskPhase.name);
+    const emitAndStore = (agentStep: AgentStep) => {
       const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
       const enriched: AgentStep = {
-        ...step,
+        ...agentStep,
         metadata: {
-          ...step.metadata,
+          ...agentStep.metadata,
           costUsd: totalCost || null,
           inputTokens: totalInputTokens || null,
           outputTokens: totalOutputTokens || null,
           ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
         },
       };
-      rlog.phase("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
-      emit({ type: "agent_step", step: enriched });
-      runs.appendStep(config.projectDir, runId, phaseSlug, phase.number, { ...enriched, phaseTraceId });
+      rlog.agentRun("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
+      emit({ type: "agent_step", agentStep: enriched });
+      runs.appendAgentStep(config.projectDir, runId, taskPhaseSlug, taskPhase.number, { ...enriched, agentRunId });
     };
 
     // Emit the initial prompt as a user_message step
@@ -358,12 +358,12 @@ export class ClaudeAgentRunner implements AgentRunner {
     emitAndStore(
       makeStep("skill_invoke", stepIndex++, null, {
         skillName,
-        skillArgs: `${specPath} --phase ${phase.number}`,
+        skillArgs: `${specPath} --phase ${taskPhase.number}`,
       })
     );
 
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
-    rlog.phase("DEBUG", "runPhase: SDK imported, calling query()");
+    rlog.agentRun("DEBUG", "runTaskPhase: SDK imported, calling query()");
 
     const isAborted = () => abortController?.signal.aborted ?? false;
     let sessionId: string | null = null;
@@ -383,7 +383,7 @@ export class ClaudeAgentRunner implements AgentRunner {
               hooks: [
                 async (input: Record<string, unknown>) => {
                   const toolName = String(input.tool_name ?? "unknown");
-                  rlog.phase("DEBUG", `PreToolUse: ${toolName}`, { toolUseId: input.tool_use_id, toolInput: input.tool_input });
+                  rlog.agentRun("DEBUG", `PreToolUse: ${toolName}`, { toolUseId: input.tool_use_id, toolInput: input.tool_input });
 
                   // Emit skill_invoke for Skill tool calls
                   if (toolName === "Skill") {
@@ -424,7 +424,7 @@ export class ClaudeAgentRunner implements AgentRunner {
               hooks: [
                 async (input: Record<string, unknown>) => {
                   const toolName = String(input.tool_name ?? "unknown");
-                  rlog.phase("DEBUG", `PostToolUse: ${toolName}`, { toolUseId: input.tool_use_id });
+                  rlog.agentRun("DEBUG", `PostToolUse: ${toolName}`, { toolUseId: input.tool_use_id });
 
                   // Emit skill_result for Skill tool results
                   if (toolName === "Skill") {
@@ -447,9 +447,9 @@ export class ClaudeAgentRunner implements AgentRunner {
                         status?: string;
                       }>;
                       onTodoWrite(todos);
-                      rlog.phase("DEBUG", "PostToolUse: TodoWrite detected, forwarded to orchestrator");
+                      rlog.agentRun("DEBUG", "PostToolUse: TodoWrite detected, forwarded to orchestrator");
                     } catch (err) {
-                      rlog.phase("WARN", "PostToolUse: failed to process TodoWrite", { err: String(err) });
+                      rlog.agentRun("WARN", "PostToolUse: failed to process TodoWrite", { err: String(err) });
                     }
                   }
 
@@ -473,7 +473,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                     rawInput: input,
                   });
                   emit({ type: "subagent_started", info });
-                  runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
+                  runs.recordSubagent(config.projectDir, runId, agentRunId, {
                     id: info.subagentId,
                     type: info.subagentType,
                     description: info.description,
@@ -511,7 +511,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                   // Skip subagents we never saw start — these are session-init
                   // subagents spawned before our hooks were registered.
                   if (!knownSubagentIds.has(subagentId)) {
-                    rlog.phase("DEBUG", `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`);
+                    rlog.agentRun("DEBUG", `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`);
                     return {};
                   }
 
@@ -532,7 +532,7 @@ export class ClaudeAgentRunner implements AgentRunner {
     })) {
       // Break out of streaming when abort requested
       if (isAborted()) {
-        rlog.phase("INFO", "runPhase: abort detected in message loop, breaking");
+        rlog.agentRun("INFO", "runTaskPhase: abort detected in message loop, breaking");
         break;
       }
 
@@ -546,7 +546,7 @@ export class ClaudeAgentRunner implements AgentRunner {
         const agents = message.agents as unknown[] | undefined;
         const slashCommands = message.slash_commands as unknown[] | undefined;
         const model = message.model as string | undefined;
-        rlog.phase("INFO", "runPhase: system init", {
+        rlog.agentRun("INFO", "runTaskPhase: system init", {
           model,
           toolCount: tools?.length ?? 0,
           skillCount: skills?.length ?? 0,
@@ -555,15 +555,15 @@ export class ClaudeAgentRunner implements AgentRunner {
           slashCommandCount: slashCommands?.length ?? 0,
         });
         if (skills && skills.length > 0) {
-          rlog.phase("INFO", "runPhase: available skills", { skills });
+          rlog.agentRun("INFO", "runTaskPhase: available skills", { skills });
         } else {
-          rlog.phase("WARN", "runPhase: NO SKILLS available to agent");
+          rlog.agentRun("WARN", "runTaskPhase: NO SKILLS available to agent");
         }
         if (plugins && plugins.length > 0) {
-          rlog.phase("INFO", "runPhase: available plugins", { plugins });
+          rlog.agentRun("INFO", "runTaskPhase: available plugins", { plugins });
         }
         if (slashCommands && slashCommands.length > 0) {
-          rlog.phase("INFO", "runPhase: available slash commands", { slashCommands });
+          rlog.agentRun("INFO", "runTaskPhase: available slash commands", { slashCommands });
         }
 
         // Extract tool names and separate MCP servers from built-in tools
@@ -585,7 +585,7 @@ export class ClaudeAgentRunner implements AgentRunner {
               }
             }
           }
-          rlog.phase("DEBUG", "runPhase: available tools", { tools: toolNames });
+          rlog.agentRun("DEBUG", "runTaskPhase: available tools", { tools: toolNames });
         }
 
         // Emit debug step with all agent capabilities
@@ -605,7 +605,7 @@ export class ClaudeAgentRunner implements AgentRunner {
       // Capture session_id from the first message that carries it
       if (!sessionId && typeof message.session_id === "string") {
         sessionId = message.session_id;
-        rlog.phase("INFO", `runPhase: session_id=${sessionId}`);
+        rlog.agentRun("INFO", `runTaskPhase: session_id=${sessionId}`);
         emitAndStore(
           makeStep("text", stepIndex++, `Session: ${sessionId}`, { sessionId })
         );
@@ -627,7 +627,7 @@ export class ClaudeAgentRunner implements AgentRunner {
           totalCost = estimateCost(config.model, totalInputTokens, totalOutputTokens);
         }
 
-        rlog.phase("DEBUG", "assistant message", {
+        rlog.agentRun("DEBUG", "assistant message", {
           outerKeys: Object.keys(message),
           innerKeys: innerMsg ? Object.keys(innerMsg) : null,
           blockTypes: content?.map((b) => b.type) ?? [],
@@ -660,7 +660,7 @@ export class ClaudeAgentRunner implements AgentRunner {
           if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
         }
 
-        rlog.phase("INFO", `runPhase: result received`, {
+        rlog.agentRun("INFO", `runTaskPhase: result received`, {
           cost: costUsd,
           durationMs: message.duration_ms,
           inputTokens: totalInputTokens,
@@ -675,11 +675,11 @@ export class ClaudeAgentRunner implements AgentRunner {
     }
 
     const durationMs = Date.now() - startTime;
-    rlog.phase("INFO", `runPhase: completed, cost=$${totalCost}, duration=${durationMs}ms`);
+    rlog.agentRun("INFO", `runTaskPhase: completed, cost=$${totalCost}, duration=${durationMs}ms`);
 
     // Emit a completed step at the end
     if (!isAborted()) {
-      emitAndStore(makeStep("completed", stepIndex++, `Phase ${phase.number}: ${phase.name} completed`, {
+      emitAndStore(makeStep("completed", stepIndex++, `Phase ${taskPhase.number}: ${taskPhase.name} completed`, {
         inputTokens: totalInputTokens || null,
         outputTokens: totalOutputTokens || null,
       }));

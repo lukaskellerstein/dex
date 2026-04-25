@@ -10,6 +10,7 @@ test("layoutTimeline: empty snapshot", () => {
     currentAttempt: null,
     pending: [],
     captureBranches: [],
+    startingPoint: null,
   };
   const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
   assert.equal(out.nodes.length, 0);
@@ -46,6 +47,7 @@ test("layoutTimeline: canonical-only produces canonical lane + edges", () => {
     currentAttempt: null,
     pending: [],
     captureBranches: [],
+    startingPoint: null,
   };
   const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
   assert.equal(out.nodes.length, 2);
@@ -84,6 +86,7 @@ test("layoutTimeline: attempt branches off a checkpoint", () => {
     currentAttempt: null,
     pending: [],
     captureBranches: [],
+    startingPoint: null,
   };
   const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
   assert.equal(out.nodes.length, 2);
@@ -140,6 +143,7 @@ test("layoutTimeline: multi-variant fan-out uses variant lanes", () => {
     currentAttempt: null,
     pending: [],
     captureBranches: [],
+    startingPoint: null,
   };
   const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
   const variantNodes = out.nodes.filter((n) => n.lane === "variant");
@@ -150,6 +154,63 @@ test("layoutTimeline: multi-variant fan-out uses variant lanes", () => {
   // Three branch-off edges from the tasks checkpoint
   const branchEdges = out.edges.filter((e) => e.kind === "branch-off");
   assert.equal(branchEdges.length, 3);
+});
+
+test("layoutTimeline: starting point only — fresh project shows single anchor node", () => {
+  const snap: TimelineSnapshot = {
+    checkpoints: [],
+    attempts: [],
+    currentAttempt: null,
+    pending: [],
+    captureBranches: [],
+    startingPoint: {
+      branch: "main",
+      sha: "a".repeat(40),
+      shortSha: "aaaaaaa",
+      subject: "initial commit",
+      timestamp: "2026-04-25T10:00:00Z",
+    },
+  };
+  const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
+  assert.equal(out.nodes.length, 1);
+  assert.equal(out.nodes[0].node.kind, "start");
+  assert.equal(out.nodes[0].lane, "canonical");
+  assert.equal(out.edges.length, 0);
+});
+
+test("layoutTimeline: starting point + checkpoint connects via canonical edge", () => {
+  const snap: TimelineSnapshot = {
+    checkpoints: [
+      {
+        tag: "checkpoint/after-prerequisites",
+        label: "prerequisites done",
+        sha: "b".repeat(40),
+        stage: "prerequisites",
+        cycleNumber: 0,
+        featureSlug: null,
+        commitMessage: "dex: prerequisites completed [cycle:0]",
+        timestamp: "2026-04-25T10:05:00Z",
+      },
+    ],
+    attempts: [],
+    currentAttempt: null,
+    pending: [],
+    captureBranches: [],
+    startingPoint: {
+      branch: "main",
+      sha: "a".repeat(40),
+      shortSha: "aaaaaaa",
+      subject: "initial commit",
+      timestamp: "2026-04-25T10:00:00Z",
+    },
+  };
+  const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
+  assert.equal(out.nodes.length, 2);
+  assert.equal(out.nodes[0].node.kind, "start");
+  assert.equal(out.nodes[1].node.kind, "checkpoint");
+  assert.equal(out.edges.length, 1);
+  assert.equal(out.edges[0].kind, "canonical");
+  assert.equal(out.edges[0].toId, "checkpoint/after-prerequisites");
 });
 
 test("layoutTimeline: unavailable checkpoint still placed in canonical lane", () => {
@@ -171,6 +232,7 @@ test("layoutTimeline: unavailable checkpoint still placed in canonical lane", ()
     currentAttempt: null,
     pending: [],
     captureBranches: [],
+    startingPoint: null,
   };
   const out = layoutTimeline(snap, { columnWidth: 72, rowHeight: 64 });
   assert.equal(out.nodes.length, 1);

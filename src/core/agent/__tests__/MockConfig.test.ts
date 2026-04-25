@@ -8,7 +8,7 @@ import {
   mockConfigPath,
   MockConfigParseError,
   MockConfigInvalidError,
-  PHASE_OF_STAGE,
+  PHASE_OF_STEP,
 } from "../MockConfig.ts";
 
 function mkProject(): string {
@@ -180,10 +180,10 @@ test("MockConfig: feature.id must be a non-empty string", () => {
   }
 });
 
-test("PHASE_OF_STAGE: every LoopStageType maps to exactly one phase", () => {
-  assert.equal(PHASE_OF_STAGE.prerequisites, "prerequisites");
-  assert.equal(PHASE_OF_STAGE.manifest_extraction, "clarification");
-  assert.equal(PHASE_OF_STAGE.gap_analysis, "dex_loop");
-  assert.equal(PHASE_OF_STAGE.implement, "dex_loop");
-  assert.equal(PHASE_OF_STAGE.learnings, "dex_loop");
+test("PHASE_OF_STEP: every StepType maps to exactly one phase", () => {
+  assert.equal(PHASE_OF_STEP.prerequisites, "prerequisites");
+  assert.equal(PHASE_OF_STEP.manifest_extraction, "clarification");
+  assert.equal(PHASE_OF_STEP.gap_analysis, "dex_loop");
+  assert.equal(PHASE_OF_STEP.implement, "dex_loop");
+  assert.equal(PHASE_OF_STEP.learnings, "dex_loop");
 });

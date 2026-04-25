@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import type { RunConfig, LoopStageType, EmitFn, DriftSummary } from "./types.js";
+import type { RunConfig, StepType, Phase, EmitFn, DriftSummary } from "./types.js";
 import { getCurrentBranch, getHeadSha, countCommitsBetween, getCommittedFileContent } from "./git.js";
 
 // ── Constants ──
@@ -34,11 +34,11 @@ export interface DexState {
   mode: "loop" | "build" | "plan";
 
   // Position cursor
-  phase: "prerequisites" | "clarification" | "loop";
+  currentPhase: Phase;
   currentCycleNumber: number;
-  lastCompletedStage: LoopStageType | null;
+  lastCompletedStep: StepType | null;
   currentSpecDir: string | null;
-  currentPhaseNumber: number | null;
+  currentTaskPhaseNumber: number | null;
 
   // Clarification
   clarificationCompleted: boolean;
@@ -136,9 +136,9 @@ export interface ReconciliationResult {
 }
 
 export interface ResumePoint {
-  phase: string;
+  phase: Phase;
   cycleNumber: number;
-  stage: LoopStageType;
+  step: StepType;
   specDir?: string;
 }
 
@@ -246,11 +246,11 @@ export function createInitialState(
     status: "running",
     baseBranch,
     mode: config.mode,
-    phase: "prerequisites",
+    currentPhase: "prerequisites",
     currentCycleNumber: 0,
-    lastCompletedStage: null,
+    lastCompletedStep: null,
     currentSpecDir: null,
-    currentPhaseNumber: null,
+    currentTaskPhaseNumber: null,
     clarificationCompleted: false,
     fullPlanPath: null,
     cumulativeCostUsd: 0,
@@ -295,6 +295,19 @@ function stripRemovedFields(raw: Record<string, unknown>): DexState | null {
   // Pre-008: drop `branchName` silently.
   delete raw.branchName;
   delete raw.checkpoint;
+  // Pre-rename (PR 1 of terminology rename): migrate old field names.
+  if (raw.phase !== undefined && raw.currentPhase === undefined) {
+    raw.currentPhase = raw.phase;
+    delete raw.phase;
+  }
+  if (raw.lastCompletedStage !== undefined && raw.lastCompletedStep === undefined) {
+    raw.lastCompletedStep = raw.lastCompletedStage;
+    delete raw.lastCompletedStage;
+  }
+  if (raw.currentPhaseNumber !== undefined && raw.currentTaskPhaseNumber === undefined) {
+    raw.currentTaskPhaseNumber = raw.currentPhaseNumber;
+    delete raw.currentPhaseNumber;
+  }
   return raw as unknown as DexState;
 }
 
@@ -377,7 +390,7 @@ export async function acquireStateLock(projectDir: string): Promise<() => void> 
 
 // ── Crash Recovery ──
 
-export const STAGE_ORDER: LoopStageType[] = [
+export const STEP_ORDER: StepType[] = [
   "prerequisites",
   "clarification",
   "clarification_product",
@@ -395,9 +408,9 @@ export const STAGE_ORDER: LoopStageType[] = [
   "learnings",
 ];
 
-function stageOrdinal(stage: LoopStageType | null): number {
-  if (!stage) return -1;
-  return STAGE_ORDER.indexOf(stage);
+function stepOrdinal(step: StepType | null): number {
+  if (!step) return -1;
+  return STEP_ORDER.indexOf(step);
 }
 
 export async function resolveWorkingTreeConflict(projectDir: string): Promise<DexState | null> {
@@ -419,8 +432,8 @@ export async function resolveWorkingTreeConflict(projectDir: string): Promise<De
   if (!committed) return workingTree;
 
   // Both exist — pick the more advanced one
-  const wtOrdinal = stageOrdinal(workingTree.lastCompletedStage);
-  const cmOrdinal = stageOrdinal(committed.lastCompletedStage);
+  const wtOrdinal = stepOrdinal(workingTree.lastCompletedStep);
+  const cmOrdinal = stepOrdinal(committed.lastCompletedStep);
   const chosen = wtOrdinal >= cmOrdinal ? workingTree : committed;
 
   // Validate: lastCommit SHA must exist in git history
@@ -561,9 +574,9 @@ export async function reconcileState(
   }
 
   // 5. Reconciliation decision matrix
-  let resumeStage = state.lastCompletedStage;
+  let resumeStep = state.lastCompletedStep;
   let resumeCycle = state.currentCycleNumber;
-  let resumePhase = state.phase;
+  let resumePhase = state.currentPhase;
   let resumeSpecDir = state.currentSpecDir ?? undefined;
 
   // Check for clarified goal deletion/modification
@@ -571,7 +584,7 @@ export async function reconcileState(
     const goalPath = state.artifacts.clarifiedGoal.path;
     if (driftSummary.missingArtifacts.includes(goalPath)) {
       resumePhase = "clarification";
-      resumeStage = null;
+      resumeStep = null;
       warnings.push("GOAL_clarified.md deleted — resetting to clarification phase");
     } else if (driftSummary.modifiedArtifacts.includes(goalPath)) {
       blockers.push("GOAL_clarified.md was modified. Re-run gap analysis? Choose: re-run or accept.");
@@ -589,13 +602,13 @@ export async function reconcileState(
     if (feature.spec && driftSummary.missingArtifacts.includes(feature.spec.path)) {
       featurePatches[specDir] = { status: "specifying", spec: null, plan: null, tasks: null, lastImplementedPhase: 0 };
       if (state.currentSpecDir === specDir) {
-        resumeStage = "specify" as LoopStageType;
+        resumeStep = "specify" as StepType;
         warnings.push(`spec.md deleted for ${specDir} — resetting to specifying`);
       }
     } else if (feature.plan && driftSummary.missingArtifacts.includes(feature.plan.path)) {
       featurePatches[specDir] = { status: "planning", plan: null, tasks: null, lastImplementedPhase: 0 };
       if (state.currentSpecDir === specDir) {
-        resumeStage = "plan" as LoopStageType;
+        resumeStep = "plan" as StepType;
         warnings.push(`plan.md deleted for ${specDir} — resetting to planning`);
       }
     }
@@ -604,7 +617,7 @@ export async function reconcileState(
     if (driftSummary.taskRegressions[specDir]?.length) {
       warnings.push(`Tasks unchecked in ${specDir} — will resume implement from earliest unchecked phase`);
       if (state.currentSpecDir === specDir) {
-        resumeStage = "implement" as LoopStageType;
+        resumeStep = "implement" as StepType;
       }
     }
 
@@ -643,13 +656,13 @@ export async function reconcileState(
     statePatches.artifacts = { features: featurePatches as never };
   }
 
-  // Determine the next stage to execute (the one after lastCompletedStage)
-  let nextStage: LoopStageType;
-  if (!resumeStage) {
-    nextStage = STAGE_ORDER[0];
+  // Determine the next step to execute (the one after lastCompletedStep)
+  let nextStep: StepType;
+  if (!resumeStep) {
+    nextStep = STEP_ORDER[0];
   } else {
-    const idx = STAGE_ORDER.indexOf(resumeStage);
-    nextStage = idx < STAGE_ORDER.length - 1 ? STAGE_ORDER[idx + 1] : resumeStage;
+    const idx = STEP_ORDER.indexOf(resumeStep);
+    nextStep = idx < STEP_ORDER.length - 1 ? STEP_ORDER[idx + 1] : resumeStep;
   }
 
   const result: ReconciliationResult = {
@@ -657,7 +670,7 @@ export async function reconcileState(
     resumeFrom: {
       phase: resumePhase,
       cycleNumber: resumeCycle,
-      stage: nextStage,
+      step: nextStep,
       specDir: resumeSpecDir,
     },
     warnings,

@@ -15,7 +15,7 @@ import { MockAgentRunner } from "./MockAgentRunner.js";
 registerAgent("claude", (cfg, dir) => new ClaudeAgentRunner(cfg, dir));
 registerAgent("mock",   (cfg, dir) => new MockAgentRunner(cfg, dir));
 
-export type { AgentRunner, AgentRunnerFactory, StageContext, StageResult, PhaseContext, PhaseResult } from "./AgentRunner.js";
+export type { AgentRunner, AgentRunnerFactory, StepContext, StepResult, TaskPhaseContext, TaskPhaseResult } from "./AgentRunner.js";
 export { registerAgent, createAgentRunner, getRegisteredAgents, UnknownAgentError } from "./registry.js";
 export { ClaudeAgentRunner } from "./ClaudeAgentRunner.js";
 export { MockAgentRunner } from "./MockAgentRunner.js";

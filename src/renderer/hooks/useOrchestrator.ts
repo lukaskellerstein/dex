@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type {
   AgentStep,
   SubagentInfo,
-  Phase,
+  TaskPhase,
   Task,
   OrchestratorEvent,
-  LoopStageType,
+  StepType,
   LoopTermination,
   UserInputQuestion,
   PrerequisiteCheck,
@@ -16,11 +16,11 @@ export interface PendingQuestion {
   questions: UserInputQuestion[];
 }
 
-// UI-side accumulated stage/cycle data
+// UI-side accumulated step/cycle data
 export interface UiLoopStage {
-  type: LoopStageType;
+  type: StepType;
   status: "running" | "completed" | "failed" | "stopped";
-  phaseTraceId: string;
+  agentRunId: string;
   specDir?: string;
   costUsd: number;
   durationMs: number;
@@ -29,9 +29,9 @@ export interface UiLoopStage {
 }
 
 export interface ImplementSubPhase {
-  phaseNumber: number;
-  phaseName: string;
-  phaseTraceId: string;
+  taskPhaseNumber: number;
+  taskPhaseName: string;
+  agentRunId: string;
   status: "running" | "completed" | "stopped";
   costUsd: number;
   durationMs: number;
@@ -52,7 +52,7 @@ export interface UiLoopCycle {
 export interface OrchestratorHook {
   liveSteps: AgentStep[];
   subagents: SubagentInfo[];
-  currentPhase: Phase | null;
+  currentPhase: TaskPhase | null;
   activeSpecDir: string | null;
   activeTask: Task | null;
   isRunning: boolean;
@@ -65,7 +65,7 @@ export interface OrchestratorHook {
   // Loop-mode state
   mode: string | null;
   currentCycle: number | null;
-  currentStage: LoopStageType | null;
+  currentStage: StepType | null;
   isClarifying: boolean;
   loopTermination: LoopTermination | null;
   loopCycles: UiLoopCycle[];
@@ -75,17 +75,17 @@ export interface OrchestratorHook {
   pendingQuestion: PendingQuestion | null;
   answerQuestion: (requestId: string, answers: Record<string, string>) => void;
   loadRunHistory: (projectDir: string) => Promise<boolean>;
-  loadPhaseTrace: (projectDir: string, specDir: string, phase: Phase) => Promise<boolean>;
-  loadStageTrace: (projectDir: string, runId: string, phaseTraceId: string, stageType: LoopStageType, meta?: { costUsd?: number; durationMs?: number }) => Promise<boolean>;
+  loadPhaseTrace: (projectDir: string, specDir: string, taskPhase: TaskPhase) => Promise<boolean>;
+  loadStageTrace: (projectDir: string, runId: string, agentRunId: string, stageType: StepType, meta?: { costUsd?: number; durationMs?: number }) => Promise<boolean>;
   switchToLive: (projectDir: string, runId: string) => Promise<void>;
   onPhaseCompleted: (cb: () => void) => void;
-  onTasksUpdated: (cb: (phases: Phase[]) => void) => void;
+  onTasksUpdated: (cb: (taskPhases: TaskPhase[]) => void) => void;
 }
 
 export function useOrchestrator(): OrchestratorHook {
   const [liveSteps, setLiveSteps] = useState<AgentStep[]>([]);
   const [subagents, setSubagents] = useState<SubagentInfo[]>([]);
-  const [currentPhase, setCurrentPhase] = useState<Phase | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<TaskPhase | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [totalCost, setTotalCost] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
@@ -97,7 +97,7 @@ export function useOrchestrator(): OrchestratorHook {
   const [viewingHistorical, setViewingHistorical] = useState(false);
   const [mode, setMode] = useState<string | null>(null);
   const [currentCycle, setCurrentCycle] = useState<number | null>(null);
-  const [currentStage, setCurrentStage] = useState<LoopStageType | null>(null);
+  const [currentStage, setCurrentStage] = useState<StepType | null>(null);
   const [isClarifying, setIsClarifying] = useState(false);
   const [loopTermination, setLoopTermination] = useState<LoopTermination | null>(null);
   const [loopCycles, setLoopCycles] = useState<UiLoopCycle[]>([]);
@@ -108,19 +108,19 @@ export function useOrchestrator(): OrchestratorHook {
   const viewingHistoricalRef = useRef(false);
   const modeRef = useRef<string | null>(null);
   const currentCycleRef = useRef<number | null>(null);
-  const currentStageRef = useRef<LoopStageType | null>(null);
-  // Tracks the *live* phaseTraceId from events, not overwritten by loadStageTrace/loadPhaseTrace
+  const currentStageRef = useRef<StepType | null>(null);
+  // Tracks the *live* agentRunId from events, not overwritten by loadStageTrace/loadPhaseTrace
   const livePhaseTraceIdRef = useRef<string | null>(null);
   // Tracks the *live* phase from events, not overwritten by loadStageTrace/loadPhaseTrace
-  const livePhaseRef = useRef<Phase | null>(null);
+  const livePhaseRef = useRef<TaskPhase | null>(null);
   const phaseCompletedCb = useRef<(() => void) | null>(null);
-  const tasksUpdatedCb = useRef<((phases: Phase[]) => void) | null>(null);
+  const tasksUpdatedCb = useRef<((taskPhases: TaskPhase[]) => void) | null>(null);
 
   const onPhaseCompleted = useCallback((cb: () => void) => {
     phaseCompletedCb.current = cb;
   }, []);
 
-  const onTasksUpdated = useCallback((cb: (phases: Phase[]) => void) => {
+  const onTasksUpdated = useCallback((cb: (taskPhases: TaskPhase[]) => void) => {
     tasksUpdatedCb.current = cb;
   }, []);
 
@@ -143,9 +143,9 @@ export function useOrchestrator(): OrchestratorHook {
         setCurrentCycle(state.currentCycle);
         currentCycleRef.current = state.currentCycle;
       }
-      if (state.currentStage) {
-        setCurrentStage(state.currentStage as LoopStageType);
-        currentStageRef.current = state.currentStage as LoopStageType;
+      if (state.currentStep) {
+        setCurrentStage(state.currentStep as StepType);
+        currentStageRef.current = state.currentStep as StepType;
       }
       if (state.isClarifying) setIsClarifying(true);
 
@@ -153,32 +153,32 @@ export function useOrchestrator(): OrchestratorHook {
       if (state.mode === "loop") {
         const runData = await window.dexAPI.getRun(state.projectDir, state.runId);
         if (runData) {
-          const loopTraces = runData.phases.filter((pt) => pt.phaseName.startsWith("loop:"));
-          const implTraces = runData.phases.filter((pt) => !pt.phaseName.startsWith("loop:"));
+          const loopTraces = runData.agentRuns.filter((pt) => pt.taskPhaseName.startsWith("loop:"));
+          const implTraces = runData.agentRuns.filter((pt) => !pt.taskPhaseName.startsWith("loop:"));
           const preCycle: UiLoopStage[] = [];
           const cycleMap = new Map<number, UiLoopStage[]>();
 
           for (const pt of loopTraces) {
-            const stageType = pt.phaseName.replace("loop:", "") as LoopStageType;
-            const stage: UiLoopStage = {
+            const stageType = pt.taskPhaseName.replace("loop:", "") as StepType;
+            const step: UiLoopStage = {
               type: stageType,
               status: pt.status === "completed" ? "completed"
                 : pt.status === "stopped" ? "stopped"
                 : pt.status === "running" ? "running"
                 : "failed",
-              phaseTraceId: pt.phaseTraceId,
+              agentRunId: pt.agentRunId,
               specDir: pt.specDir || undefined,
               costUsd: pt.costUsd ?? 0,
               durationMs: pt.durationMs ?? 0,
               startedAt: pt.startedAt,
               completedAt: pt.endedAt ?? undefined,
             };
-            if (pt.phaseNumber === 0) {
-              preCycle.push(stage);
+            if (pt.taskPhaseNumber === 0) {
+              preCycle.push(step);
             } else {
-              const existing = cycleMap.get(pt.phaseNumber) ?? [];
-              existing.push(stage);
-              cycleMap.set(pt.phaseNumber, existing);
+              const existing = cycleMap.get(pt.taskPhaseNumber) ?? [];
+              existing.push(step);
+              cycleMap.set(pt.taskPhaseNumber, existing);
             }
           }
 
@@ -191,9 +191,9 @@ export function useOrchestrator(): OrchestratorHook {
             if (!sd) continue;
             const existing = implBySpecDir.get(sd) ?? [];
             existing.push({
-              phaseNumber: pt.phaseNumber,
-              phaseName: pt.phaseName,
-              phaseTraceId: pt.phaseTraceId,
+              taskPhaseNumber: pt.taskPhaseNumber,
+              taskPhaseName: pt.taskPhaseName,
+              agentRunId: pt.agentRunId,
               status: pt.status === "completed" ? "completed" as const
                 : pt.status === "stopped" ? "stopped" as const
                 : "running" as const,
@@ -231,14 +231,14 @@ export function useOrchestrator(): OrchestratorHook {
         }
       }
 
-      // A phase may not have started yet (phaseTraceId is empty between phases)
-      if (!state.phaseTraceId) return;
+      // A phase may not have started yet (agentRunId is empty between phases)
+      if (!state.agentRunId) return;
 
-      setCurrentPhaseTraceId(state.phaseTraceId);
-      livePhaseTraceIdRef.current = state.phaseTraceId;
+      setCurrentPhaseTraceId(state.agentRunId);
+      livePhaseTraceIdRef.current = state.agentRunId;
       setCurrentPhase({
-        number: state.phaseNumber,
-        name: state.phaseName,
+        number: state.taskPhaseNumber,
+        name: state.taskPhaseName,
         purpose: "",
         tasks: [],
         status: "partial",
@@ -246,8 +246,8 @@ export function useOrchestrator(): OrchestratorHook {
 
       // Reload accumulated steps and subagents for the running phase
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(state.projectDir, state.runId, state.phaseTraceId),
-        window.dexAPI.getPhaseSubagents(state.projectDir, state.runId, state.phaseTraceId),
+        window.dexAPI.getAgentSteps(state.projectDir, state.runId, state.agentRunId),
+        window.dexAPI.getAgentRunSubagents(state.projectDir, state.runId, state.agentRunId),
       ]);
 
       setLiveSteps(
@@ -316,15 +316,15 @@ export function useOrchestrator(): OrchestratorHook {
             setCurrentPhaseTraceId(null);
             break;
 
-          case "phase_started":
-            // In loop mode, keep the stage-level phase name (e.g. "loop:plan")
+          case "task_phase_started":
+            // In loop mode, keep the step-level phase name (e.g. "loop:plan")
             // instead of overwriting it with the internal phase name
             if (modeRef.current !== "loop") {
-              setCurrentPhase(event.phase);
-              livePhaseRef.current = event.phase;
+              setCurrentPhase(event.taskPhase);
+              livePhaseRef.current = event.taskPhase;
             }
-            setCurrentPhaseTraceId(event.phaseTraceId);
-            livePhaseTraceIdRef.current = event.phaseTraceId;
+            setCurrentPhaseTraceId(event.agentRunId);
+            livePhaseTraceIdRef.current = event.agentRunId;
             // Only reset steps if user is watching the live stream;
             // don't disrupt historical phase viewing
             if (!viewingHistoricalRef.current) {
@@ -342,9 +342,9 @@ export function useOrchestrator(): OrchestratorHook {
                         implementPhases: [
                           ...c.implementPhases,
                           {
-                            phaseNumber: event.phase.number,
-                            phaseName: event.phase.name,
-                            phaseTraceId: event.phaseTraceId,
+                            taskPhaseNumber: event.taskPhase.number,
+                            taskPhaseName: event.taskPhase.name,
+                            agentRunId: event.agentRunId,
                             status: "running" as const,
                             costUsd: 0,
                             durationMs: 0,
@@ -359,7 +359,7 @@ export function useOrchestrator(): OrchestratorHook {
 
           case "agent_step":
             if (!viewingHistoricalRef.current) {
-              setLiveSteps((prev) => [...prev, event.step]);
+              setLiveSteps((prev) => [...prev, event.agentStep]);
             }
             break;
 
@@ -383,21 +383,21 @@ export function useOrchestrator(): OrchestratorHook {
 
           case "tasks_updated": {
             // Find the first in-progress task across all phases
-            const inProgress = event.phases
+            const inProgress = event.taskPhases
               .flatMap((p) => p.tasks)
               .find((t) => t.status === "in_progress") ?? null;
             setActiveTask(inProgress);
             // Keep currentPhase in sync with the updated phase data
             setCurrentPhase((prev) => {
               if (!prev) return prev;
-              const updated = event.phases.find((p) => p.number === prev.number);
+              const updated = event.taskPhases.find((p) => p.number === prev.number);
               return updated ?? prev;
             });
-            tasksUpdatedCb.current?.(event.phases);
+            tasksUpdatedCb.current?.(event.taskPhases);
             break;
           }
 
-          case "phase_completed":
+          case "task_phase_completed":
             setTotalCost((prev) => prev + event.cost);
             setTotalDuration((prev) => prev + event.durationMs);
             setPhasesCompleted((prev) => prev + 1);
@@ -410,7 +410,7 @@ export function useOrchestrator(): OrchestratorHook {
                     ? {
                         ...c,
                         implementPhases: c.implementPhases.map((ip) =>
-                          ip.phaseNumber === event.phase.number
+                          ip.taskPhaseNumber === event.taskPhase.number
                             ? { ...ip, status: "completed" as const, costUsd: event.cost, durationMs: event.durationMs }
                             : ip
                         ),
@@ -429,7 +429,7 @@ export function useOrchestrator(): OrchestratorHook {
             setCurrentPhaseTraceId(null);
             setTotalCost(event.totalCost);
             setTotalDuration(event.totalDuration);
-            setPhasesCompleted(event.phasesCompleted);
+            setPhasesCompleted(event.taskPhasesCompleted);
             setCurrentCycle(null);
             currentCycleRef.current = null;
             setCurrentStage(null);
@@ -525,33 +525,33 @@ export function useOrchestrator(): OrchestratorHook {
             );
             break;
 
-          case "stage_started": {
-            setCurrentStage(event.stage);
-            currentStageRef.current = event.stage;
-            setCurrentPhaseTraceId(event.phaseTraceId);
-            livePhaseTraceIdRef.current = event.phaseTraceId;
+          case "step_started": {
+            setCurrentStage(event.step);
+            currentStageRef.current = event.step;
+            setCurrentPhaseTraceId(event.agentRunId);
+            livePhaseTraceIdRef.current = event.agentRunId;
             // Track live phase so switchToLive can restore the correct breadcrumb
-            const stagePhase: Phase = {
+            const stageTaskPhase: TaskPhase = {
               number: 0,
-              name: `loop:${event.stage}`,
+              name: `loop:${event.step}`,
               purpose: "",
               tasks: [],
               status: "partial",
             };
-            livePhaseRef.current = stagePhase;
+            livePhaseRef.current = stageTaskPhase;
             if (!viewingHistoricalRef.current) {
-              setCurrentPhase(stagePhase);
+              setCurrentPhase(stageTaskPhase);
             }
             if (event.specDir) setActiveSpecDir(event.specDir);
-            // Reset steps for new stage (so trace view shows this stage's steps)
+            // Reset steps for new step (so trace view shows this step's steps)
             if (!viewingHistoricalRef.current) {
               setLiveSteps([]);
               setSubagents([]);
             }
             const newStage: UiLoopStage = {
-              type: event.stage,
+              type: event.step,
               status: "running" as const,
-              phaseTraceId: event.phaseTraceId,
+              agentRunId: event.agentRunId,
               specDir: event.specDir,
               costUsd: 0,
               durationMs: 0,
@@ -572,12 +572,12 @@ export function useOrchestrator(): OrchestratorHook {
             break;
           }
 
-          case "stage_completed": {
+          case "step_completed": {
             setTotalCost((prev) => prev + event.costUsd);
             setTotalDuration((prev) => prev + event.durationMs);
             const stageStatus = event.stopped ? "stopped" as const : "completed" as const;
             const updateStage = (s: UiLoopStage) =>
-              s.phaseTraceId === event.phaseTraceId
+              s.agentRunId === event.agentRunId
                 ? {
                     ...s,
                     status: stageStatus,
@@ -632,7 +632,7 @@ export function useOrchestrator(): OrchestratorHook {
     const specKitMarker = await window.dexAPI.readFile(`${projectDir}/.specify/integration.json`);
     if (!specKitMarker) return false;
 
-    const phaseTraces = run.phases;
+    const phaseTraces = run.agentRuns;
 
     setCurrentRunId(run.runId);
     setMode("loop");
@@ -640,41 +640,41 @@ export function useOrchestrator(): OrchestratorHook {
     setTotalCost(run.totalCostUsd ?? 0);
     setTotalDuration(run.totalDurationMs ?? 0);
 
-    // Separate loop stages (phaseName starts with "loop:") from implement phases
-    const loopTraces = phaseTraces.filter((pt) => pt.phaseName.startsWith("loop:"));
-    const implTraces = phaseTraces.filter((pt) => !pt.phaseName.startsWith("loop:"));
+    // Separate loop stages (taskPhaseName starts with "loop:") from implement phases
+    const loopTraces = phaseTraces.filter((pt) => pt.taskPhaseName.startsWith("loop:"));
+    const implTraces = phaseTraces.filter((pt) => !pt.taskPhaseName.startsWith("loop:"));
 
-    // Build pre-cycle stages (phaseNumber === 0)
+    // Build pre-cycle stages (taskPhaseNumber === 0)
     const preCycle: UiLoopStage[] = [];
     const cycleStageMap = new Map<number, UiLoopStage[]>();
 
     const isCrashed = run.status === "crashed" || run.status === "stopped";
 
     for (const pt of loopTraces) {
-      const stageType = pt.phaseName.replace("loop:", "") as LoopStageType;
+      const stageType = pt.taskPhaseName.replace("loop:", "") as StepType;
       // A "running" phase trace is only an orphan if the run itself is dead.
       // While the orchestrator is genuinely active, "running" means live.
       const runningStatus: UiLoopStage["status"] = isCrashed ? "failed" : "running";
-      const stage: UiLoopStage = {
+      const step: UiLoopStage = {
         type: stageType,
         status: pt.status === "completed" ? "completed"
           : pt.status === "stopped" ? "stopped"
           : pt.status === "crashed" ? "failed"
           : pt.status === "running" ? runningStatus
           : "failed",
-        phaseTraceId: pt.phaseTraceId,
+        agentRunId: pt.agentRunId,
         specDir: pt.specDir || undefined,
         costUsd: pt.costUsd ?? 0,
         durationMs: pt.durationMs ?? 0,
         startedAt: pt.startedAt,
         completedAt: pt.endedAt ?? undefined,
       };
-      if (pt.phaseNumber === 0) {
-        preCycle.push(stage);
+      if (pt.taskPhaseNumber === 0) {
+        preCycle.push(step);
       } else {
-        const existing = cycleStageMap.get(pt.phaseNumber) ?? [];
-        existing.push(stage);
-        cycleStageMap.set(pt.phaseNumber, existing);
+        const existing = cycleStageMap.get(pt.taskPhaseNumber) ?? [];
+        existing.push(step);
+        cycleStageMap.set(pt.taskPhaseNumber, existing);
       }
     }
 
@@ -687,9 +687,9 @@ export function useOrchestrator(): OrchestratorHook {
       if (!sd) continue;
       const existing = implBySpecDir.get(sd) ?? [];
       existing.push({
-        phaseNumber: pt.phaseNumber,
-        phaseName: pt.phaseName,
-        phaseTraceId: pt.phaseTraceId,
+        taskPhaseNumber: pt.taskPhaseNumber,
+        taskPhaseName: pt.taskPhaseName,
+        agentRunId: pt.agentRunId,
         status: pt.status === "completed" ? "completed" as const
           : pt.status === "stopped" ? "stopped" as const
           : "completed" as const, // crashed impl phases are effectively done for display
@@ -747,6 +747,7 @@ export function useOrchestrator(): OrchestratorHook {
         featuresCompleted: completedFeatures,
         featuresSkipped: [],
         totalCostUsd: run.totalCostUsd ?? 0,
+        totalDurationMs: run.totalDurationMs ?? 0,
       });
     }
 
@@ -754,17 +755,17 @@ export function useOrchestrator(): OrchestratorHook {
   }, []);
 
   const loadPhaseTrace = useCallback(
-    async (projectDir: string, specDir: string, phase: Phase) => {
-      const trace = await window.dexAPI.getLatestPhaseTrace(
+    async (projectDir: string, specDir: string, taskPhase: TaskPhase) => {
+      const trace = await window.dexAPI.getLatestAgentRun(
         projectDir,
         specDir,
-        phase.number
+        taskPhase.number
       );
       if (!trace) return false;
 
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(projectDir, trace.runId, trace.phaseTraceId),
-        window.dexAPI.getPhaseSubagents(projectDir, trace.runId, trace.phaseTraceId),
+        window.dexAPI.getAgentSteps(projectDir, trace.runId, trace.agentRunId),
+        window.dexAPI.getAgentRunSubagents(projectDir, trace.runId, trace.agentRunId),
       ]);
 
       const steps: AgentStep[] = stepRows.map((row) => ({
@@ -789,8 +790,8 @@ export function useOrchestrator(): OrchestratorHook {
 
       setLiveSteps(steps);
       setSubagents(subs);
-      setCurrentPhase(phase);
-      setCurrentPhaseTraceId(trace.phaseTraceId);
+      setCurrentPhase(taskPhase);
+      setCurrentPhaseTraceId(trace.agentRunId);
       setCurrentRunId(trace.runId);
       setActiveSpecDir(specDir);
       setViewingHistorical(true);
@@ -803,10 +804,10 @@ export function useOrchestrator(): OrchestratorHook {
   );
 
   const loadStageTrace = useCallback(
-    async (projectDir: string, runId: string, phaseTraceId: string, stageType: LoopStageType, meta?: { costUsd?: number; durationMs?: number }) => {
+    async (projectDir: string, runId: string, agentRunId: string, stageType: StepType, meta?: { costUsd?: number; durationMs?: number }) => {
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(projectDir, runId, phaseTraceId),
-        window.dexAPI.getPhaseSubagents(projectDir, runId, phaseTraceId),
+        window.dexAPI.getAgentSteps(projectDir, runId, agentRunId),
+        window.dexAPI.getAgentRunSubagents(projectDir, runId, agentRunId),
       ]);
 
       setLiveSteps(
@@ -838,7 +839,7 @@ export function useOrchestrator(): OrchestratorHook {
         tasks: [],
         status: "complete",
       });
-      setCurrentPhaseTraceId(phaseTraceId);
+      setCurrentPhaseTraceId(agentRunId);
       setCurrentStage(stageType);
       setViewingHistorical(true);
       viewingHistoricalRef.current = true;
@@ -850,7 +851,7 @@ export function useOrchestrator(): OrchestratorHook {
   );
 
   const switchToLive = useCallback(async (projectDir: string, runId: string) => {
-    // Use the ref to get the actual live phaseTraceId — it's never overwritten
+    // Use the ref to get the actual live agentRunId — it's never overwritten
     // by loadStageTrace/loadPhaseTrace, so it always points to the running phase.
     const liveId = livePhaseTraceIdRef.current;
 
@@ -860,8 +861,8 @@ export function useOrchestrator(): OrchestratorHook {
     // steps from incoming events; flip it after setLiveSteps.
     if (liveId) {
       const [stepRows, subagentRows] = await Promise.all([
-        window.dexAPI.getPhaseSteps(projectDir, runId, liveId),
-        window.dexAPI.getPhaseSubagents(projectDir, runId, liveId),
+        window.dexAPI.getAgentSteps(projectDir, runId, liveId),
+        window.dexAPI.getAgentRunSubagents(projectDir, runId, liveId),
       ]);
 
       setLiveSteps(
@@ -892,7 +893,7 @@ export function useOrchestrator(): OrchestratorHook {
       setSubagents([]);
     }
 
-    // Restore the live phase so breadcrumb shows the correct stage name
+    // Restore the live phase so breadcrumb shows the correct step name
     if (livePhaseRef.current) {
       setCurrentPhase(livePhaseRef.current);
     }

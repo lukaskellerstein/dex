@@ -1,7 +1,7 @@
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 
 interface Props {
-  stage: LoopStageType;
+  step: StepType;
   cycleNumber: number;
   featureSlug?: string | null;
   cost?: number;
@@ -11,8 +11,9 @@ interface Props {
   extra?: string;
 }
 
-const STAGE_HEADLINES: Record<LoopStageType, string> = {
+const STAGE_HEADLINES: Record<StepType, string> = {
   prerequisites: "Environment checked, tools available.",
+  create_branch: "Branch created.",
   clarification: "All clarification rounds completed.",
   clarification_product: "Product domain questions answered.",
   clarification_technical: "Technical domain questions answered.",
@@ -27,6 +28,7 @@ const STAGE_HEADLINES: Record<LoopStageType, string> = {
   implement_fix: "Fixes applied.",
   verify: "Verification complete.",
   learnings: "Learnings captured.",
+  commit: "Checkpoint committed.",
 };
 
 function formatDuration(ms?: number): string {
@@ -36,7 +38,7 @@ function formatDuration(ms?: number): string {
 }
 
 export function StageSummary({
-  stage,
+  step,
   cycleNumber,
   featureSlug,
   cost,
@@ -58,11 +60,11 @@ export function StageSummary({
       }}
     >
       <div>
-        <strong>{stage}</strong>
+        <strong>{step}</strong>
         {cycleNumber > 0 && <span style={{ color: "var(--foreground-muted)" }}> · cycle {cycleNumber}</span>}
         {featureSlug && <span style={{ color: "var(--foreground-muted)" }}> · {featureSlug}</span>}
       </div>
-      <div style={{ color: "var(--foreground-muted)" }}>{STAGE_HEADLINES[stage] ?? stage}</div>
+      <div style={{ color: "var(--foreground-muted)" }}>{STAGE_HEADLINES[step] ?? step}</div>
       {(cost !== undefined || durationMs !== undefined) && (
         <div style={{ color: "var(--foreground-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
           {cost !== undefined && <span>cost ${cost.toFixed(2)} · </span>}

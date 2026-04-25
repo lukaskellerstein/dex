@@ -8,21 +8,21 @@ import {
   Pause,
   ScrollText,
 } from "lucide-react";
-import type { Phase } from "../../../core/types.js";
-import type { PhaseRecord } from "../../../core/runs.js";
+import type { TaskPhase } from "../../../core/types.js";
+import type { AgentRunRecord } from "../../../core/runs.js";
 import { TaskRow } from "./TaskRow.js";
 import { StatsBar } from "../shared/StatsBar.js";
 import type { AgentStats } from "../../utils/computeStats.js";
 
 interface PhaseViewProps {
-  phase: Phase;
+  phase: TaskPhase;
   isRunning: boolean;
   isSelected: boolean;
-  traceStats?: PhaseRecord | null;
-  onViewTrace?: (phase: Phase) => void;
+  traceStats?: AgentRunRecord | null;
+  onViewTrace?: (phase: TaskPhase) => void;
 }
 
-function PhaseStatusIcon({ status, isRunning }: { status: Phase["status"]; isRunning: boolean }) {
+function PhaseStatusIcon({ status, isRunning }: { status: TaskPhase["status"]; isRunning: boolean }) {
   if (isRunning) {
     return (
       <Loader2
@@ -87,7 +87,7 @@ export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrac
           <PhaseStatusIcon status={phase.status} isRunning={isRunning} />
         </span>
         <span style={{ fontWeight: 600, fontSize: "0.95rem", flexShrink: 0 }}>
-          Phase {phase.number}
+          TaskPhase {phase.number}
         </span>
         {isRunning && (
           <span
@@ -207,7 +207,7 @@ export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrac
         </div>
       )}
 
-      {/* Phase stats from historical trace — hide for not-started and currently-running phases */}
+      {/* TaskPhase stats from historical trace — hide for not-started and currently-running phases */}
       {expanded && traceStats && phase.status !== "not_started" && !isRunning && (traceStats.costUsd != null || traceStats.durationMs != null) && (
         <div style={{ padding: "0 14px 8px 44px" }}>
           <StatsBar

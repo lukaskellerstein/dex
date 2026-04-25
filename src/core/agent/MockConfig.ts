@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { LoopStageType } from "../types.js";
+import type { StepType } from "../types.js";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -71,18 +71,18 @@ export class MockDisabledError extends Error {
 
 export class MockConfigMissingEntryError extends Error {
   readonly phase: string;
-  readonly stage: string;
+  readonly step: string;
   readonly cycleNumber: number | null;
   readonly featureId: string | null;
-  constructor(phase: string, stage: string, cycleNumber: number | null, featureId: string | null, extra?: string) {
-    const coords = [`phase=${phase}`, `stage=${stage}`];
+  constructor(phase: string, step: string, cycleNumber: number | null, featureId: string | null, extra?: string) {
+    const coords = [`phase=${phase}`, `step=${step}`];
     if (cycleNumber !== null) coords.push(`cycle=${cycleNumber}`);
     if (featureId !== null) coords.push(`feature=${featureId}`);
     const suffix = extra ? `. ${extra}` : "";
     super(`MockConfigMissingEntryError: no script entry for ${coords.join(", ")}${suffix}. Update .dex/mock-config.json.`);
     this.name = "MockConfigMissingEntryError";
     this.phase = phase;
-    this.stage = stage;
+    this.step = step;
     this.cycleNumber = cycleNumber;
     this.featureId = featureId;
   }
@@ -110,11 +110,12 @@ export class MockConfigInvalidPathError extends Error {
   }
 }
 
-// ── Phase → stages mapping ─────────────────────────────────
-// Which top-level key of MockConfig owns each LoopStageType.
+// ── Phase → steps mapping ──────────────────────────────────
+// Which top-level key of MockConfig owns each StepType.
 
-export const PHASE_OF_STAGE: Record<LoopStageType, "prerequisites" | "clarification" | "dex_loop" | "completion"> = {
+export const PHASE_OF_STEP: Record<StepType, "prerequisites" | "clarification" | "dex_loop" | "completion"> = {
   prerequisites:            "prerequisites",
+  create_branch:            "prerequisites",
   clarification:            "clarification",
   clarification_product:    "clarification",
   clarification_technical:  "clarification",
@@ -129,6 +130,7 @@ export const PHASE_OF_STAGE: Record<LoopStageType, "prerequisites" | "clarificat
   implement_fix:            "dex_loop",
   verify:                   "dex_loop",
   learnings:                "dex_loop",
+  commit:                   "dex_loop",
 };
 
 // ── Loader + validator ─────────────────────────────────────
@@ -195,8 +197,8 @@ function validatePhaseEntry(file: string, name: string, entry: unknown): void {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
     throw new MockConfigInvalidError(file, `'${name}' must be an object mapping stage name to descriptor`);
   }
-  for (const [stageName, descriptor] of Object.entries(entry as Record<string, unknown>)) {
-    validateStepDescriptor(file, `${name}.${stageName}`, descriptor);
+  for (const [stepName, descriptor] of Object.entries(entry as Record<string, unknown>)) {
+    validateStepDescriptor(file, `${name}.${stepName}`, descriptor);
   }
 }
 
@@ -230,6 +232,9 @@ function validateCycle(file: string, idx: number, cycle: unknown): void {
   if (typeof f.title !== "string" || f.title.length === 0) {
     throw new MockConfigInvalidError(file, `${where}.feature.title must be a non-empty string`);
   }
+  // Mock-config on-disk JSON keys remain "stages" (not "steps") to avoid
+  // breaking existing user mock-config.json files. Renaming the JSON key
+  // is deferred to a follow-up PR with a migration step.
   const stages = c.stages;
   if (!stages || typeof stages !== "object" || Array.isArray(stages)) {
     throw new MockConfigInvalidError(file, `${where}.stages must be an object`);
@@ -239,8 +244,8 @@ function validateCycle(file: string, idx: number, cycle: unknown): void {
       throw new MockConfigInvalidError(file, `${where}.stages.${req} is required`);
     }
   }
-  for (const [stageName, desc] of Object.entries(stages as Record<string, unknown>)) {
-    validateStepDescriptor(file, `${where}.stages.${stageName}`, desc);
+  for (const [stepName, desc] of Object.entries(stages as Record<string, unknown>)) {
+    validateStepDescriptor(file, `${where}.stages.${stepName}`, desc);
   }
 }
 

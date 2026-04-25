@@ -1,10 +1,10 @@
 import { useState } from "react";
-import type { Phase } from "../../core/types.js";
-import type { PhaseRecord, SpecStats } from "../../core/runs.js";
+import type { TaskPhase } from "../../core/types.js";
+import type { AgentRunRecord, SpecStats } from "../../core/runs.js";
 
 export interface SpecSummary {
   name: string;
-  phases: Phase[];
+  phases: TaskPhase[];
   totalTasks: number;
   doneTasks: number;
   completedPhases: number;
@@ -12,15 +12,15 @@ export interface SpecSummary {
   stats?: SpecStats;
 }
 
-/** Map of phaseNumber → latest PhaseRecord (for displaying per-phase stats) */
-export type PhaseStatsMap = Map<number, PhaseRecord>;
+/** Map of phaseNumber → latest AgentRunRecord (for displaying per-phase stats) */
+export type PhaseStatsMap = Map<number, AgentRunRecord>;
 
 export function useProject() {
   const [projectDir, setProjectDir] = useState<string | null>(null);
   const [specs, setSpecs] = useState<string[]>([]);
   const [specSummaries, setSpecSummaries] = useState<SpecSummary[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<string | null>(null);
-  const [phases, setPhases] = useState<Phase[]>([]);
+  const [phases, setPhases] = useState<TaskPhase[]>([]);
   const [phaseStats, setPhaseStats] = useState<PhaseStatsMap>(new Map());
 
   const loadSpecs = async (dir: string) => {
@@ -114,11 +114,11 @@ export function useProject() {
     setSelectedSpec(specName);
     const [parsed, traceRows] = await Promise.all([
       window.dexAPI.parseSpec(projectDir, specName),
-      window.dexAPI.getSpecPhaseStats(projectDir, specName).catch(() => [] as PhaseRecord[]),
+      window.dexAPI.getSpecAgentRuns(projectDir, specName).catch(() => [] as AgentRunRecord[]),
     ]);
     setPhases(parsed);
-    const statsMap = new Map<number, PhaseRecord>();
-    for (const row of traceRows) statsMap.set(row.phaseNumber, row);
+    const statsMap = new Map<number, AgentRunRecord>();
+    for (const row of traceRows) statsMap.set(row.taskPhaseNumber, row);
     setPhaseStats(statsMap);
   };
 
@@ -128,7 +128,7 @@ export function useProject() {
     setPhaseStats(new Map());
   };
 
-  const updateSpecSummary = (specDir: string, updatedPhases: Phase[]) => {
+  const updateSpecSummary = (specDir: string, updatedPhases: TaskPhase[]) => {
     const totalTasks = updatedPhases.reduce((acc, p) => acc + p.tasks.length, 0);
     const doneTasks = updatedPhases.reduce(
       (acc, p) => acc + p.tasks.filter((t) => t.status === "done").length,
@@ -145,7 +145,7 @@ export function useProject() {
           return { ...s, phases: updatedPhases, totalTasks, doneTasks, completedPhases, totalPhases };
         });
       }
-      // Spec not yet in summaries — add it (happens when implement stage
+      // Spec not yet in summaries — add it (happens when implement step
       // emits tasks_updated before refreshProject has loaded the spec)
       return [
         ...prev,

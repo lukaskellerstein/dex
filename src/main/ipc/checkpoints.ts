@@ -24,7 +24,7 @@ import {
   updateState,
 } from "../../core/state.js";
 import * as runs from "../../core/runs.js";
-import type { LoopStageType } from "../../core/types.js";
+import type { StepType } from "../../core/types.js";
 
 // Minimal run-logger adapter for IPC-triggered operations.
 const ipcLogger = {
@@ -66,7 +66,7 @@ async function withLock<T>(
   }
 }
 
-const PATH_BY_STAGE: Partial<Record<LoopStageType, string[]>> = {
+const PATH_BY_STEP: Partial<Record<StepType, string[]>> = {
   gap_analysis: [".dex/feature-manifest.json"],
   manifest_extraction: [".dex/feature-manifest.json"],
   specify: ["specs/"],
@@ -90,6 +90,7 @@ export function registerCheckpointsHandlers(): void {
         currentAttempt: null,
         pending: [],
         captureBranches: [],
+        startingPoint: null,
       };
     }
   });
@@ -117,13 +118,13 @@ export function registerCheckpointsHandlers(): void {
 
   ipcMain.handle(
     "checkpoints:estimateVariantCost",
-    (_e, projectDir: string, stage: LoopStageType, variantCount: number) => {
+    (_e, projectDir: string, step: StepType, variantCount: number) => {
       const recent = runs.listRuns(projectDir, 20);
       const costs: number[] = [];
       for (const r of recent) {
-        for (const p of r.phases) {
-          if (p.stage === stage && p.status === "completed") {
-            costs.push(p.costUsd);
+        for (const ar of r.agentRuns) {
+          if (ar.step === step && ar.status === "completed") {
+            costs.push(ar.costUsd);
           }
         }
       }
@@ -202,7 +203,7 @@ export function registerCheckpointsHandlers(): void {
         const group: VariantGroupFile = {
           groupId: spawn.result.groupId,
           fromCheckpoint: request.fromCheckpoint,
-          stage: request.stage,
+          step: request.step,
           parallel: spawn.result.parallel,
           createdAt: now,
           variants: spawn.result.branches.map((branch, i) => ({
@@ -368,9 +369,9 @@ export function registerCheckpointsHandlers(): void {
 
   ipcMain.handle(
     "checkpoints:compareAttempts",
-    (_e, projectDir: string, branchA: string, branchB: string, stage: LoopStageType | null) => {
+    (_e, projectDir: string, branchA: string, branchB: string, step: StepType | null) => {
       try {
-        const paths = stage ? PATH_BY_STAGE[stage] : undefined;
+        const paths = step ? PATH_BY_STEP[step] : undefined;
         if (paths && paths.length > 0) {
           const diff = gitExecSilent(
             `git diff ${branchA}..${branchB} -- ${paths.map((p) => `"${p}"`).join(" ")}`,

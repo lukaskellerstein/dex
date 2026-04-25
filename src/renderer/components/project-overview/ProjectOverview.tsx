@@ -1,4 +1,4 @@
-import type { Phase, Task } from "../../../core/types.js";
+import type { TaskPhase, Task } from "../../../core/types.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { SpecCard } from "./SpecCard.js";
 
@@ -8,7 +8,7 @@ interface ProjectOverviewProps {
 
   isRunning: boolean;
   activeSpecDir: string | null;
-  activePhase: Phase | null;
+  activePhase: TaskPhase | null;
   activeTask: Task | null;
 }
 

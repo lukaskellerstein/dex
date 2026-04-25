@@ -1,23 +1,23 @@
 import type {
   EmitFn,
-  LoopStageType,
-  Phase,
+  StepType,
+  TaskPhase,
   RunConfig,
 } from "../types.js";
 import type { RunLogger } from "../log.js";
 
-/** Context passed to runStage. Everything a runner needs to execute one stage. */
-export interface StageContext {
+/** Context passed to runStep. Everything a runner needs to execute one step. */
+export interface StepContext {
   config: RunConfig;
   prompt: string;
   runId: string;
   cycleNumber: number;
-  stage: LoopStageType;
-  /** Stage trace id — assigned by the orchestrator before calling the runner. */
-  phaseTraceId: string;
-  /** Spec dir for this stage, if any (plan/tasks/implement/…); null for non-spec stages. */
+  step: StepType;
+  /** AgentRun id — assigned by the orchestrator before calling the runner. */
+  agentRunId: string;
+  /** Spec dir for this step, if any (plan/tasks/implement/…); null for non-spec steps. */
   specDir: string | null;
-  /** Set when the stage expects JSON-schema-constrained output. */
+  /** Set when the step expects JSON-schema-constrained output. */
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
   /** Abort controller — aborts the agent's execution mid-stream. */
   abortController: AbortController | null;
@@ -27,13 +27,13 @@ export interface StageContext {
   rlog: RunLogger;
 }
 
-export interface StageResult {
+export interface StepResult {
   /** USD — may be 0 for non-SDK runners. */
   cost: number;
   durationMs: number;
   /** Present iff outputFormat was supplied. */
   structuredOutput: unknown | null;
-  /** Last assistant text; used by a few stages for debug/logging. */
+  /** Last assistant text; used by a few steps for debug/logging. */
   result: string;
   inputTokens: number;
   outputTokens: number;
@@ -41,13 +41,13 @@ export interface StageResult {
   sessionId: string | null;
 }
 
-/** Context for runPhase (build-mode phase invocations). */
-export interface PhaseContext {
+/** Context for runTaskPhase (build-mode tasks.md phase invocations). */
+export interface TaskPhaseContext {
   config: RunConfig;
   prompt: string;
   runId: string;
-  phase: Phase;
-  phaseTraceId: string;
+  taskPhase: TaskPhase;
+  agentRunId: string;
   abortController: AbortController | null;
   emit: EmitFn;
   rlog: RunLogger;
@@ -55,7 +55,7 @@ export interface PhaseContext {
   onTodoWrite: (todos: Array<{ content?: string; status?: string }>) => void;
 }
 
-export interface PhaseResult {
+export interface TaskPhaseResult {
   cost: number;
   durationMs: number;
   inputTokens: number;
@@ -63,8 +63,8 @@ export interface PhaseResult {
 }
 
 export interface AgentRunner {
-  runStage(ctx: StageContext): Promise<StageResult>;
-  runPhase(ctx: PhaseContext): Promise<PhaseResult>;
+  runStep(ctx: StepContext): Promise<StepResult>;
+  runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult>;
 }
 
 export type AgentRunnerFactory = (

@@ -168,7 +168,11 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
                     fill="var(--foreground)"
                     style={{ pointerEvents: "none" }}
                   >
-                    {n.node.kind === "checkpoint" ? n.node.data.label : ""}
+                    {n.node.kind === "checkpoint"
+                      ? n.node.data.label
+                      : n.node.kind === "start"
+                        ? `${n.node.data.branch} @ ${n.node.data.shortSha}`
+                        : ""}
                   </text>
                 )}
                 {n.lane !== "canonical" && (
@@ -182,7 +186,7 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
                     {n.node.kind === "attempt"
                       ? n.node.data.branch.slice(-16)
                       : n.node.kind === "pending"
-                        ? `pending ${n.node.data.stage}`
+                        ? `pending ${n.node.data.step}`
                         : ""}
                   </text>
                 )}
@@ -210,7 +214,7 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
             <>
               <div style={{ fontWeight: 600 }}>{hovered.node.data.label}</div>
               <div style={{ color: "var(--foreground-dim)" }}>
-                stage: {hovered.node.data.stage} · cycle {hovered.node.data.cycleNumber}
+                step: {hovered.node.data.step} · cycle {hovered.node.data.cycleNumber}
               </div>
               <div style={{ fontFamily: "var(--font-mono)", color: "var(--foreground-dim)" }}>
                 {hovered.node.data.timestamp}
@@ -223,9 +227,19 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
                 {hovered.node.data.stepsAhead} step(s) ahead
               </div>
             </>
+          ) : hovered.node.kind === "start" ? (
+            <>
+              <div style={{ fontWeight: 600 }}>
+                {hovered.node.data.branch} @ {hovered.node.data.shortSha}
+              </div>
+              <div style={{ color: "var(--foreground-dim)" }}>{hovered.node.data.subject}</div>
+              <div style={{ fontFamily: "var(--font-mono)", color: "var(--foreground-dim)" }}>
+                {hovered.node.data.timestamp}
+              </div>
+            </>
           ) : (
             <>
-              <div style={{ fontWeight: 600 }}>pending {hovered.node.data.stage}</div>
+              <div style={{ fontWeight: 600 }}>pending {hovered.node.data.step}</div>
               <div style={{ color: "var(--foreground-dim)" }}>cycle {hovered.node.data.cycleNumber}</div>
             </>
           )}

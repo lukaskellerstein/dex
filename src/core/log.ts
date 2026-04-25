@@ -14,17 +14,20 @@ export function formatLogLine(level: string, msg: string, data?: unknown): strin
 /**
  * Structured per-run logger.
  *
- * Directory layout:
+ * Directory layout (on-disk path keeps the legacy `phase-<N>_*` prefix to avoid
+ * a log-tree migration; renaming the on-disk layout is deferred to a follow-up
+ * PR — see ~/.claude/plans/what-is-the-wording-wobbly-avalanche.md):
+ *
  *   ~/.dex/logs/<project-name>/<run-id>/
  *     run.log                          — run-level lifecycle events
  *     phase-<N>_<slug>/
- *       agent.log                      — all events for this phase's agent
+ *       agent.log                      — all events for this agent run
  *       subagents/
  *         <subagent-id>.log            — per-subagent lifecycle + raw SDK input
  */
 export class RunLogger {
   private runDir: string;
-  private phaseDir: string | null = null;
+  private agentRunDir: string | null = null;
 
   constructor(projectName: string, runId: string) {
     this.runDir = path.join(LOGS_ROOT, projectName, runId);
@@ -36,42 +39,42 @@ export class RunLogger {
     fs.appendFileSync(path.join(this.runDir, "run.log"), formatLogLine(level, msg, data));
   }
 
-  /** Set the active phase directory — call at phase start */
-  startPhase(phaseNumber: number, phaseName: string, phaseTraceId: string): void {
-    const slug = phaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    this.phaseDir = path.join(this.runDir, `phase-${phaseNumber}_${slug}`);
-    fs.mkdirSync(path.join(this.phaseDir, "subagents"), { recursive: true });
-    this.run("INFO", `Phase ${phaseNumber} started: ${phaseName}`, { phaseTraceId });
-    this.phase("INFO", `Phase ${phaseNumber}: ${phaseName} — phaseTraceId=${phaseTraceId}`);
+  /** Set the active agent-run directory — call at agent-run start */
+  startAgentRun(taskPhaseNumber: number, taskPhaseName: string, agentRunId: string): void {
+    const slug = taskPhaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    this.agentRunDir = path.join(this.runDir, `phase-${taskPhaseNumber}_${slug}`);
+    fs.mkdirSync(path.join(this.agentRunDir, "subagents"), { recursive: true });
+    this.run("INFO", `TaskPhase ${taskPhaseNumber} started: ${taskPhaseName}`, { agentRunId });
+    this.agentRun("INFO", `TaskPhase ${taskPhaseNumber}: ${taskPhaseName} — agentRunId=${agentRunId}`);
   }
 
-  /** Log to the current phase's agent.log */
-  phase(level: LogLevel, msg: string, data?: unknown): void {
-    if (!this.phaseDir) {
+  /** Log to the current agent-run's agent.log */
+  agentRun(level: LogLevel, msg: string, data?: unknown): void {
+    if (!this.agentRunDir) {
       this.run(level, msg, data);
       return;
     }
-    fs.appendFileSync(path.join(this.phaseDir, "agent.log"), formatLogLine(level, msg, data));
+    fs.appendFileSync(path.join(this.agentRunDir, "agent.log"), formatLogLine(level, msg, data));
   }
 
-  /** Log to a subagent's dedicated log file within the current phase */
+  /** Log to a subagent's dedicated log file within the current agent run */
   subagent(subagentId: string, level: LogLevel, msg: string, data?: unknown): void {
-    if (!this.phaseDir) {
+    if (!this.agentRunDir) {
       this.run(level, `[subagent:${subagentId}] ${msg}`, data);
       return;
     }
-    const file = path.join(this.phaseDir, "subagents", `${subagentId}.log`);
+    const file = path.join(this.agentRunDir, "subagents", `${subagentId}.log`);
     fs.appendFileSync(file, formatLogLine(level, msg, data));
   }
 
-  /** Convenience: log to both phase agent.log AND subagent file */
+  /** Convenience: log to both agent-run agent.log AND subagent file */
   subagentEvent(subagentId: string, level: LogLevel, msg: string, data?: unknown): void {
-    this.phase(level, `[subagent:${subagentId}] ${msg}`, data);
+    this.agentRun(level, `[subagent:${subagentId}] ${msg}`, data);
     this.subagent(subagentId, level, msg, data);
   }
 
   get currentRunDir(): string { return this.runDir; }
-  get currentPhaseDir(): string | null { return this.phaseDir; }
+  get currentAgentRunDir(): string | null { return this.agentRunDir; }
 }
 
 /** Fallback logger used before a run starts (global orchestrator log). */

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import type { LoopStageType } from "./types.js";
+import type { StepType } from "./types.js";
 
 // ── Constants ────────────────────────────────────────────
 
@@ -11,7 +11,7 @@ export const CHECKPOINT_MESSAGE_PREFIX = "[checkpoint:";
 export const CHECKPOINT_MESSAGE_REGEX =
   /^dex: (\w+) completed \[cycle:(\d+)\] \[feature:([\w-]+|-)\] \[cost:\$(\d+\.\d{2})\]\n\[checkpoint:(\w+):(\d+)\]/;
 
-const PARALLELIZABLE_STAGES: LoopStageType[] = [
+const PARALLELIZABLE_STEPS: StepType[] = [
   "gap_analysis",
   "specify",
   "plan",
@@ -47,9 +47,9 @@ function gitExec(cmd: string, cwd: string): string {
 
 const slug = (s: string): string => s.replaceAll("_", "-");
 
-export function checkpointTagFor(stage: LoopStageType, cycleNumber: number): string {
-  if (cycleNumber === 0) return `checkpoint/after-${slug(stage)}`;
-  return `checkpoint/cycle-${cycleNumber}-after-${slug(stage)}`;
+export function checkpointTagFor(step: StepType, cycleNumber: number): string {
+  if (cycleNumber === 0) return `checkpoint/after-${slug(step)}`;
+  return `checkpoint/cycle-${cycleNumber}-after-${slug(step)}`;
 }
 
 export function checkpointDoneTag(runId: string): string {
@@ -65,8 +65,9 @@ export function attemptBranchName(date: Date = new Date(), variant?: string): st
   return variant ? `attempt-${stamp}-${variant}` : `attempt-${stamp}`;
 }
 
-const PRETTY_LABELS: Record<LoopStageType, string> = {
+const PRETTY_LABELS: Record<StepType, string> = {
   prerequisites: "prerequisites done",
+  create_branch: "branch created",
   clarification: "clarifications done",
   clarification_product: "product questions answered",
   clarification_technical: "technical questions answered",
@@ -81,21 +82,22 @@ const PRETTY_LABELS: Record<LoopStageType, string> = {
   implement_fix: "fixes applied",
   verify: "verification done",
   learnings: "learnings captured",
+  commit: "checkpoint saved",
 };
 
 export function labelFor(
-  stage: LoopStageType,
+  step: StepType,
   cycleNumber: number,
   featureSlug?: string | null
 ): string {
-  const pretty = PRETTY_LABELS[stage] ?? stage;
+  const pretty = PRETTY_LABELS[step] ?? step;
   if (cycleNumber === 0) return pretty;
   const feature = featureSlug ? ` · ${featureSlug}` : "";
   return `cycle ${cycleNumber}${feature} · ${pretty}`;
 }
 
-export function isParallelizable(stage: LoopStageType): boolean {
-  return PARALLELIZABLE_STAGES.includes(stage);
+export function isParallelizable(step: StepType): boolean {
+  return PARALLELIZABLE_STEPS.includes(step);
 }
 
 // ── Promotion ────────────────────────────────────────────
@@ -160,7 +162,7 @@ export function startAttemptFrom(
 export interface VariantSpawnRequest {
   fromCheckpoint: string;
   variantLetters: string[];
-  stage: LoopStageType;
+  step: StepType;
 }
 
 export interface VariantSpawnResult {
@@ -179,7 +181,7 @@ export function spawnVariants(
   const groupId = crypto.randomUUID();
   const branches: string[] = [];
   const worktrees: string[] = [];
-  const parallel = isParallelizable(request.stage);
+  const parallel = isParallelizable(request.step);
 
   try {
     for (const letter of request.variantLetters) {
@@ -197,7 +199,7 @@ export function spawnVariants(
         branches.push(branch);
       }
     }
-    log(rlog, "INFO", `spawnVariants: ${groupId} stage=${request.stage} parallel=${parallel} branches=${branches.length}`);
+    log(rlog, "INFO", `spawnVariants: ${groupId} step=${request.step} parallel=${parallel} branches=${branches.length}`);
     return {
       ok: true,
       result: {
@@ -242,7 +244,7 @@ export interface CheckpointInfo {
   tag: string;
   label: string;
   sha: string;
-  stage: LoopStageType;
+  step: StepType;
   cycleNumber: number;
   featureSlug: string | null;
   commitMessage: string;
@@ -263,8 +265,16 @@ export interface AttemptInfo {
 export interface PendingCandidate {
   checkpointTag: string;
   candidateSha: string;
-  stage: LoopStageType;
+  step: StepType;
   cycleNumber: number;
+}
+
+export interface StartingPoint {
+  branch: string;
+  sha: string;
+  shortSha: string;
+  subject: string;
+  timestamp: string;
 }
 
 export interface TimelineSnapshot {
@@ -273,6 +283,7 @@ export interface TimelineSnapshot {
   currentAttempt: AttemptInfo | null;
   pending: PendingCandidate[];
   captureBranches: string[];
+  startingPoint: StartingPoint | null;
 }
 
 const TAG_RE_CYCLE = /^checkpoint\/cycle-(\d+)-after-(.+)$/;
@@ -280,17 +291,17 @@ const TAG_RE_BARE = /^checkpoint\/after-(.+)$/;
 
 function parseCheckpointTag(
   tag: string
-): { stage: LoopStageType; cycleNumber: number } | null {
+): { step: StepType; cycleNumber: number } | null {
   const cycleMatch = tag.match(TAG_RE_CYCLE);
   if (cycleMatch) {
     const cycleNumber = Number(cycleMatch[1]);
-    const stage = cycleMatch[2].replaceAll("-", "_") as LoopStageType;
-    return { stage, cycleNumber };
+    const step = cycleMatch[2].replaceAll("-", "_") as StepType;
+    return { step, cycleNumber };
   }
   const bareMatch = tag.match(TAG_RE_BARE);
   if (bareMatch) {
-    const stage = bareMatch[1].replaceAll("-", "_") as LoopStageType;
-    return { stage, cycleNumber: 0 };
+    const step = bareMatch[1].replaceAll("-", "_") as StepType;
+    return { step, cycleNumber: 0 };
   }
   return null;
 }
@@ -326,7 +337,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
         tag,
         label: "run completed",
         sha,
-        stage: "learnings",
+        step: "learnings",
         cycleNumber: -1,
         featureSlug: null,
         commitMessage: message,
@@ -342,7 +353,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
         tag,
         label: `${tag} (unavailable)`,
         sha: "",
-        stage: parsed.stage,
+        step: parsed.step,
         cycleNumber: parsed.cycleNumber,
         featureSlug: null,
         commitMessage: "",
@@ -357,9 +368,9 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
     const featureSlug = featureMatch && featureMatch[1] !== "-" ? featureMatch[1] : null;
     checkpoints.push({
       tag,
-      label: labelFor(parsed.stage, parsed.cycleNumber, featureSlug),
+      label: labelFor(parsed.step, parsed.cycleNumber, featureSlug),
       sha,
-      stage: parsed.stage,
+      step: parsed.step,
       cycleNumber: parsed.cycleNumber,
       featureSlug,
       commitMessage: message,
@@ -413,29 +424,45 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
     captureBranches.push(b);
   }
 
-  // Pending candidates — commits with [checkpoint:<stage>:<cycle>] that have no matching tag
+  // Pending candidates — commits with [checkpoint:<stage>:<cycle>] reachable from
+  // HEAD that have no matching tag. Scoped to HEAD (not --all) so orphan commits
+  // on stale dex/* or attempt-* branches from previous runs don't leak through.
   const existingTags = new Set(checkpoints.map((c) => c.tag));
   const candidateLog = safeExec(
-    `git log --all --grep='^\\[checkpoint:' --format='%H%x09%s%x09%cI'`,
+    `git log HEAD --grep='^\\[checkpoint:' --format='%H%x09%s%x09%cI'`,
     projectDir
   );
   for (const line of candidateLog.split("\n").filter(Boolean)) {
     const [sha, subject] = line.split("\t");
-    // Subject format: "dex: <stage> completed [cycle:N] [feature:x] [cost:$X.XX]"
+    // Subject format: "dex: <step> completed [cycle:N] [feature:x] [cost:$X.XX]"
     const m = subject?.match(/^dex: (\w+) completed \[cycle:(\d+)\]/);
     if (!m) continue;
-    const stage = m[1] as LoopStageType;
+    const step = m[1] as StepType;
     const cycleNumber = Number(m[2]);
-    const tag = checkpointTagFor(stage, cycleNumber);
+    const tag = checkpointTagFor(step, cycleNumber);
     if (existingTags.has(tag)) continue;
-    pending.push({ checkpointTag: tag, candidateSha: sha, stage, cycleNumber });
+    pending.push({ checkpointTag: tag, candidateSha: sha, step, cycleNumber });
+  }
+
+  // Starting point — current branch + HEAD commit, used as the timeline anchor
+  // when no checkpoints exist yet. Null if HEAD is unresolvable (empty repo).
+  let startingPoint: StartingPoint | null = null;
+  const headSha = safeExec(`git rev-parse HEAD`, projectDir);
+  if (currentBranch && headSha) {
+    startingPoint = {
+      branch: currentBranch,
+      sha: headSha,
+      shortSha: headSha.slice(0, 7),
+      subject: safeExec(`git log -1 --format=%s HEAD`, projectDir),
+      timestamp: safeExec(`git log -1 --format=%cI HEAD`, projectDir),
+    };
   }
 
   // Sort: checkpoints by timestamp ascending, attempts by timestamp descending
   checkpoints.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   attempts.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-  return { checkpoints, attempts, currentAttempt, pending, captureBranches };
+  return { checkpoints, attempts, currentAttempt, pending, captureBranches, startingPoint };
 }
 
 // ── Variant group file helpers ───────────────────────────
@@ -443,7 +470,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
 export interface VariantGroupFile {
   groupId: string;
   fromCheckpoint: string;
-  stage: LoopStageType;
+  step: StepType;
   parallel: boolean;
   createdAt: string;
   variants: Array<{

@@ -1,7 +1,8 @@
+import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentRunner, PhaseContext, PhaseResult, StageContext, StageResult } from "./AgentRunner.js";
+import type { AgentRunner, TaskPhaseContext, TaskPhaseResult, StepContext, StepResult } from "./AgentRunner.js";
 import type { AgentStep, RunConfig } from "../types.js";
 import {
   MockConfig,
@@ -9,7 +10,7 @@ import {
   MockConfigInvalidPathError,
   MockFixtureMissingError,
   MockDisabledError,
-  PHASE_OF_STAGE,
+  PHASE_OF_STEP,
   StepDescriptor,
   loadMockConfig,
   mockConfigPath,
@@ -89,12 +90,12 @@ export class MockAgentRunner implements AgentRunner {
     this.fixtureDir = path.isAbsolute(declared) ? declared : path.resolve(projectDir, declared);
   }
 
-  async runStage(ctx: StageContext): Promise<StageResult> {
-    const { cycleNumber, stage, specDir, prompt, emit, rlog } = ctx;
+  async runStep(ctx: StepContext): Promise<StepResult> {
+    const { cycleNumber, step, specDir, prompt, emit, rlog } = ctx;
     const start = Date.now();
-    const phase = PHASE_OF_STAGE[stage];
+    const phase = PHASE_OF_STEP[step];
 
-    // Look up the descriptor for this stage.
+    // Look up the descriptor for this step.
     let descriptor: StepDescriptor;
     let featureId: string | null = null;
     if (phase === "dex_loop") {
@@ -103,7 +104,7 @@ export class MockAgentRunner implements AgentRunner {
       if (cycleIdx < 0 || cycleIdx >= cycles.length) {
         throw new MockConfigMissingEntryError(
           phase,
-          stage,
+          step,
           cycleNumber,
           null,
           `cycles exhausted — script declares ${cycles.length} cycle(s) but orchestrator requested cycle ${cycleNumber}. Add a cycle or terminate earlier with a gap_analysis decision of 'GAPS_COMPLETE'`,
@@ -111,42 +112,42 @@ export class MockAgentRunner implements AgentRunner {
       }
       const cycle = cycles[cycleIdx];
       featureId = cycle.feature.id;
-      const found = cycle.stages[stage];
+      const found = (cycle.stages as Record<string, StepDescriptor>)[step];
       if (!found) {
-        throw new MockConfigMissingEntryError(phase, stage, cycleNumber, featureId);
+        throw new MockConfigMissingEntryError(phase, step, cycleNumber, featureId);
       }
       descriptor = found;
     } else {
-      const phaseEntry = this.config[phase] as Record<string, StepDescriptor>;
-      const found = phaseEntry[stage];
+      const phaseEntry = (this.config as unknown as Record<string, Record<string, StepDescriptor>>)[phase];
+      const found = phaseEntry[step];
       if (!found) {
-        throw new MockConfigMissingEntryError(phase, stage, null, null);
+        throw new MockConfigMissingEntryError(phase, step, null, null);
       }
       descriptor = found;
     }
 
-    rlog.phase("INFO", `mock.runStage: phase=${phase} stage=${stage} cycle=${cycleNumber} feature=${featureId ?? "(none)"}`);
+    rlog.agentRun("INFO", `mock.runStep: phase=${phase} step=${step} cycle=${cycleNumber} feature=${featureId ?? "(none)"}`);
 
-    // Emit the initial prompt + one synthetic agent_step per stage. Unlike the
-    // real runner, the mock does NOT persist steps via runs.appendStep —
+    // Emit the initial prompt + one synthetic agent_step per step. Unlike the
+    // real runner, the mock does NOT persist steps via runs.appendAgentStep —
     // per-step persistence is intentionally out of scope (the mock's trace is
-    // sparse by design; spec 009 assumption). The orchestrator's runStage
-    // wrapper still records phase-level summaries via runs.startPhase /
-    // completePhase.
+    // sparse by design; spec 009 assumption). The orchestrator's runStep
+    // wrapper still records agent-run-level summaries via runs.startAgentRun /
+    // completeAgentRun.
     let stepIndex = 0;
-    const emitOnly = (step: AgentStep) => {
+    const emitOnly = (agentStep: AgentStep) => {
       const enriched: AgentStep = {
-        ...step,
-        metadata: { ...step.metadata, costUsd: null, inputTokens: null, outputTokens: null },
+        ...agentStep,
+        metadata: { ...agentStep.metadata, costUsd: null, inputTokens: null, outputTokens: null },
       };
-      emit({ type: "agent_step", step: enriched });
+      emit({ type: "agent_step", agentStep: enriched });
     };
     emitOnly(mkStep("user_message", stepIndex++, prompt));
 
-    // One synthetic mock_stage agent_step so the trace view shows progress.
+    // One synthetic mock_step agent_step so the trace view shows progress.
     emitOnly(
-      mkStep("text", stepIndex++, `[mock] ${phase}/${stage}${featureId ? ` (${featureId})` : ""}`, {
-        mockStage: stage,
+      mkStep("text", stepIndex++, `[mock] ${phase}/${step}${featureId ? ` (${featureId})` : ""}`, {
+        mockStep: step,
         mockPhase: phase,
         cycleNumber,
         featureId,
@@ -164,7 +165,7 @@ export class MockAgentRunner implements AgentRunner {
     const durationMs = Date.now() - start;
 
     // Emit completed step (mirrors real runner).
-    emitOnly(mkStep("completed", stepIndex++, `Stage ${stage} completed (mock)`));
+    emitOnly(mkStep("completed", stepIndex++, `Step ${step} completed (mock)`));
 
     return {
       result: "",
@@ -177,45 +178,84 @@ export class MockAgentRunner implements AgentRunner {
     };
   }
 
-  async runPhase(ctx: PhaseContext): Promise<PhaseResult> {
-    const { phase, prompt, emit, rlog } = ctx;
+  async runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult> {
+    const { taskPhase, prompt, emit, rlog, config: runConfig } = ctx;
     const start = Date.now();
 
-    // Map phase.name to a MockConfig phase key + stage. The orchestrator's
-    // runPhase is currently only invoked for spec-kit skill expansions in build
-    // mode. If the mock is used in build mode with an unfamiliar phase name we
-    // refuse rather than silently succeed.
-    const phaseKey: "prerequisites" | "clarification" | "dex_loop" | "completion" = "prerequisites";
-    const stageKey = "prerequisites";
-    const phaseEntry = this.config[phaseKey];
-    const descriptor = phaseEntry[stageKey];
+    // The orchestrator invokes runPhase in two places:
+    //   (a) build mode (src/core/orchestrator.ts:625) — standalone spec-kit
+    //       skill expansion; not the mock's primary target.
+    //   (b) loop mode during `implement` (src/core/orchestrator.ts:2002) —
+    //       once per phase parsed from fixtures/tasks.md.
+    //
+    // The loop's `implement` stage bypasses runStage entirely — the orchestrator
+    // only emits stage_started/stage_completed itself and delegates per-phase
+    // work to runPhase. If the mock no-op'd here, checkpoint commits for the
+    // implement stage would be empty (failing spec SC-004). So we apply the
+    // cycle's `cycles[i].stages.implement` side effects on the FIRST runPhase
+    // call for a given specDir, then no-op on subsequent calls within the same
+    // cycle.
+    const specDir = runConfig.specDir;
+    let descriptor: StepDescriptor | null = null;
+    let assignedCycleNumber = 0;
+    let assignedFeatureId: string | null = null;
+    let isFirstPhaseForSpecDir = false;
+
+    if (specDir && this.nextImplementCycleIndex < this.config.dex_loop.cycles.length) {
+      let idx = this.implementAppliedForSpecDir.get(specDir);
+      if (idx === undefined) {
+        idx = this.nextImplementCycleIndex++;
+        this.implementAppliedForSpecDir.set(specDir, idx);
+        isFirstPhaseForSpecDir = true;
+      }
+      if (idx < this.config.dex_loop.cycles.length) {
+        const cycle = this.config.dex_loop.cycles[idx];
+        descriptor = cycle.stages.implement;
+        assignedCycleNumber = idx + 1;
+        assignedFeatureId = cycle.feature.id;
+      }
+    }
+    // Fall back to prerequisites descriptor for build mode or out-of-range.
     if (!descriptor) {
-      throw new MockConfigMissingEntryError(phaseKey, stageKey, null, null);
+      descriptor = this.config.prerequisites.prerequisites;
+      if (!descriptor) {
+        throw new MockConfigMissingEntryError("prerequisites", "prerequisites", null, null);
+      }
     }
 
-    rlog.phase("INFO", `mock.runPhase: Phase ${phase.number}: ${phase.name}`);
+    rlog.agentRun("INFO", `mock.runTaskPhase: TaskPhase ${taskPhase.number} (specDir=${specDir}, cycle=${assignedCycleNumber || "?"}, feature=${assignedFeatureId ?? "?"}, firstForSpecDir=${isFirstPhaseForSpecDir})`);
 
     let stepIndex = 0;
-    const emitOnly = (step: AgentStep) => {
+    const emitOnly = (agentStep: AgentStep) => {
       const enriched: AgentStep = {
-        ...step,
-        metadata: { ...step.metadata, costUsd: null, inputTokens: null, outputTokens: null },
+        ...agentStep,
+        metadata: { ...agentStep.metadata, costUsd: null, inputTokens: null, outputTokens: null },
       };
-      emit({ type: "agent_step", step: enriched });
+      emit({ type: "agent_step", agentStep: enriched });
     };
     emitOnly(mkStep("user_message", stepIndex++, prompt));
     emitOnly(
-      mkStep("text", stepIndex++, `[mock] phase ${phase.number}: ${phase.name}`, {
-        mockPhase: phaseKey,
+      mkStep("text", stepIndex++, `[mock] runTaskPhase ${taskPhase.number}: ${taskPhase.name} (cycle=${assignedCycleNumber || "?"})`, {
+        mockPhase: "implement",
+        cycleNumber: assignedCycleNumber || null,
+        featureId: assignedFeatureId,
       }),
     );
 
     if (descriptor.delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, descriptor.delay));
     }
-    this.applySideEffects(descriptor, { cycleNumber: phase.number, featureId: null, specDir: null });
 
-    emitOnly(mkStep("completed", stepIndex++, `Phase ${phase.number}: ${phase.name} completed (mock)`));
+    // Apply side effects on the FIRST runTaskPhase for a new specDir.
+    if (isFirstPhaseForSpecDir && assignedCycleNumber > 0) {
+      this.applySideEffects(descriptor, {
+        cycleNumber: assignedCycleNumber,
+        featureId: assignedFeatureId,
+        specDir,
+      });
+    }
+
+    emitOnly(mkStep("completed", stepIndex++, `TaskPhase ${taskPhase.number}: ${taskPhase.name} completed (mock)`));
 
     return {
       cost: 0,
@@ -254,6 +294,23 @@ export class MockAgentRunner implements AgentRunner {
         let line = this.renderTemplate(a.line, ctx);
         if (!line.endsWith("\n")) line += "\n";
         fs.appendFileSync(dest, line, "utf8");
+      }
+    }
+
+    // Mirror what a real agent does at the end of its work — stage everything
+    // so the orchestrator's next commitCheckpoint captures the files the mock
+    // just wrote. commitCheckpoint itself only git-adds .dex/feature-manifest.json
+    // and .dex/learnings.md, so without this the spec files (spec.md/plan.md/
+    // tasks.md) and implement outputs (src/mock/*.ts) would sit uncommitted in
+    // the working tree and every checkpoint commit after specify would be empty.
+    // gitignored files (.dex/state.json, .dex/state.lock, etc.) are skipped
+    // automatically by `git add -A`.
+    if ((descriptor.writes && descriptor.writes.length) || (descriptor.appends && descriptor.appends.length)) {
+      try {
+        execSync("git add -A", { cwd: this.projectDir, stdio: "pipe" });
+      } catch {
+        // Working tree may not be a git repo (standalone MockAgentRunner tests),
+        // or git may have nothing to stage. Either way, not fatal.
       }
     }
   }
