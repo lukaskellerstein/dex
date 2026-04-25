@@ -21,7 +21,7 @@ interface DiffState {
 
 /**
  * Opens when variant_group_complete fires for a group. Shows N panes with
- * per-variant stage summary + stage-aware diff against the fromCheckpoint.
+ * per-variant step summary + step-aware diff against the fromCheckpoint.
  * User picks one via Keep this, discards all, or dismisses.
  */
 export function VariantCompareModal({
@@ -48,7 +48,7 @@ export function VariantCompareModal({
             projectDir,
             group.fromCheckpoint,
             v.branch,
-            group.stage,
+            group.step,
           );
           if (cancelled) return;
           setDiffs((prev) => ({
@@ -91,7 +91,7 @@ export function VariantCompareModal({
 
   return (
     <CheckpointModal
-      title={`Compare ${group.variants.length} variants · ${group.stage}`}
+      title={`Compare ${group.variants.length} variants · ${group.step}`}
       onClose={onClose}
       wide
       footer={
@@ -133,7 +133,7 @@ export function VariantCompareModal({
                 Variant {v.letter.toUpperCase()}
                 {failed && <span style={{ color: "var(--status-error)" }}> (failed)</span>}
               </div>
-              <StageSummary stage={group.stage} cycleNumber={0} />
+              <StageSummary step={group.step} cycleNumber={0} />
               <div style={{ fontSize: 11, color: "var(--foreground-dim)", fontFamily: "var(--font-mono)" }}>
                 {v.branch}
               </div>

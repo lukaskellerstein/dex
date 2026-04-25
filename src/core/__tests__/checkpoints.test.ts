@@ -214,7 +214,7 @@ test("spawnVariants: parallel stage creates worktrees", () => {
     const r = spawnVariants(dir, {
       fromCheckpoint: "checkpoint/cycle-1-after-tasks",
       variantLetters: ["a", "b", "c"],
-      stage: "plan",
+      step: "plan",
     });
     assert.equal(r.ok, true);
     if (r.ok) {
@@ -239,7 +239,7 @@ test("spawnVariants: sequential stage creates branches only", () => {
     const r = spawnVariants(dir, {
       fromCheckpoint: "checkpoint/cycle-1-after-tasks",
       variantLetters: ["a", "b"],
-      stage: "implement",
+      step: "implement",
     });
     assert.equal(r.ok, true);
     if (r.ok) {
@@ -261,7 +261,7 @@ test("listTimeline: seeded repo returns expected structure", () => {
     const snap = listTimeline(dir);
     assert.equal(snap.checkpoints.length, 1);
     assert.equal(snap.checkpoints[0].tag, "checkpoint/cycle-1-after-plan");
-    assert.equal(snap.checkpoints[0].stage, "plan");
+    assert.equal(snap.checkpoints[0].step, "plan");
     assert.equal(snap.checkpoints[0].cycleNumber, 1);
     assert.equal(snap.attempts.length, 0);
   } finally {

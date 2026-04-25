@@ -1,0 +1,89 @@
+{
+  "enabled": true,
+  "fixtureDir": "/home/lukas/Projects/Github/lukaskellerstein/dex/fixtures/mock-run/",
+
+  "prerequisites": {
+    "prerequisites": { "delay": 100 }
+  },
+
+  "clarification": {
+    "clarification_product": {
+      "delay": 150,
+      "writes": [
+        { "path": "GOAL_product_domain.md", "from": "GOAL_product_domain.md" }
+      ]
+    },
+    "clarification_technical": {
+      "delay": 150,
+      "writes": [
+        { "path": "GOAL_technical_domain.md", "from": "GOAL_technical_domain.md" }
+      ]
+    },
+    "clarification_synthesis": {
+      "delay": 200,
+      "writes": [
+        { "path": "GOAL_clarified.md", "from": "GOAL_clarified.md" },
+        { "path": "CLAUDE.md",         "from": "CLAUDE.md" }
+      ]
+    },
+    "constitution": {
+      "delay": 150,
+      "writes": [
+        { "path": ".specify/memory/constitution.md", "from": "constitution.md" }
+      ]
+    },
+    "manifest_extraction": {
+      "delay": 200,
+      "structured_output": {
+        "features": [
+          { "id": 1, "title": "Authentication", "description": "Sign-up, log-in, log-out for end users. Session-based auth with email + password." },
+          { "id": 2, "title": "Payments",       "description": "Checkout flow — accept a credit card and create an order record." },
+          { "id": 3, "title": "Final feature",  "description": "Third feature so mock runs produce cross-cycle checkpoint history." }
+        ]
+      }
+    }
+  },
+
+  "dex_loop": {
+    "cycles": [
+      {
+        "feature": { "id": "f-001", "title": "Authentication" },
+        "stages": {
+          "gap_analysis": { "delay": 100, "structured_output": { "decision": "RESUME_FEATURE", "reason": "mock: only consulted on RESUME path" } },
+          "specify":      { "delay": 300, "writes":  [{ "path": "specs/mock-c{cycle}-{feature}/spec.md", "from": "f1-spec.md" }] },
+          "plan":         { "delay": 300, "writes":  [{ "path": "{specDir}/plan.md",  "from": "f1-plan.md"  }] },
+          "tasks":        { "delay": 300, "writes":  [{ "path": "{specDir}/tasks.md", "from": "f1-tasks.md" }] },
+          "implement":    { "delay": 400, "writes":  [{ "path": "src/mock/c{cycle}-{feature}.ts", "content": "// mock cycle {cycle} feature {feature}\nexport const stub = true;\n" }] },
+          "verify":       { "delay": 150, "structured_output": { "passed": true, "buildSucceeded": true, "testsSucceeded": true, "failures": [], "summary": "mock: verify passed" } },
+          "learnings":    { "delay": 100, "appends": [{ "path": ".dex/learnings.md", "line": "- **mock**: c{cycle} {feature} authentication implemented" }] }
+        }
+      },
+      {
+        "feature": { "id": "f-002", "title": "Payments" },
+        "stages": {
+          "gap_analysis": { "delay": 100, "structured_output": { "decision": "RESUME_FEATURE", "reason": "mock: only consulted on RESUME path" } },
+          "specify":      { "delay": 300, "writes":  [{ "path": "specs/mock-c{cycle}-{feature}/spec.md", "from": "f2-spec.md" }] },
+          "plan":         { "delay": 300, "writes":  [{ "path": "{specDir}/plan.md",  "from": "f2-plan.md"  }] },
+          "tasks":        { "delay": 300, "writes":  [{ "path": "{specDir}/tasks.md", "from": "f2-tasks.md" }] },
+          "implement":    { "delay": 400, "writes":  [{ "path": "src/mock/c{cycle}-{feature}.ts", "content": "// mock cycle {cycle} feature {feature}\nexport const stub = true;\n" }] },
+          "verify":       { "delay": 150, "structured_output": { "passed": true, "buildSucceeded": true, "testsSucceeded": true, "failures": [], "summary": "mock: verify passed" } },
+          "learnings":    { "delay": 100, "appends": [{ "path": ".dex/learnings.md", "line": "- **mock**: c{cycle} {feature} payments implemented" }] }
+        }
+      },
+      {
+        "feature": { "id": "f-003", "title": "Final feature" },
+        "stages": {
+          "gap_analysis": { "delay": 100, "structured_output": { "decision": "RESUME_FEATURE", "reason": "mock: only consulted on RESUME path" } },
+          "specify":      { "delay": 300, "writes":  [{ "path": "specs/mock-c{cycle}-{feature}/spec.md", "from": "f3-spec.md" }] },
+          "plan":         { "delay": 300, "writes":  [{ "path": "{specDir}/plan.md",  "from": "f3-plan.md"  }] },
+          "tasks":        { "delay": 300, "writes":  [{ "path": "{specDir}/tasks.md", "from": "f3-tasks.md" }] },
+          "implement":    { "delay": 400, "writes":  [{ "path": "src/mock/c{cycle}-{feature}.ts", "content": "// mock cycle {cycle} feature {feature}\nexport const stub = true;\n" }] },
+          "verify":       { "delay": 150, "structured_output": { "passed": true, "buildSucceeded": true, "testsSucceeded": true, "failures": [], "summary": "mock: verify passed" } },
+          "learnings":    { "delay": 100, "appends": [{ "path": ".dex/learnings.md", "line": "- **mock**: c{cycle} {feature} final feature implemented" }] }
+        }
+      }
+    ]
+  },
+
+  "completion": {}
+}

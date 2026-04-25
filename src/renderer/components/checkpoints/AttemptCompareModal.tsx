@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 import { CheckpointModal } from "./Modal";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 
 interface Props {
   projectDir: string;
   branchA: string;
   branchB: string;
   /** If null, compare falls back to git diff --stat. */
-  stage: LoopStageType | null;
+  step: StepType | null;
   onClose: () => void;
 }
 
-export function AttemptCompareModal({ projectDir, branchA, branchB, stage, onClose }: Props) {
+export function AttemptCompareModal({ projectDir, branchA, branchB, step, onClose }: Props) {
   const [state, setState] = useState<{
     loading: boolean;
     diff?: string;
@@ -28,7 +28,7 @@ export function AttemptCompareModal({ projectDir, branchA, branchB, stage, onClo
           projectDir,
           branchA,
           branchB,
-          stage,
+          step,
         );
         if (cancelled) return;
         if (r.ok) {
@@ -44,7 +44,7 @@ export function AttemptCompareModal({ projectDir, branchA, branchB, stage, onClo
     return () => {
       cancelled = true;
     };
-  }, [projectDir, branchA, branchB, stage]);
+  }, [projectDir, branchA, branchB, step]);
 
   return (
     <CheckpointModal
@@ -65,7 +65,7 @@ export function AttemptCompareModal({ projectDir, branchA, branchB, stage, onClo
           <strong>B:</strong> <code>{branchB}</code>
         </div>
         <div>
-          stage: {stage ?? "—"} · mode: {state.mode ?? "?"}
+          step: {step ?? "—"} · mode: {state.mode ?? "?"}
         </div>
       </div>
       {state.loading && <div>loading diff…</div>}

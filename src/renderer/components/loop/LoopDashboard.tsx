@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { DollarSign, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import type { LoopStageType, LoopTermination, PrerequisiteCheck } from "../../../core/types.js";
+import type { StepType, LoopTermination, PrerequisiteCheck } from "../../../core/types.js";
 import type { UiLoopCycle, UiLoopStage } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { ProcessStepper } from "./ProcessStepper.js";
 import { CycleTimeline } from "./CycleTimeline.js";
 import { VerticalStepper, type StepItem } from "./VerticalStepper.js";
-import { CheckpointControls } from "../checkpoints/CheckpointControls.js";
-
 type MacroPhase = "prerequisites" | "clarification" | "loop" | "completion";
 type PhaseStatus = "pending" | "active" | "done";
 
@@ -17,17 +15,16 @@ export interface LoopDashboardProps {
   prerequisitesChecks: PrerequisiteCheck[];
   isCheckingPrerequisites: boolean;
   currentCycle: number | null;
-  currentStage: LoopStageType | null;
+  currentStage: StepType | null;
   isClarifying: boolean;
   isRunning: boolean;
   totalCost: number;
   loopTermination: LoopTermination | null;
   specSummaries: SpecSummary[];
-  onStageClick: (stage: UiLoopStage) => void;
+  onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   debugBadge?: React.ReactNode;
-  /** 008: the project dir to thread into CheckpointControls. */
   projectDir: string | null;
 }
 
@@ -151,13 +148,13 @@ function checkToStepStatus(check: PrerequisiteCheck | undefined): StepItem["stat
 function PrerequisitesView({
   checks,
   isActive,
-  stage,
+  step,
 }: {
   checks: PrerequisiteCheck[];
   isActive: boolean;
-  stage: UiLoopStage | undefined;
+  step: UiLoopStage | undefined;
 }) {
-  const stageCompleted = stage?.status === "completed";
+  const stageCompleted = step?.status === "completed";
   const checkMap = new Map(checks.map((c) => [c.name, c]));
 
   const steps: StepItem[] = (["claude_cli", "specify_cli", "git_init", "speckit_init", "github_repo"] as const).map((name) => {
@@ -165,7 +162,7 @@ function PrerequisitesView({
     const labels = CHECK_LABELS[name];
     const isFailed = check?.status === "fail";
 
-    // When stage is done, derive step status from the final check result
+    // When step is done, derive step status from the final check result
     let stepStatus: StepItem["status"];
     if (stageCompleted) {
       stepStatus = isFailed ? "failed" : "completed";
@@ -205,33 +202,33 @@ function ClarificationView({
   preCycleStages: UiLoopStage[];
   isClarifying: boolean;
   isRunning: boolean;
-  onStageClick: (stage: UiLoopStage) => void;
+  onStageClick: (step: UiLoopStage) => void;
 }) {
   const productStage = preCycleStages.find((s) => s.type === "clarification_product");
   const technicalStage = preCycleStages.find((s) => s.type === "clarification_technical");
   const synthesisStage = preCycleStages.find((s) => s.type === "clarification_synthesis");
   const constitutionStage = preCycleStages.find((s) => s.type === "constitution");
   const manifestExtractionStage = preCycleStages.find((s) => s.type === "manifest_extraction");
-  // Backward compat: old-style single clarification stage
+  // Backward compat: old-style single clarification step
   const legacyClarificationStage = preCycleStages.find((s) => s.type === "clarification");
 
-  function stageToStatus(stage: UiLoopStage | undefined, prevDone: boolean): StepItem["status"] {
-    if (stage?.status === "completed") return "completed";
-    if (stage?.status === "running") return "active";
-    if (stage?.status === "failed" && !isRunning) return "paused";
-    if (stage) return "pending";
+  function stageToStatus(step: UiLoopStage | undefined, prevDone: boolean): StepItem["status"] {
+    if (step?.status === "completed") return "completed";
+    if (step?.status === "running") return "active";
+    if (step?.status === "failed" && !isRunning) return "paused";
+    if (step) return "pending";
     if (prevDone && isClarifying) return "active";
     // If previous step is done but run is paused, this is where it stopped
     if (prevDone && !isRunning && !isClarifying) return "paused";
     return "pending";
   }
 
-  function stageMeta(stage: UiLoopStage | undefined): React.ReactNode {
-    if (stage?.status === "completed") return <MetaBadge costUsd={stage.costUsd} durationMs={stage.durationMs} />;
+  function stageMeta(step: UiLoopStage | undefined): React.ReactNode {
+    if (step?.status === "completed") return <MetaBadge costUsd={step.costUsd} durationMs={step.durationMs} />;
     return undefined;
   }
 
-  // If we have a legacy single-stage clarification, show it as one combined step
+  // If we have a legacy single-step clarification, show it as one combined step
   if (legacyClarificationStage && !productStage && !technicalStage) {
     const status = legacyClarificationStage.status === "completed" ? "completed"
       : legacyClarificationStage.status === "running" ? "active" : "pending";
@@ -337,11 +334,11 @@ function LoopPhaseView({
 }: {
   cycles: UiLoopCycle[];
   currentCycle: number | null;
-  currentStage: LoopStageType | null;
+  currentStage: StepType | null;
   isRunning: boolean;
   totalCost: number;
   specSummaries: SpecSummary[];
-  onStageClick: (stage: UiLoopStage) => void;
+  onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   debugBadge?: React.ReactNode;
@@ -608,7 +605,6 @@ export function LoopDashboard({
   onImplPhaseClick,
   onSelectSpec,
   debugBadge,
-  projectDir,
 }: LoopDashboardProps) {
   const activePhase = deriveActivePhase(isCheckingPrerequisites, isClarifying, preCycleStages, cycles, loopTermination, isRunning);
   const [selectedPhase, setSelectedPhase] = useState<MacroPhase>(activePhase);
@@ -645,7 +641,7 @@ export function LoopDashboard({
           <PrerequisitesView
             checks={prerequisitesChecks}
             isActive={activePhase === "prerequisites"}
-            stage={preCycleStages.find((s) => s.type === "prerequisites")}
+            step={preCycleStages.find((s) => s.type === "prerequisites")}
           />
         )}
 
@@ -684,7 +680,6 @@ export function LoopDashboard({
         )}
       </div>
 
-      {projectDir && <CheckpointControls projectDir={projectDir} />}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import { CheckpointModal } from "./Modal";
 import { StageSummary } from "./StageSummary";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 
 interface Props {
-  stage: LoopStageType;
+  step: StepType;
   cycleNumber: number;
   featureSlug?: string | null;
   checkpointTag: string;
@@ -15,12 +15,12 @@ interface Props {
 }
 
 /**
- * Opens after a step-mode pause. Shows the stage summary + the three primary
- * actions. Dismiss resumes the run as-is (equivalent to Keep at this stage in
+ * Opens after a step-mode pause. Shows the step summary + the three primary
+ * actions. Dismiss resumes the run as-is (equivalent to Keep at this step in
  * the spec, but without writing a new tag — useful for read-through).
  */
 export function CandidatePrompt({
-  stage,
+  step,
   cycleNumber,
   featureSlug,
   checkpointTag,
@@ -32,7 +32,7 @@ export function CandidatePrompt({
 }: Props) {
   return (
     <CheckpointModal
-      title={`Stage complete: ${stage}`}
+      title={`Stage complete: ${step}`}
       onClose={onDismiss}
       footer={
         <>
@@ -50,7 +50,7 @@ export function CandidatePrompt({
         </>
       }
     >
-      <StageSummary stage={stage} cycleNumber={cycleNumber} featureSlug={featureSlug} />
+      <StageSummary step={step} cycleNumber={cycleNumber} featureSlug={featureSlug} />
       <div style={{ marginTop: 10, fontSize: 11, color: "var(--foreground-dim)", fontFamily: "var(--font-mono)" }}>
         candidate: {checkpointTag}
         <br />

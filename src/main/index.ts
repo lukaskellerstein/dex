@@ -6,6 +6,7 @@ import { registerProjectHandlers } from "./ipc/project.js";
 import { registerOrchestratorHandlers } from "./ipc/orchestrator.js";
 import { registerHistoryHandlers } from "./ipc/history.js";
 import { registerCheckpointsHandlers } from "./ipc/checkpoints.js";
+import { registerAppConfigHandlers } from "./ipc/appConfig.js";
 
 // One-shot cleanup of the legacy SQLite directory retired in 007-sqlite-removal.
 // Audit trail now lives per-project in <projectDir>/.dex/runs/.
@@ -77,6 +78,7 @@ function createWindow(): void {
   registerOrchestratorHandlers(() => mainWindow);
   registerHistoryHandlers();
   registerCheckpointsHandlers();
+  registerAppConfigHandlers();
 
   // DevTools toggle
   globalShortcut.register("F12", () => {

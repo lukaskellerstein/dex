@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { CheckCircle, ChevronDown, ChevronRight, Circle, DollarSign, SkipForward, Loader, Pause } from "lucide-react";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 import type { UiLoopCycle, UiLoopStage } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { StageList } from "./StageList.js";
@@ -26,12 +26,12 @@ function CycleTimelineItem({
 }: {
   cycle: UiLoopCycle;
   isActive: boolean;
-  currentStage: LoopStageType | null;
+  currentStage: StepType | null;
   isExpanded: boolean;
   isRunning: boolean;
   isLast: boolean;
   onToggle: () => void;
-  onStageClick: (stage: UiLoopStage) => void;
+  onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   specSummaries: SpecSummary[];
@@ -263,7 +263,7 @@ function CycleTimelineItem({
           )}
         </button>
 
-        {/* Expanded stage list */}
+        {/* Expanded step list */}
         {isExpanded && (
           <StageList
             stages={cycle.stages}
@@ -287,10 +287,10 @@ function CycleTimelineItem({
 export interface CycleTimelineProps {
   cycles: UiLoopCycle[];
   currentCycle: number | null;
-  currentStage: LoopStageType | null;
+  currentStage: StepType | null;
   isRunning: boolean;
   specSummaries: SpecSummary[];
-  onStageClick: (stage: UiLoopStage) => void;
+  onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
 }

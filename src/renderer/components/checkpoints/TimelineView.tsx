@@ -5,7 +5,7 @@ import { useRecordMode } from "./hooks/useRecordMode";
 import { usePauseAfterStage } from "./hooks/usePauseAfterStage";
 import { TryNWaysModal } from "./TryNWaysModal";
 import { AttemptCompareModal } from "./AttemptCompareModal";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 import { STAGE_ORDER_RENDERER } from "./stageOrder";
 
 interface Props {
@@ -13,13 +13,10 @@ interface Props {
 }
 
 /**
- * Panel mounted under LoopDashboard that contains:
- *   - Record + Pause-after-stage toggles (plus visible REC badge)
- *   - Collapsible Timeline (graph + list + detail + go-back flow)
- *   - Variant spawn flow triggered from NodeDetailPanel
- *   - Attempt compare flow triggered from NodeDetailPanel
+ * Full-page Timeline tab. Hosts the Record / Pause toggles, the timeline
+ * graph (TimelinePanel), and the variant-spawn / attempt-compare modals.
  */
-export function CheckpointControls({ projectDir }: Props) {
+export function TimelineView({ projectDir }: Props) {
   const { recordMode, setRecordMode } = useRecordMode(projectDir);
   const { pauseAfterStage, setPauseAfterStage } = usePauseAfterStage(projectDir);
 
@@ -28,7 +25,7 @@ export function CheckpointControls({ projectDir }: Props) {
   const [compareTarget, setCompareTarget] = useState<null | {
     a: string;
     b: string;
-    stage: LoopStageType | null;
+    step: StepType | null;
   }>(null);
   const [compareSourceA, setCompareSourceA] = useState<string | null>(null);
 
@@ -43,37 +40,56 @@ export function CheckpointControls({ projectDir }: Props) {
 
   const handleConfirmSpawn = async (n: number) => {
     if (!tryNWaysTag) return;
-    // Parse stage from tag to infer the next stage
-    const m = tryNWaysTag.match(/^checkpoint\/(?:cycle-(\d+)-)?after-(.+)$/);
-    const parsedStage = (m ? (m[2] as string).replaceAll("-", "_") : "plan") as LoopStageType;
+    const parsedStage = parseStageFromTag(tryNWaysTag);
     const nextStage = nextStageOf(parsedStage);
     const letters = ["a", "b", "c", "d", "e"].slice(0, n);
     const r = await window.dexAPI.checkpoints.spawnVariants(projectDir, {
       fromCheckpoint: tryNWaysTag,
       variantLetters: letters,
-      stage: nextStage,
+      step: nextStage,
     });
     setTryNWaysTag(null);
     if (!r.ok) {
-      console.warn("[checkpoint-controls] spawnVariants failed", r.error);
+      console.warn("[timeline-view] spawnVariants failed", r.error);
     }
   };
 
-  // Two-step compare: click Compare on an attempt → remember as A →
-  // next click Compare on another attempt → open modal
   const handleCompareStart = (branch: string) => {
     if (!compareSourceA) {
       setCompareSourceA(branch);
       return;
     }
-    setCompareTarget({ a: compareSourceA, b: branch, stage: null });
+    setCompareTarget({ a: compareSourceA, b: branch, step: null });
     setCompareSourceA(null);
   };
 
   return (
-    <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          padding: "8px 14px",
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface)",
+        }}
+      >
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 12,
+          }}
+        >
           <input
             type="checkbox"
             checked={recordMode}
@@ -81,18 +97,26 @@ export function CheckpointControls({ projectDir }: Props) {
           />
           Record mode
         </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 12,
+          }}
+        >
           <input
             type="checkbox"
             checked={pauseAfterStage}
             onChange={(e) => setPauseAfterStage(e.target.checked)}
           />
-          Pause after each stage
+          Pause after each step
         </label>
         <RecBadge recordMode={recordMode} />
         {compareSourceA && (
           <div style={{ fontSize: 11, color: "var(--foreground-muted)" }}>
-            Comparing from <code>{compareSourceA}</code> — click Compare on another attempt…
+            Comparing from <code>{compareSourceA}</code> — click Compare on
+            another attempt…
             <button
               onClick={() => setCompareSourceA(null)}
               style={{
@@ -108,14 +132,29 @@ export function CheckpointControls({ projectDir }: Props) {
           </div>
         )}
       </div>
-      <TimelinePanel
-        projectDir={projectDir}
-        disabled={!repoReady}
-        disabledReason={!repoReady ? "Initialize version control to enable the timeline." : undefined}
-        onTryNWays={handleTryNWays}
-        onCompareStart={handleCompareStart}
-        canTryNWays
-      />
+
+      <div
+        style={{
+          flex: 1,
+          overflow: "auto",
+          padding: "12px 14px",
+          minHeight: 0,
+        }}
+      >
+        <TimelinePanel
+          projectDir={projectDir}
+          disabled={!repoReady}
+          disabledReason={
+            !repoReady
+              ? "Initialize version control to enable the timeline."
+              : undefined
+          }
+          onTryNWays={handleTryNWays}
+          onCompareStart={handleCompareStart}
+          canTryNWays
+        />
+      </div>
+
       {tryNWaysTag && (
         <TryNWaysModal
           projectDir={projectDir}
@@ -130,7 +169,7 @@ export function CheckpointControls({ projectDir }: Props) {
           projectDir={projectDir}
           branchA={compareTarget.a}
           branchB={compareTarget.b}
-          stage={compareTarget.stage}
+          step={compareTarget.step}
           onClose={() => setCompareTarget(null)}
         />
       )}
@@ -138,14 +177,14 @@ export function CheckpointControls({ projectDir }: Props) {
   );
 }
 
-function parseStageFromTag(tag: string): LoopStageType {
+function parseStageFromTag(tag: string): StepType {
   const m = tag.match(/^checkpoint\/(?:cycle-\d+-)?after-(.+)$/);
   if (!m) return "plan";
-  return m[1].replaceAll("-", "_") as LoopStageType;
+  return m[1].replaceAll("-", "_") as StepType;
 }
 
-function nextStageOf(stage: LoopStageType): LoopStageType {
-  const idx = STAGE_ORDER_RENDERER.indexOf(stage);
-  if (idx < 0 || idx >= STAGE_ORDER_RENDERER.length - 1) return stage;
+function nextStageOf(step: StepType): StepType {
+  const idx = STAGE_ORDER_RENDERER.indexOf(step);
+  if (idx < 0 || idx >= STAGE_ORDER_RENDERER.length - 1) return step;
   return STAGE_ORDER_RENDERER[idx + 1];
 }

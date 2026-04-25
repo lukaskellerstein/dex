@@ -30,7 +30,7 @@ export function PastAttemptsList({ snapshot, onSelect, selectedId }: Props) {
       (c) =>
         c.tag.toLowerCase().includes(q) ||
         c.label.toLowerCase().includes(q) ||
-        c.stage.toLowerCase().includes(q),
+        c.step.toLowerCase().includes(q),
     );
   }, [snapshot.checkpoints, query]);
 

@@ -9,9 +9,13 @@ export interface DriftSummary {
   pendingQuestionReask: boolean;
 }
 
+// ── Macro Phase (4 user-facing buckets) ──
+
+export type Phase = "prerequisites" | "clarification" | "loop" | "completion";
+
 // ── Spec-Kit Types (parsed from tasks.md for UI display) ──
 
-export interface Phase {
+export interface TaskPhase {
   number: number;
   name: string;
   purpose: string;
@@ -26,12 +30,12 @@ export interface Task {
   description: string;
   status: "done" | "not_done" | "code_exists" | "in_progress";
   lineNumber: number;
-  phase: number;
+  phase: number; // tasks.md phase number
 }
 
-// ── Agent Execution Types ──
+// ── Agent Step Types (one per tool call / text output) ──
 
-export type StepType =
+export type AgentStepType =
   | "debug"
   | "user_message"
   | "thinking"
@@ -49,7 +53,7 @@ export type StepType =
 export interface AgentStep {
   id: string;
   sequenceIndex: number;
-  type: StepType;
+  type: AgentStepType;
   content: string | null;
   metadata: Record<string, unknown> | null;
   durationMs: number | null;
@@ -66,10 +70,11 @@ export interface SubagentInfo {
   completedAt: string | null;
 }
 
-// ── Loop Stage Types ──
+// ── Process Step Types ──
 
-export type LoopStageType =
+export type StepType =
   | "prerequisites"
+  | "create_branch"
   | "clarification"
   | "clarification_product"
   | "clarification_technical"
@@ -83,12 +88,36 @@ export type LoopStageType =
   | "implement"
   | "implement_fix"
   | "verify"
-  | "learnings";
+  | "learnings"
+  | "commit";
 
-export interface LoopStage {
-  type: LoopStageType;
+export type StepKind = "script" | "agent" | "interactive";
+
+export const STEP_KIND_MAP: Record<StepType, StepKind> = {
+  prerequisites: "interactive",
+  create_branch: "script",
+  clarification: "agent",
+  clarification_product: "agent",
+  clarification_technical: "agent",
+  clarification_synthesis: "agent",
+  constitution: "agent",
+  manifest_extraction: "agent",
+  gap_analysis: "script",
+  specify: "agent",
+  plan: "agent",
+  tasks: "agent",
+  implement: "agent",
+  implement_fix: "agent",
+  verify: "agent",
+  learnings: "agent",
+  commit: "script",
+};
+
+export interface Step {
+  type: StepType;
+  kind: StepKind;
   specDir?: string;
-  phaseNumber?: number;
+  taskPhaseNumber?: number;
   startedAt: string;
   completedAt?: string;
   costUsd: number;
@@ -100,17 +129,17 @@ export type GapAnalysisDecision =
   | { type: "NEXT_FEATURE"; name: string; description: string; featureId: number }
   | { type: "RESUME_FEATURE"; specDir: string }
   | { type: "REPLAN_FEATURE"; specDir: string }
-  | { type: "RESUME_AT_STAGE"; specDir: string; resumeAtStage: LoopStageType }
+  | { type: "RESUME_AT_STEP"; specDir: string; resumeAtStep: StepType }
   | { type: "GAPS_COMPLETE" };
 
-export interface LoopCycle {
+export interface Cycle {
   id: string;
   runId: string;
   cycleNumber: number;
   featureName: string | null;
   specDir: string | null;
   decision: GapAnalysisDecision;
-  stages: LoopStage[];
+  steps: Step[];
   status: "running" | "completed" | "failed" | "skipped";
   costUsd: number;
   durationMs: number;
@@ -174,7 +203,7 @@ export interface RunConfig {
   model: string;
   maxIterations: number;
   maxTurns: number;
-  phases: number[] | "all";
+  taskPhases: number[] | "all";
   runAllSpecs?: boolean;
 
   // Loop-mode fields (only relevant when mode === "loop")
@@ -190,9 +219,13 @@ export interface RunConfig {
   maxVerifyRetries?: number;       // default: 1 — fix-reverify attempts per cycle
   maxLearningsPerCategory?: number; // default: 20 — cap per category in learnings.md
 
-  // Step mode: when true, orchestrator pauses after every stage awaiting
+  // Step mode: when true, orchestrator pauses after every step awaiting
   // user Keep/Try again/Try N ways decision. Distinct from user_abort.
   stepMode?: boolean;
+
+  // Agent backend override (009). When set, wins over .dex/dex-config.json.
+  // Must match a name registered in AGENT_REGISTRY ("claude" | "mock" | future providers).
+  agent?: string;
 }
 
 // ── Events: Orchestrator → UI ──
@@ -200,15 +233,15 @@ export interface RunConfig {
 export type OrchestratorEvent =
   | { type: "run_started"; config: RunConfig; runId: string; branchName: string }
   | { type: "spec_started"; specDir: string }
-  | { type: "spec_completed"; specDir: string; phasesCompleted: number }
-  | { type: "phase_started"; phase: Phase; iteration: number; phaseTraceId: string }
-  | { type: "agent_step"; step: AgentStep }
+  | { type: "spec_completed"; specDir: string; taskPhasesCompleted: number }
+  | { type: "task_phase_started"; taskPhase: TaskPhase; iteration: number; agentRunId: string }
+  | { type: "agent_step"; agentStep: AgentStep }
   | { type: "subagent_started"; info: SubagentInfo }
   | { type: "subagent_completed"; subagentId: string }
-  | { type: "tasks_updated"; phases: Phase[] }
+  | { type: "tasks_updated"; taskPhases: TaskPhase[] }
   | {
-      type: "phase_completed";
-      phase: Phase;
+      type: "task_phase_completed";
+      taskPhase: TaskPhase;
       cost: number;
       durationMs: number;
     }
@@ -216,11 +249,11 @@ export type OrchestratorEvent =
       type: "run_completed";
       totalCost: number;
       totalDuration: number;
-      phasesCompleted: number;
+      taskPhasesCompleted: number;
       branchName: string;
       prUrl: string | null;
     }
-  | { type: "error"; message: string; phaseNumber?: number }
+  | { type: "error"; message: string; taskPhaseNumber?: number }
   // Prerequisites events
   | { type: "prerequisites_started"; runId: string }
   | { type: "prerequisites_check"; runId: string; check: PrerequisiteCheck }
@@ -240,20 +273,20 @@ export type OrchestratorEvent =
       costUsd: number;
     }
   | {
-      type: "stage_started";
+      type: "step_started";
       runId: string;
       cycleNumber: number;
-      stage: LoopStageType;
-      phaseTraceId: string;
+      step: StepType;
+      agentRunId: string;
       specDir?: string;
-      phaseNumber?: number;
+      taskPhaseNumber?: number;
     }
   | {
-      type: "stage_completed";
+      type: "step_completed";
       runId: string;
       cycleNumber: number;
-      stage: LoopStageType;
-      phaseTraceId: string;
+      step: StepType;
+      agentRunId: string;
       costUsd: number;
       durationMs: number;
       stopped?: boolean;
@@ -271,10 +304,10 @@ export type OrchestratorEvent =
   | { type: "state_reconciled"; runId: string; driftSummary: DriftSummary }
   // Interactive checkpoint events (008)
   | {
-      type: "stage_candidate";
+      type: "step_candidate";
       runId: string;
       cycleNumber: number;
-      stage: LoopStageType;
+      step: StepType;
       checkpointTag: string;
       candidateSha: string;
       attemptBranch: string;
@@ -289,13 +322,13 @@ export type OrchestratorEvent =
       type: "paused";
       runId: string;
       reason: "user_abort" | "step_mode" | "budget" | "failure";
-      stage?: LoopStageType;
+      step?: StepType;
     }
   | {
       type: "variant_group_resume_needed";
       projectDir: string;
       groupId: string;
-      stage: LoopStageType;
+      step: StepType;
       pendingCount: number;
       runningCount: number;
     }

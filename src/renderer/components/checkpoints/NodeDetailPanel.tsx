@@ -76,7 +76,7 @@ export function NodeDetailPanel({
       </div>
       {isCheckpoint && (
         <div style={{ fontSize: 12, color: "var(--foreground-muted)" }}>
-          <div>stage: {selected.data.stage}</div>
+          <div>step: {selected.data.step}</div>
           <div>cycle: {selected.data.cycleNumber}</div>
           {selected.data.featureSlug && <div>feature: {selected.data.featureSlug}</div>}
           {selected.data.sha && (
@@ -110,7 +110,7 @@ export function NodeDetailPanel({
                 className="btn-secondary"
                 onClick={() => onTryNWays(tag)}
                 disabled={!canTryNWays}
-                title={canTryNWays ? "Fork N variants of the next stage" : "Available after US4 lands"}
+                title={canTryNWays ? "Fork N variants of the next step" : "Available after US4 lands"}
               >
                 Try N ways
               </button>

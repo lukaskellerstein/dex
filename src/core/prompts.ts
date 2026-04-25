@@ -1,4 +1,4 @@
-import type { RunConfig, Phase } from "./types.js";
+import type { RunConfig, TaskPhase } from "./types.js";
 
 // ── Structured Output Schemas ──
 
@@ -420,7 +420,7 @@ ${config.projectDir}
 
 export function buildImplementPrompt(
   config: RunConfig,
-  phase: Phase,
+  phase: TaskPhase,
   fullPlanPath: string
 ): string {
   const specPath = config.specDir.startsWith("/")
@@ -432,10 +432,10 @@ export function buildImplementPrompt(
 ## Dex Loop Guardrails
 
 - Read ${fullPlanPath} for full project context (READ-ONLY — do not modify GOAL.md or GOAL_clarified.md)
-- Orient: You are implementing Phase ${phase.number}: ${phase.name}
+- Orient: You are implementing TaskPhase ${phase.number}: ${phase.name}
 - After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md
 - Run build/typecheck after each logical group of changes
 - If a task fails, log the error and move to the next task
 - Do not spawn more than 3 subagents concurrently
-- Commit after completing the phase: git add -A -- ':!.dex/' && git commit -m "Phase ${phase.number}: ${phase.name}"`;
+- Commit after completing the phase: git add -A -- ':!.dex/' && git commit -m "TaskPhase ${phase.number}: ${phase.name}"`;
 }

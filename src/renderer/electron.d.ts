@@ -1,9 +1,9 @@
-import type { OrchestratorEvent, Phase, RunConfig, LoopStageType, LoopTermination, UserInputQuestion, DriftSummary } from "../core/types.js";
+import type { OrchestratorEvent, TaskPhase, RunConfig, StepType, LoopTermination, UserInputQuestion, DriftSummary } from "../core/types.js";
 import type { DexState } from "../core/state.js";
 import type {
   RunRecord,
-  PhaseRecord,
-  StepRecord,
+  AgentRunRecord,
+  AgentStepRecord,
   SubagentRecord,
   SpecStats,
 } from "../core/runs.js";
@@ -26,7 +26,7 @@ interface CheckpointsApi {
   }>;
   estimateVariantCost(
     projectDir: string,
-    stage: LoopStageType,
+    step: StepType,
     variantCount: number,
   ): Promise<{
     perVariantMedian: number | null;
@@ -76,7 +76,7 @@ interface CheckpointsApi {
     projectDir: string,
     branchA: string,
     branchB: string,
-    stage: LoopStageType | null,
+    step: StepType | null,
   ): Promise<
     | { ok: true; diff: string; mode: "path-filtered" | "stat"; paths?: string[] }
     | { ok: false; error: string }
@@ -87,13 +87,16 @@ interface DexAPI {
   // Project
   openProject(): Promise<string | null>;
   listSpecs(dir: string): Promise<string[]>;
-  parseSpec(dir: string, spec: string): Promise<Phase[]>;
+  parseSpec(dir: string, spec: string): Promise<TaskPhase[]>;
   readFile(filePath: string): Promise<string | null>;
   writeFile(filePath: string, content: string): Promise<boolean>;
   pickFolder(): Promise<string | null>;
   createProject(parentDir: string, name: string): Promise<{ path: string } | { error: string }>;
   openProjectPath(projectPath: string): Promise<{ path: string } | { error: string }>;
   pathExists(targetPath: string): Promise<boolean>;
+
+  // App config (global ~/.dex/app-config.json)
+  getWelcomeDefaults(): Promise<{ defaultLocation: string; defaultName: string }>;
 
   // Orchestrator
   getProjectState(dir: string): Promise<DexState | null>;
@@ -107,13 +110,13 @@ interface DexAPI {
     specDir: string;
     mode: string;
     model: string;
-    phaseTraceId: string;
-    phaseNumber: number;
-    phaseName: string;
+    agentRunId: string;
+    taskPhaseNumber: number;
+    taskPhaseName: string;
     currentCycle?: number;
-    currentStage?: string;
+    currentStep?: string;
     isClarifying?: boolean;
-    loopsCompleted?: number;
+    cyclesCompleted?: number;
   } | null>;
 
   // Orchestrator events
@@ -123,10 +126,10 @@ interface DexAPI {
   listRuns(projectDir: string, limit?: number): Promise<RunRecord[]>;
   getRun(projectDir: string, runId: string): Promise<RunRecord | null>;
   getLatestProjectRun(projectDir: string): Promise<RunRecord | null>;
-  getPhaseSteps(projectDir: string, runId: string, phaseTraceId: string): Promise<StepRecord[]>;
-  getPhaseSubagents(projectDir: string, runId: string, phaseTraceId: string): Promise<SubagentRecord[]>;
-  getLatestPhaseTrace(projectDir: string, specDir: string, phaseNumber: number): Promise<PhaseRecord | null>;
-  getSpecPhaseStats(projectDir: string, specDir: string): Promise<PhaseRecord[]>;
+  getAgentSteps(projectDir: string, runId: string, agentRunId: string): Promise<AgentStepRecord[]>;
+  getAgentRunSubagents(projectDir: string, runId: string, agentRunId: string): Promise<SubagentRecord[]>;
+  getLatestAgentRun(projectDir: string, specDir: string, taskPhaseNumber: number): Promise<AgentRunRecord | null>;
+  getSpecAgentRuns(projectDir: string, specDir: string): Promise<AgentRunRecord[]>;
   getSpecAggregateStats(projectDir: string, specDir: string): Promise<SpecStats>;
 
   // Checkpoints (008)

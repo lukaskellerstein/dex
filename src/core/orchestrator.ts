@@ -2,16 +2,22 @@ import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { DEX_HOME, LOGS_ROOT, FALLBACK_LOG, migrateIfNeeded } from "./paths.js";
+import { RunLogger, fallbackLog as log } from "./log.js";
+import { submitUserAnswer, waitForUserInput } from "./userInput.js";
+import { createAgentRunner } from "./agent/index.js";
+import { loadDexConfig } from "./dexConfig.js";
+import type { AgentRunner } from "./agent/AgentRunner.js";
+
+// Keep submitUserAnswer accessible to IPC callers that import it from this
+// module (backwards compatibility — it used to be defined here).
+export { submitUserAnswer };
 import type {
-  AgentStep,
   EmitFn,
-  Phase,
+  TaskPhase,
   RunConfig,
-  SubagentInfo,
   Task,
 } from "./types.js";
-import { parseTasksFile, derivePhaseStatus, extractTaskIds, discoverNewSpecDir } from "./parser.js";
+import { parseTasksFile, deriveTaskPhaseStatus, extractTaskIds, discoverNewSpecDir } from "./parser.js";
 import * as runs from "./runs.js";
 import {
   getCurrentBranch,
@@ -38,7 +44,7 @@ import {
   acquireStateLock,
   resolveWorkingTreeConflict,
   reconcileState,
-  STAGE_ORDER,
+  STEP_ORDER,
 } from "./state.js";
 import type { DexState } from "./state.js";
 import {
@@ -74,7 +80,7 @@ import {
 } from "./manifest.js";
 import type { FeatureManifest } from "./manifest.js";
 import type {
-  LoopStageType,
+  StepType,
   GapAnalysisDecision,
   FailureRecord,
   LoopTermination,
@@ -84,91 +90,19 @@ import type {
 } from "./types.js";
 
 // ── Logging ──
-
-function formatLogLine(level: string, msg: string, data?: unknown): string {
-  const ts = new Date().toISOString();
-  return data
-    ? `[${ts}] [${level}] ${msg} ${JSON.stringify(data, null, 0)}\n`
-    : `[${ts}] [${level}] ${msg}\n`;
-}
-
-/**
- * Structured per-run logger.
- *
- * Directory layout:
- *   ~/.dex/logs/<project-name>/<run-id>/
- *     run.log                          — run-level lifecycle events
- *     phase-<N>_<slug>/
- *       agent.log                      — all events for this phase's agent
- *       subagents/
- *         <subagent-id>.log            — per-subagent lifecycle + raw SDK input
- */
-class RunLogger {
-  private runDir: string;
-  private phaseDir: string | null = null;
-
-  constructor(projectName: string, runId: string) {
-    this.runDir = path.join(LOGS_ROOT, projectName, runId);
-    fs.mkdirSync(this.runDir, { recursive: true });
-  }
-
-  /** Log to run.log (run-level events) */
-  run(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    fs.appendFileSync(path.join(this.runDir, "run.log"), formatLogLine(level, msg, data));
-  }
-
-  /** Set the active phase directory — call at phase start */
-  startPhase(phaseNumber: number, phaseName: string, phaseTraceId: string): void {
-    const slug = phaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    this.phaseDir = path.join(this.runDir, `phase-${phaseNumber}_${slug}`);
-    fs.mkdirSync(path.join(this.phaseDir, "subagents"), { recursive: true });
-    this.run("INFO", `Phase ${phaseNumber} started: ${phaseName}`, { phaseTraceId });
-    this.phase("INFO", `Phase ${phaseNumber}: ${phaseName} — phaseTraceId=${phaseTraceId}`);
-  }
-
-  /** Log to the current phase's agent.log */
-  phase(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    if (!this.phaseDir) {
-      this.run(level, msg, data);
-      return;
-    }
-    fs.appendFileSync(path.join(this.phaseDir, "agent.log"), formatLogLine(level, msg, data));
-  }
-
-  /** Log to a subagent's dedicated log file within the current phase */
-  subagent(subagentId: string, level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    if (!this.phaseDir) {
-      this.run(level, `[subagent:${subagentId}] ${msg}`, data);
-      return;
-    }
-    const file = path.join(this.phaseDir, "subagents", `${subagentId}.log`);
-    fs.appendFileSync(file, formatLogLine(level, msg, data));
-  }
-
-  /** Convenience: log to both phase agent.log AND subagent file */
-  subagentEvent(subagentId: string, level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-    this.phase(level, `[subagent:${subagentId}] ${msg}`, data);
-    this.subagent(subagentId, level, msg, data);
-  }
-
-  get currentRunDir(): string { return this.runDir; }
-  get currentPhaseDir(): string | null { return this.phaseDir; }
-}
-
-/** Fallback logger used before a run starts (global orchestrator log). */
-let fallbackMigrated = false;
-function log(level: "INFO" | "ERROR" | "DEBUG" | "WARN", msg: string, data?: unknown): void {
-  if (!fallbackMigrated) {
-    migrateIfNeeded(path.join(DEX_HOME, "orchestrator.log"), FALLBACK_LOG);
-    fallbackMigrated = true;
-  }
-  fs.mkdirSync(path.dirname(FALLBACK_LOG), { recursive: true });
-  fs.appendFileSync(FALLBACK_LOG, formatLogLine(level, msg, data));
-}
+// RunLogger and fallback log moved to ./log.ts so agent runners can share them
+// without importing from this orchestrator module (avoids an import cycle).
 
 let abortController: AbortController | null = null;
 let activeProjectDir: string | null = null;
 let releaseLock: (() => void) | null = null;
+
+/**
+ * The agent backend resolved at run start via dex-config.json (or RunConfig.agent
+ * override). All runStage/runPhase calls in this module delegate to it.
+ * Set to non-null for the duration of a run; cleared on run completion/abort.
+ */
+let currentRunner: AgentRunner | null = null;
 
 /** Sentinel error thrown when abort is detected between stages to skip remaining work. */
 class AbortError extends Error {
@@ -186,14 +120,14 @@ interface RunState {
   specDir: string;
   mode: string;
   model: string;
-  phaseTraceId: string;
-  phaseNumber: number;
-  phaseName: string;
+  agentRunId: string;
+  taskPhaseNumber: number;
+  taskPhaseName: string;
   // Loop-mode fields
   currentCycle?: number;
-  currentStage?: LoopStageType;
+  currentStep?: StepType;
   isClarifying?: boolean;
-  loopsCompleted?: number;
+  cyclesCompleted?: number;
 }
 
 let currentRunState: RunState | null = null;
@@ -207,144 +141,11 @@ export function getRunState(): RunState | null {
   return currentRunState;
 }
 
-// ── User Input (AskUserQuestion) ──
-
-/** Pending question resolvers — keyed by requestId */
-const pendingQuestions = new Map<string, (answers: Record<string, string>) => void>();
-
-/**
- * Called from IPC when the user submits answers to a clarification question.
- */
-export function submitUserAnswer(requestId: string, answers: Record<string, string>): void {
-  const resolver = pendingQuestions.get(requestId);
-  if (resolver) {
-    resolver(answers);
-    pendingQuestions.delete(requestId);
-  } else {
-    log("WARN", `submitUserAnswer: no pending question for requestId=${requestId}`);
-  }
-}
-
-/**
- * Waits for user input. Emits the question event, then blocks until the user responds.
- */
-function waitForUserInput(
-  emit: EmitFn,
-  runId: string,
-  questions: import("./types.js").UserInputQuestion[]
-): Promise<Record<string, string>> {
-  const requestId = crypto.randomUUID();
-
-  // Persist pending question to state file so it survives crashes
-  if (activeProjectDir) {
-    updateState(activeProjectDir, {
-      pendingQuestion: {
-        id: requestId,
-        question: questions.map(q => q.question).join("; "),
-        context: `runId:${runId}`,
-        askedAt: new Date().toISOString(),
-      },
-    }).catch(() => {});
-  }
-
-  emit({ type: "user_input_request", runId, requestId, questions });
-  return new Promise<Record<string, string>>((resolve) => {
-    pendingQuestions.set(requestId, (answers) => {
-      // Clear pending question from state file on answer
-      if (activeProjectDir) {
-        updateState(activeProjectDir, { pendingQuestion: null }).catch(() => {});
-      }
-      resolve(answers);
-    });
-  });
-}
-
-// ── Pricing (USD per 1M tokens) ──
-
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  "claude-sonnet-4-5-20250514": { input: 3, output: 15 },
-  "claude-sonnet-4-6":          { input: 3, output: 15 },
-  "claude-opus-4-5-20250414":   { input: 15, output: 75 },
-  "claude-opus-4-6":            { input: 15, output: 75 },
-  "claude-haiku-4-5-20251001":  { input: 0.80, output: 4 },
-};
-
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  // Match by prefix — e.g. "claude-sonnet-4-5-20250514" matches "claude-sonnet-4-5"
-  const pricing = MODEL_PRICING[model]
-    ?? Object.entries(MODEL_PRICING).find(([k]) => model.startsWith(k))?.[1];
-  if (!pricing) return 0;
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000;
-}
-
-// ── Step Construction Helpers ──
-
-function makeStep(
-  type: AgentStep["type"],
-  sequenceIndex: number,
-  content: string | null,
-  metadata: Record<string, unknown> | null = null
-): AgentStep {
-  return {
-    id: crypto.randomUUID(),
-    sequenceIndex,
-    type,
-    content,
-    metadata,
-    durationMs: null,
-    tokenCount: null,
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function toToolCallStep(
-  input: Record<string, unknown>,
-  idx: number
-): AgentStep {
-  return makeStep("tool_call", idx, null, {
-    toolName: input.tool_name ?? "unknown",
-    toolInput: input.tool_input ?? {},
-    toolUseId: input.tool_use_id ?? null,
-  });
-}
-
-function stringifyResponse(response: unknown): string {
-  if (typeof response === "string") return response;
-  try {
-    return JSON.stringify(response, null, 2);
-  } catch {
-    return String(response);
-  }
-}
-
-function toToolResultStep(
-  input: Record<string, unknown>,
-  idx: number
-): AgentStep {
-  const response = input.tool_response ?? input.tool_result ?? "";
-  const text = stringifyResponse(response);
-  const isError = typeof response === "string" && response.startsWith("Error");
-  return makeStep(
-    isError ? "tool_error" : "tool_result",
-    idx,
-    text,
-    {
-      toolName: input.tool_name ?? "unknown",
-      toolUseId: input.tool_use_id ?? null,
-    }
-  );
-}
-
-function toSubagentInfo(input: Record<string, unknown>): SubagentInfo {
-  return {
-    id: crypto.randomUUID(),
-    subagentId: String(input.subagent_id ?? input.agent_id ?? crypto.randomUUID()),
-    subagentType: String(input.subagent_type ?? input.agent_type ?? "unknown"),
-    description: input.description ? String(input.description) : null,
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-  };
-}
+// ── User Input, pricing, step helpers moved to sibling modules ──
+// — submitUserAnswer / waitForUserInput → ./userInput.ts
+// — MODEL_PRICING / estimateCost / makeStep / toToolCallStep / toToolResultStep /
+//   toSubagentInfo / stringifyResponse → ./agent/steps.ts
+// They're re-imported at the top of this file.
 
 // ── Spec Discovery ──
 
@@ -383,10 +184,10 @@ const STATUS_RANK: Record<string, number> = {
 };
 
 class RunTaskState {
-  private phases: Phase[];
+  private phases: TaskPhase[];
   private taskMap: Map<string, Task>;
 
-  constructor(initialPhases: Phase[]) {
+  constructor(initialPhases: TaskPhase[]) {
     // Deep-clone so mutations don't affect the caller's data
     this.phases = JSON.parse(JSON.stringify(initialPhases));
     this.taskMap = new Map();
@@ -400,7 +201,7 @@ class RunTaskState {
   /** Apply TodoWrite statuses. Promotes only (never demotes). Returns current phases. */
   updateFromTodoWrite(
     todos: Array<{ content?: string; status?: string }>
-  ): Phase[] {
+  ): TaskPhase[] {
     const updates = new Map<string, "in_progress" | "done">();
 
     for (const todo of todos) {
@@ -425,7 +226,7 @@ class RunTaskState {
 
     // Re-derive phase statuses
     for (const p of this.phases) {
-      p.status = derivePhaseStatus(p.tasks);
+      p.status = deriveTaskPhaseStatus(p.tasks);
     }
 
     return this.phases;
@@ -437,7 +238,7 @@ class RunTaskState {
    * gets promoted. A task that is "done" in memory stays "done" even if
    * disk says otherwise (agent may have used TodoWrite earlier).
    */
-  reconcileFromDisk(freshPhases: Phase[]): Phase[] {
+  reconcileFromDisk(freshPhases: TaskPhase[]): TaskPhase[] {
     for (const freshPhase of freshPhases) {
       for (const freshTask of freshPhase.tasks) {
         const memTask = this.taskMap.get(freshTask.id);
@@ -448,17 +249,17 @@ class RunTaskState {
     }
 
     for (const p of this.phases) {
-      p.status = derivePhaseStatus(p.tasks);
+      p.status = deriveTaskPhaseStatus(p.tasks);
     }
 
     return this.phases;
   }
 
-  getPhases(): Phase[] {
+  getPhases(): TaskPhase[] {
     return this.phases;
   }
 
-  getIncompletePhases(filter: "all" | number[]): Phase[] {
+  getIncompletePhases(filter: "all" | number[]): TaskPhase[] {
     if (filter === "all") {
       return this.phases.filter((p) => p.status !== "complete");
     }
@@ -470,7 +271,7 @@ class RunTaskState {
 
 // ── Prompt Builders ──
 
-function buildPrompt(config: RunConfig, phase: Phase): string {
+function buildPrompt(config: RunConfig, phase: TaskPhase): string {
   // Resolve the spec directory to an absolute path so the agent knows exactly
   // which spec to work on (specDir may be relative like "specs/001-product-catalog").
   const specPath = config.specDir.startsWith("/")
@@ -486,7 +287,7 @@ function buildPrompt(config: RunConfig, phase: Phase): string {
     ? `After analyzing:
 - Update ${specPath}/tasks.md with accurate task statuses
 - If you learned operational patterns, update CLAUDE.md
-- Commit: git add -A -- ':!.dex/' && git commit -m "plan: Phase ${phase.number} gap analysis"`
+- Commit: git add -A -- ':!.dex/' && git commit -m "plan: TaskPhase ${phase.number} gap analysis"`
     : `IMPORTANT — update tasks.md incrementally:
 - After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md before moving to the next task. This drives a real-time progress UI.
 
@@ -505,389 +306,36 @@ ${afterSteps}`;
 
 async function runPhase(
   config: RunConfig,
-  phase: Phase,
-  phaseTraceId: string,
+  phase: TaskPhase,
+  agentRunId: string,
   runId: string,
   emit: EmitFn,
   rlog: RunLogger,
   runTaskState: RunTaskState
 ): Promise<{ cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
-  const startTime = Date.now();
-  let stepIndex = 0;
-  let totalCost = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  const knownSubagentIds = new Set<string>();
-  const activeSubagentSet = new Set<string>();
-
-  const skillName = config.mode === "plan" ? "speckit-plan" : "speckit-implement";
-  const specPath = config.specDir.startsWith("/")
-    ? config.specDir
-    : `${config.projectDir}/${config.specDir}`;
+  if (!currentRunner) {
+    throw new Error("runPhase called before currentRunner was resolved — run() must set it");
+  }
 
   const prompt = buildPrompt(config, phase);
-  rlog.phase("INFO", `runPhase: spawning agent for Phase ${phase.number}: ${phase.name}`);
-  rlog.phase("DEBUG", "runPhase: prompt", { length: prompt.length, prompt });
 
-  // Dual-write helper: emit to UI via IPC + append to per-phase steps.jsonl.
-  // Attaches running cost/token totals so the renderer can display live stats.
-  // Tags steps with the active subagent ID when exactly one subagent is active.
-  // When multiple subagents run in parallel, we can't determine which one owns
-  // a step, so we leave the tag empty.
-  const phaseSlug = runs.slugForPhaseName(phase.name);
-  const emitAndStore = (step: AgentStep) => {
-    const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
-    const enriched: AgentStep = {
-      ...step,
-      metadata: {
-        ...step.metadata,
-        costUsd: totalCost || null,
-        inputTokens: totalInputTokens || null,
-        outputTokens: totalOutputTokens || null,
-        ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
-      },
-    };
-    rlog.phase("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
-    emit({ type: "agent_step", step: enriched });
-    runs.appendStep(config.projectDir, runId, phaseSlug, phase.number, { ...enriched, phaseTraceId });
-  };
-
-  // Emit the initial prompt as a user_message step
-  emitAndStore(makeStep("user_message", stepIndex++, prompt));
-
-  // Emit skill_invoke step to show which skill is being expanded
-  emitAndStore(
-    makeStep("skill_invoke", stepIndex++, null, {
-      skillName,
-      skillArgs: `${specPath} --phase ${phase.number}`,
-    })
-  );
-
-  const { query } = await import("@anthropic-ai/claude-agent-sdk");
-  rlog.phase("DEBUG", "runPhase: SDK imported, calling query()");
-
-  const isAborted = () => abortController?.signal.aborted ?? false;
-  let sessionId: string | null = null;
-
-  for await (const msg of query({
+  // Delegate SDK invocation to the resolved agent runner. TodoWrite detection
+  // stays in the orchestrator via the onTodoWrite callback — runTaskState is
+  // orchestrator-owned, not runner-owned.
+  return currentRunner.runTaskPhase({
+    config,
     prompt,
-    options: {
-      model: config.model,
-      cwd: config.projectDir,
-      maxTurns: config.maxTurns,
-      permissionMode: "bypassPermissions",
-      settingSources: ["project"],
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                rlog.phase("DEBUG", `PreToolUse: ${toolName}`, { toolUseId: input.tool_use_id, toolInput: input.tool_input });
-
-                // Emit skill_invoke for Skill tool calls
-                if (toolName === "Skill") {
-                  const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
-                  emitAndStore(
-                    makeStep("skill_invoke", stepIndex++, null, {
-                      skillName: toolInput.skill ?? "",
-                      skillArgs: toolInput.args ?? "",
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolCallStep(input, stepIndex++));
-                }
-
-                if (isAborted()) {
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: "PreToolUse",
-                      permissionDecision: "deny",
-                      permissionDecisionReason: "Run stopped by user",
-                    },
-                  };
-                }
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: "PreToolUse",
-                    permissionDecision: "allow",
-                  },
-                };
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                rlog.phase("DEBUG", `PostToolUse: ${toolName}`, { toolUseId: input.tool_use_id });
-
-                // Emit skill_result for Skill tool results
-                if (toolName === "Skill") {
-                  const response = input.tool_response ?? input.tool_result ?? "";
-                  emitAndStore(
-                    makeStep("skill_result", stepIndex++, stringifyResponse(response), {
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolResultStep(input, stepIndex++));
-                }
-
-                // Detect TodoWrite — update in-memory task state (sole source of truth during run)
-                if (toolName === "TodoWrite") {
-                  try {
-                    const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
-                    const todos = (toolInput.todos ?? []) as Array<{
-                      content?: string;
-                      status?: string;
-                    }>;
-                    const updatedPhases = runTaskState.updateFromTodoWrite(todos);
-                    emit({ type: "tasks_updated", phases: updatedPhases });
-                    rlog.phase("DEBUG", "PostToolUse: TodoWrite detected, emitted tasks_updated");
-                  } catch (err) {
-                    rlog.phase("WARN", "PostToolUse: failed to process TodoWrite", { err: String(err) });
-                  }
-                }
-
-                return {
-                  hookSpecificOutput: { hookEventName: "PostToolUse" },
-                };
-              },
-            ],
-          },
-        ],
-        SubagentStart: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const info = toSubagentInfo(input);
-                knownSubagentIds.add(info.subagentId);
-                rlog.subagentEvent(info.subagentId, "INFO", "SubagentStart", {
-                  subagentType: info.subagentType,
-                  description: info.description,
-                  rawInput: input,
-                });
-                emit({ type: "subagent_started", info });
-                runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
-                  id: info.subagentId,
-                  type: info.subagentType,
-                  description: info.description,
-                  status: "running",
-                  startedAt: info.startedAt,
-                  endedAt: null,
-                  durationMs: null,
-                  costUsd: 0,
-                });
-                emitAndStore(
-                  makeStep("subagent_spawn", stepIndex++, null, {
-                    subagentId: info.subagentId,
-                    subagentType: info.subagentType,
-                    description: info.description,
-                  })
-                );
-                // Add AFTER emitting spawn step so the spawn itself isn't tagged
-                activeSubagentSet.add(info.subagentId);
-                return {};
-              },
-            ],
-          },
-        ],
-        SubagentStop: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const subagentId = String(input.subagent_id ?? input.agent_id ?? "unknown");
-                rlog.subagentEvent(subagentId, "INFO", "SubagentStop", { rawInput: input });
-
-                // Remove BEFORE emitting result step so the result itself isn't tagged
-                activeSubagentSet.delete(subagentId);
-
-                // Skip subagents we never saw start — these are session-init
-                // subagents spawned before our hooks were registered.
-                if (!knownSubagentIds.has(subagentId)) {
-                  rlog.phase("DEBUG", `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`);
-                  return {};
-                }
-
-                emit({ type: "subagent_completed", subagentId });
-                runs.completeSubagent(config.projectDir, runId, subagentId);
-                emitAndStore(
-                  makeStep("subagent_result", stepIndex++, null, {
-                    subagentId,
-                  })
-                );
-                return {};
-              },
-            ],
-          },
-        ],
-      },
+    runId,
+    taskPhase: phase,
+    agentRunId,
+    abortController,
+    emit,
+    rlog,
+    onTodoWrite: (todos) => {
+      const updatedPhases = runTaskState.updateFromTodoWrite(todos);
+      emit({ type: "tasks_updated", taskPhases: updatedPhases });
     },
-  })) {
-    // Break out of streaming when abort requested
-    if (isAborted()) {
-      rlog.phase("INFO", "runPhase: abort detected in message loop, breaking");
-      break;
-    }
-
-    const message = msg as Record<string, unknown>;
-
-    // Log system init message — shows what skills/plugins/tools the agent sees
-    if (message.type === "system") {
-      const skills = message.skills as unknown[] | undefined;
-      const plugins = message.plugins as unknown[] | undefined;
-      const tools = message.tools as unknown[] | undefined;
-      const agents = message.agents as unknown[] | undefined;
-      const slashCommands = message.slash_commands as unknown[] | undefined;
-      const model = message.model as string | undefined;
-      rlog.phase("INFO", "runPhase: system init", {
-        model,
-        toolCount: tools?.length ?? 0,
-        skillCount: skills?.length ?? 0,
-        pluginCount: plugins?.length ?? 0,
-        agentCount: agents?.length ?? 0,
-        slashCommandCount: slashCommands?.length ?? 0,
-      });
-      if (skills && skills.length > 0) {
-        rlog.phase("INFO", "runPhase: available skills", { skills });
-      } else {
-        rlog.phase("WARN", "runPhase: NO SKILLS available to agent");
-      }
-      if (plugins && plugins.length > 0) {
-        rlog.phase("INFO", "runPhase: available plugins", { plugins });
-      }
-      if (slashCommands && slashCommands.length > 0) {
-        rlog.phase("INFO", "runPhase: available slash commands", { slashCommands });
-      }
-
-      // Extract tool names and separate MCP servers from built-in tools
-      const toolNames: string[] = [];
-      const mcpServers = new Map<string, string[]>();
-      if (tools) {
-        for (const t of tools) {
-          const name = typeof t === "object" && t !== null
-            ? String((t as Record<string, unknown>).name ?? t)
-            : String(t);
-          toolNames.push(name);
-          if (name.startsWith("mcp__")) {
-            // Format: mcp__<server>__<tool>
-            const parts = name.split("__");
-            if (parts.length >= 3) {
-              const server = parts[1];
-              if (!mcpServers.has(server)) mcpServers.set(server, []);
-              mcpServers.get(server)!.push(parts.slice(2).join("__"));
-            }
-          }
-        }
-        rlog.phase("DEBUG", "runPhase: available tools", { tools: toolNames });
-      }
-
-      // Emit debug step with all agent capabilities
-      emitAndStore(
-        makeStep("debug", stepIndex++, null, {
-          model: model ?? null,
-          mcpServers: Object.fromEntries(mcpServers),
-          skills: skills ?? [],
-          plugins: plugins ?? [],
-          agents: agents ?? [],
-          slashCommands: slashCommands ?? [],
-          toolCount: toolNames.length,
-        })
-      );
-    }
-
-    // Capture session_id from the first message that carries it
-    if (!sessionId && typeof message.session_id === "string") {
-      sessionId = message.session_id;
-      rlog.phase("INFO", `runPhase: session_id=${sessionId}`);
-      emitAndStore(
-        makeStep("text", stepIndex++, `Session: ${sessionId}`, { sessionId })
-      );
-    }
-
-    if (message.type === "assistant") {
-      // Content blocks live at message.message.content (SDK wraps the API response)
-      const innerMsg = message.message as Record<string, unknown> | undefined;
-      const content = innerMsg?.content as
-        | Array<Record<string, unknown>>
-        | undefined;
-
-      // Accumulate per-turn token usage from the API response
-      // Try inner message (API response wrapper) first, then outer message
-      const usage = (innerMsg?.usage ?? message.usage) as Record<string, unknown> | undefined;
-      if (usage) {
-        if (typeof usage.input_tokens === "number") totalInputTokens += usage.input_tokens;
-        if (typeof usage.output_tokens === "number") totalOutputTokens += usage.output_tokens;
-        totalCost = estimateCost(config.model, totalInputTokens, totalOutputTokens);
-      }
-
-      rlog.phase("DEBUG", "assistant message", {
-        outerKeys: Object.keys(message),
-        innerKeys: innerMsg ? Object.keys(innerMsg) : null,
-        blockTypes: content?.map((b) => b.type) ?? [],
-        usage: usage ?? null,
-        runningTokens: { input: totalInputTokens, output: totalOutputTokens },
-      });
-      if (content) {
-        for (const block of content) {
-          if (block.type === "text" && typeof block.text === "string") {
-            emitAndStore(makeStep("text", stepIndex++, block.text));
-          }
-          if (
-            block.type === "thinking" &&
-            typeof block.thinking === "string"
-          ) {
-            emitAndStore(makeStep("thinking", stepIndex++, block.thinking));
-          }
-        }
-      }
-    }
-
-    if (message.type === "result") {
-      const costUsd = message.total_cost_usd;
-      if (typeof costUsd === "number") totalCost = costUsd;
-
-      // Extract token totals from result.usage (authoritative final values)
-      const resultUsage = message.usage as Record<string, unknown> | undefined;
-      if (resultUsage) {
-        if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
-        if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
-      }
-
-      rlog.phase("INFO", `runPhase: result received`, {
-        cost: costUsd,
-        durationMs: message.duration_ms,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-        usage: resultUsage ?? null,
-        isError: message.is_error,
-        subtype: message.subtype,
-        result: typeof message.result === "string" ? message.result.slice(0, 500) : message.result,
-        numTurns: message.num_turns,
-      });
-    }
-  }
-
-  const durationMs = Date.now() - startTime;
-  rlog.phase("INFO", `runPhase: completed, cost=$${totalCost}, duration=${durationMs}ms`);
-
-  // Emit a completed step at the end
-  if (!isAborted()) {
-    emitAndStore(makeStep("completed", stepIndex++, `Phase ${phase.number}: ${phase.name} completed`, {
-      inputTokens: totalInputTokens || null,
-      outputTokens: totalOutputTokens || null,
-    }));
-  }
-
-  return { cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+  });
 }
 
 // ── Stage Runner (lightweight query() wrapper for loop stages) ──
@@ -899,320 +347,71 @@ async function runStage(
   rlog: RunLogger,
   runId: string,
   cycleNumber: number,
-  stageType: import("./types.js").LoopStageType,
+  stageType: import("./types.js").StepType,
   specDir?: string,
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> }
 ): Promise<{ result: string; structuredOutput: unknown | null; cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
-  const startTime = Date.now();
-  let stepIndex = 0;
-  let totalCost = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let resultText = "";
-  let structuredOutput: unknown | null = null;
-  const knownSubagentIds = new Set<string>();
-  const activeSubagentSet = new Set<string>();
+  if (!currentRunner) {
+    throw new Error("runStage called before currentRunner was resolved — run() must set it");
+  }
 
   // Create a phase record for this stage so steps are persisted
-  const phaseTraceId = crypto.randomUUID();
-  runs.startPhase(config.projectDir, runId, {
-    phaseTraceId,
+  const agentRunId = crypto.randomUUID();
+  runs.startAgentRun(config.projectDir, runId, {
+    agentRunId,
     runId,
     specDir: specDir ?? null,
-    phaseNumber: cycleNumber,
-    phaseName: `loop:${stageType}`,
-    stage: stageType,
+    taskPhaseNumber: cycleNumber,
+    taskPhaseName: `loop:${stageType}`,
+    step: stageType,
     cycleNumber,
     featureSlug: specDir ? path.basename(specDir) : null,
     startedAt: new Date().toISOString(),
     status: "running",
   });
 
-  rlog.startPhase(cycleNumber, stageType, phaseTraceId);
-  rlog.phase("INFO", `runStage: ${stageType} for cycle ${cycleNumber}`);
+  rlog.startAgentRun(cycleNumber, stageType, agentRunId);
+  rlog.agentRun("INFO", `runStage: ${stageType} for cycle ${cycleNumber}`);
 
   // Keep currentRunState in sync so the renderer can recover after refresh
   if (currentRunState) {
-    currentRunState.currentStage = stageType;
-    currentRunState.phaseTraceId = phaseTraceId;
+    currentRunState.currentStep = stageType;
+    currentRunState.agentRunId = agentRunId;
   }
 
-  const stagePhaseSlug = runs.slugForPhaseName(`loop:${stageType}`);
-  const emitAndStore = (step: AgentStep) => {
-    const activeSubagent = activeSubagentSet.size === 1 ? [...activeSubagentSet][0] : null;
-    const enriched: AgentStep = {
-      ...step,
-      metadata: {
-        ...step.metadata,
-        costUsd: totalCost || null,
-        inputTokens: totalInputTokens || null,
-        outputTokens: totalOutputTokens || null,
-        ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
-      },
-    };
-    emit({ type: "agent_step", step: enriched });
-    runs.appendStep(config.projectDir, runId, stagePhaseSlug, cycleNumber, { ...enriched, phaseTraceId });
-  };
-
-  emitAndStore(makeStep("user_message", stepIndex++, prompt));
-
   emit({
-    type: "stage_started",
+    type: "step_started",
     runId,
     cycleNumber,
-    stage: stageType,
-    phaseTraceId,
+    step: stageType,
+    agentRunId,
     specDir,
   });
 
   const isAborted = () => abortController?.signal.aborted ?? false;
 
-  const { query } = await import("@anthropic-ai/claude-agent-sdk");
-
-  for await (const msg of query({
+  // Delegate the SDK work to the resolved agent runner. Runner is responsible
+  // for emitting agent_step events (user_message, tool_call, etc.), returning
+  // the final cost/duration/structured output. Orchestrator owns phase-level
+  // lifecycle (startPhase/completePhase, stage_started/stage_completed events)
+  // and the post-stage checkpoint machinery below.
+  const stageResult = await currentRunner.runStep({
+    config,
     prompt,
-    options: {
-      model: config.model,
-      cwd: config.projectDir,
-      maxTurns: config.maxTurns,
-      permissionMode: "bypassPermissions",
-      settingSources: ["project"],
-      abortController: abortController ?? undefined,
-      ...(outputFormat ? { outputFormat } : {}),
-      canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
-        if (toolName === "AskUserQuestion") {
-          rlog.phase("INFO", "canUseTool: AskUserQuestion intercepted");
-
-          // Parse SDK question format into our typed format
-          const rawQuestions = (toolInput.questions ?? []) as Array<Record<string, unknown>>;
-          const questions: import("./types.js").UserInputQuestion[] = rawQuestions.map((q) => ({
-            question: String(q.question ?? ""),
-            header: String(q.header ?? ""),
-            options: ((q.options ?? []) as Array<Record<string, unknown>>).map((o) => ({
-              label: String(o.label ?? ""),
-              description: String(o.description ?? ""),
-              recommended: Boolean(o.recommended),
-            })),
-            multiSelect: Boolean(q.multiSelect),
-          }));
-
-          let answers: Record<string, string>;
-
-          if (config.autoClarification) {
-            // Auto-answer with recommended options
-            answers = {};
-            for (const q of questions) {
-              const recommended = q.options.find((o) => o.recommended);
-              if (recommended) {
-                answers[q.question] = recommended.label;
-              } else if (q.options.length > 0) {
-                // Fallback: pick the first option if no recommended
-                answers[q.question] = q.options[0].label;
-                rlog.phase("WARN", `canUseTool: no recommended option for "${q.question}", using first option`);
-              }
-            }
-            // Still emit the event so the UI can show what was auto-selected
-            const requestId = crypto.randomUUID();
-            emit({ type: "user_input_request", runId, requestId, questions });
-            emit({ type: "user_input_response", requestId, answers });
-            rlog.phase("INFO", "canUseTool: auto-answered (autoClarification)", { answers });
-          } else {
-            // Interactive: emit event and wait for user answer
-            answers = await waitForUserInput(emit, runId, questions);
-            rlog.phase("INFO", "canUseTool: user answered", { answers });
-          }
-
-          return {
-            behavior: "allow" as const,
-            updatedInput: { questions: rawQuestions, answers },
-          };
-        }
-
-        // All other tools: auto-approve (bypassPermissions handles this too, belt-and-suspenders)
-        return { behavior: "allow" as const, updatedInput: toolInput };
-      },
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                rlog.phase("DEBUG", `runStage PreToolUse: ${toolName}`);
-
-                if (toolName === "Skill") {
-                  const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
-                  emitAndStore(
-                    makeStep("skill_invoke", stepIndex++, null, {
-                      skillName: toolInput.skill ?? "",
-                      skillArgs: toolInput.args ?? "",
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolCallStep(input, stepIndex++));
-                }
-
-                if (isAborted()) {
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: "PreToolUse",
-                      permissionDecision: "deny",
-                      permissionDecisionReason: "Run stopped by user",
-                    },
-                  };
-                }
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: "PreToolUse",
-                    permissionDecision: "allow",
-                  },
-                };
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const toolName = String(input.tool_name ?? "unknown");
-                if (toolName === "Skill") {
-                  const response = input.tool_response ?? input.tool_result ?? "";
-                  emitAndStore(
-                    makeStep("skill_result", stepIndex++, stringifyResponse(response), {
-                      toolUseId: input.tool_use_id ?? null,
-                    })
-                  );
-                } else {
-                  emitAndStore(toToolResultStep(input, stepIndex++));
-                }
-                return { hookSpecificOutput: { hookEventName: "PostToolUse" } };
-              },
-            ],
-          },
-        ],
-        SubagentStart: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const info = toSubagentInfo(input);
-                knownSubagentIds.add(info.subagentId);
-                emit({ type: "subagent_started", info });
-                runs.recordSubagent(config.projectDir, runId, phaseTraceId, {
-                  id: info.subagentId,
-                  type: info.subagentType,
-                  description: info.description,
-                  status: "running",
-                  startedAt: info.startedAt,
-                  endedAt: null,
-                  durationMs: null,
-                  costUsd: 0,
-                });
-                emitAndStore(
-                  makeStep("subagent_spawn", stepIndex++, null, {
-                    subagentId: info.subagentId,
-                    subagentType: info.subagentType,
-                    description: info.description,
-                  })
-                );
-                activeSubagentSet.add(info.subagentId);
-                return {};
-              },
-            ],
-          },
-        ],
-        SubagentStop: [
-          {
-            matcher: undefined,
-            hooks: [
-              async (input: Record<string, unknown>) => {
-                const subagentId = String(input.subagent_id ?? input.agent_id ?? "unknown");
-                activeSubagentSet.delete(subagentId);
-                if (!knownSubagentIds.has(subagentId)) return {};
-                emit({ type: "subagent_completed", subagentId });
-                runs.completeSubagent(config.projectDir, runId, subagentId);
-                emitAndStore(
-                  makeStep("subagent_result", stepIndex++, null, { subagentId })
-                );
-                return {};
-              },
-            ],
-          },
-        ],
-      },
-    },
-  })) {
-    if (isAborted()) {
-      rlog.phase("INFO", `runStage(${stageType}): abort detected in message loop — breaking out (SDK query may continue in background)`);
-      break;
-    }
-
-    const message = msg as Record<string, unknown>;
-
-    if (message.type === "assistant") {
-      const innerMsg = message.message as Record<string, unknown> | undefined;
-      const content = innerMsg?.content as Array<Record<string, unknown>> | undefined;
-      const usage = (innerMsg?.usage ?? message.usage) as Record<string, unknown> | undefined;
-      if (usage) {
-        if (typeof usage.input_tokens === "number") totalInputTokens += usage.input_tokens;
-        if (typeof usage.output_tokens === "number") totalOutputTokens += usage.output_tokens;
-        totalCost = estimateCost(config.model, totalInputTokens, totalOutputTokens);
-      }
-      if (content) {
-        for (const block of content) {
-          if (block.type === "text" && typeof block.text === "string") {
-            emitAndStore(makeStep("text", stepIndex++, block.text));
-          }
-          if (block.type === "thinking" && typeof block.thinking === "string") {
-            emitAndStore(makeStep("thinking", stepIndex++, block.thinking));
-          }
-        }
-      }
-    }
-
-    if (message.type === "result") {
-      if (typeof message.total_cost_usd === "number") totalCost = message.total_cost_usd;
-      const resultUsage = message.usage as Record<string, unknown> | undefined;
-      if (resultUsage) {
-        if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
-        if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
-      }
-      if (typeof message.result === "string") resultText = message.result;
-
-      // Structured output handling
-      if (outputFormat) {
-        if (message.subtype === "error_max_structured_output_retries") {
-          rlog.phase("ERROR", `runStage(${stageType}): structured output validation failed after max retries`);
-          throw new Error(`Structured output validation failed for ${stageType} — agent could not produce valid JSON matching the schema`);
-        }
-        structuredOutput = (message as Record<string, unknown>).structured_output ?? null;
-        if (structuredOutput === null) {
-          rlog.phase("WARN", `runStage(${stageType}): outputFormat requested but structured_output is null — falling back to raw text`);
-        }
-      }
-
-      rlog.phase("INFO", `runStage: ${stageType} result received`, {
-        cost: totalCost,
-        resultPreview: resultText.slice(0, 200),
-      });
-    }
-  }
-
-  const durationMs = Date.now() - startTime;
-
-  // Emit a completed step so the UI timeline ends cleanly (mirrors runPhase behavior)
-  if (!isAborted()) {
-    emitAndStore(makeStep("completed", stepIndex++, `Stage ${stageType} completed`, {
-      inputTokens: totalInputTokens || null,
-      outputTokens: totalOutputTokens || null,
-    }));
-  }
+    runId,
+    cycleNumber,
+    step: stageType,
+    agentRunId,
+    specDir: specDir ?? null,
+    outputFormat,
+    abortController,
+    emit,
+    rlog,
+  });
+  const { result: resultText, structuredOutput, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens } = stageResult;
 
   const stageStatus = isAborted() ? "stopped" : "completed";
-  runs.completePhase(config.projectDir, runId, phaseTraceId, {
+  runs.completeAgentRun(config.projectDir, runId, agentRunId, {
     status: stageStatus,
     costUsd: totalCost,
     durationMs,
@@ -1221,11 +420,11 @@ async function runStage(
   });
 
   emit({
-    type: "stage_completed",
+    type: "step_completed",
     runId,
     cycleNumber,
-    stage: stageType,
-    phaseTraceId,
+    step: stageType,
+    agentRunId,
     costUsd: totalCost,
     durationMs,
     ...(isAborted() ? { stopped: true } : {}),
@@ -1239,7 +438,7 @@ async function runStage(
       // specDir — they'd clobber the active feature pointer with null, which
       // breaks mid-cycle resume.
       await updateState(activeProjectDir, {
-        lastCompletedStage: stageType,
+        lastCompletedStep: stageType,
         currentCycleNumber: cycleNumber,
         ...(specDir ? { currentSpecDir: specDir } : {}),
       });
@@ -1262,7 +461,7 @@ async function runStage(
         updatePhaseCheckpointInfo(
           activeProjectDir,
           runId,
-          phaseTraceId,
+          agentRunId,
           checkpointTag,
           sha,
         );
@@ -1270,10 +469,10 @@ async function runStage(
         // non-fatal
       }
       emit({
-        type: "stage_candidate",
+        type: "step_candidate",
         runId,
         cycleNumber,
-        stage: stageType,
+        step: stageType,
         checkpointTag,
         candidateSha: sha,
         attemptBranch,
@@ -1301,7 +500,7 @@ async function runStage(
           type: "paused",
           runId,
           reason: "step_mode",
-          stage: stageType,
+          step: stageType,
         });
         abortController?.abort();
       }
@@ -1334,13 +533,13 @@ async function readRecordMode(projectDir: string): Promise<boolean> {
 function updatePhaseCheckpointInfo(
   projectDir: string,
   runId: string,
-  phaseTraceId: string,
+  agentRunId: string,
   checkpointTag: string,
   candidateSha: string,
 ): void {
   try {
     runs.updateRun(projectDir, runId, (r) => {
-      const ph = r.phases.find((p) => p.phaseTraceId === phaseTraceId);
+      const ph = r.agentRuns.find((p) => p.agentRunId === agentRunId);
       if (!ph) return;
       ph.checkpointTag = checkpointTag;
       ph.candidateSha = candidateSha;
@@ -1357,8 +556,8 @@ async function runBuild(
   emit: EmitFn,
   runId: string,
   rlog: RunLogger
-): Promise<{ phasesCompleted: number; totalCost: number }> {
-  let phasesCompleted = 0;
+): Promise<{ taskPhasesCompleted: number; totalCost: number }> {
+  let taskPhasesCompleted = 0;
   let totalCost = 0;
   const runStart = Date.now();
 
@@ -1371,7 +570,7 @@ async function runBuild(
 
   if (specDirs.length === 0) {
     rlog.run("INFO", "runBuild: no unfinished specs found");
-    return { phasesCompleted, totalCost };
+    return { taskPhasesCompleted, totalCost };
   }
 
   rlog.run("INFO", `runBuild: will process ${specDirs.length} spec(s)`, { specDirs });
@@ -1394,38 +593,38 @@ async function runBuild(
     while (iteration < config.maxIterations) {
       if (abortController?.signal.aborted) break;
 
-      const targetPhases = runTaskState.getIncompletePhases(config.phases);
+      const targetPhases = runTaskState.getIncompletePhases(config.taskPhases);
 
       const phase = targetPhases[0];
       if (!phase) break;
 
-      const phaseTraceId = crypto.randomUUID();
-      runs.startPhase(config.projectDir, runId, {
-        phaseTraceId,
+      const agentRunId = crypto.randomUUID();
+      runs.startAgentRun(config.projectDir, runId, {
+        agentRunId,
         runId,
         specDir,
-        phaseNumber: phase.number,
-        phaseName: phase.name,
-        stage: null,
+        taskPhaseNumber: phase.number,
+        taskPhaseName: phase.name,
+        step: null,
         cycleNumber: null,
         featureSlug: path.basename(specDir),
         startedAt: new Date().toISOString(),
         status: "running",
       });
 
-      rlog.startPhase(phase.number, phase.name, phaseTraceId);
+      rlog.startAgentRun(phase.number, phase.name, agentRunId);
       if (currentRunState) {
-        currentRunState.phaseTraceId = phaseTraceId;
-        currentRunState.phaseNumber = phase.number;
-        currentRunState.phaseName = phase.name;
+        currentRunState.agentRunId = agentRunId;
+        currentRunState.taskPhaseNumber = phase.number;
+        currentRunState.taskPhaseName = phase.name;
       }
-      emit({ type: "phase_started", phase, iteration, phaseTraceId });
-      emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+      emit({ type: "task_phase_started", taskPhase: phase, iteration, agentRunId });
+      emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
 
       try {
-        const result = await runPhase(specConfig, phase, phaseTraceId, runId, emit, rlog, runTaskState);
+        const result = await runPhase(specConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
 
-        runs.completePhase(config.projectDir, runId, phaseTraceId, {
+        runs.completeAgentRun(config.projectDir, runId, agentRunId, {
           status: "completed",
           costUsd: result.cost,
           durationMs: result.durationMs,
@@ -1433,16 +632,16 @@ async function runBuild(
           outputTokens: result.outputTokens || null,
         });
 
-        phasesCompleted++;
+        taskPhasesCompleted++;
         totalCost += result.cost;
 
         const freshPhases = parseTasksFile(config.projectDir, specDir);
         const reconciledPhases = runTaskState.reconcileFromDisk(freshPhases);
-        emit({ type: "tasks_updated", phases: reconciledPhases });
+        emit({ type: "tasks_updated", taskPhases: reconciledPhases });
 
         emit({
-          type: "phase_completed",
-          phase: { ...phase, status: "complete" },
+          type: "task_phase_completed",
+          taskPhase: { ...phase, status: "complete" },
           cost: result.cost,
           durationMs: result.durationMs,
         });
@@ -1450,9 +649,9 @@ async function runBuild(
         const message =
           err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;
-        rlog.phase("ERROR", `Phase ${phase.number} failed: ${message}`, { stack });
+        rlog.agentRun("ERROR", `Phase ${phase.number} failed: ${message}`, { stack });
         rlog.run("ERROR", `Phase ${phase.number} failed: ${message}`);
-        runs.completePhase(config.projectDir, runId, phaseTraceId, {
+        runs.completeAgentRun(config.projectDir, runId, agentRunId, {
           status: "failed",
           costUsd: 0,
           durationMs: Date.now() - runStart,
@@ -1460,7 +659,7 @@ async function runBuild(
         emit({
           type: "error",
           message: `Phase ${phase.number} failed: ${message}`,
-          phaseNumber: phase.number,
+          taskPhaseNumber: phase.number,
         });
         specFailed = true;
         break;
@@ -1471,13 +670,13 @@ async function runBuild(
 
     if (!specFailed && !abortController?.signal.aborted) {
       rlog.run("INFO", `runBuild: spec ${specDir} completed`);
-      emit({ type: "spec_completed", specDir, phasesCompleted });
+      emit({ type: "spec_completed", specDir, taskPhasesCompleted });
     }
 
     if (specFailed) break;
   }
 
-  return { phasesCompleted, totalCost };
+  return { taskPhasesCompleted, totalCost };
 }
 
 // ── Main Entry Point ──
@@ -1537,6 +736,17 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
   activeProjectDir = config.projectDir;
 
+  // Resolve which agent backend drives this run. Precedence: RunConfig.agent
+  // override > .dex/dex-config.json > built-in default ("claude").
+  // createAgentRunner throws UnknownAgentError if the name isn't registered;
+  // that error surfaces to the caller via the outer try/catch below.
+  {
+    const dexCfg = loadDexConfig(config.projectDir);
+    const agentName = config.agent ?? dexCfg.agent;
+    rlog.run("INFO", `run: resolving agent backend`, { agent: agentName, source: config.agent ? "RunConfig" : "dex-config.json" });
+    currentRunner = createAgentRunner(agentName, config, config.projectDir);
+  }
+
   // Acquire state lock to prevent concurrent writes
   try {
     releaseLock = await acquireStateLock(config.projectDir);
@@ -1551,7 +761,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
           type: "variant_group_resume_needed",
           projectDir: config.projectDir,
           groupId: g.groupId,
-          stage: g.stage,
+          step: g.step,
           pendingCount: g.variants.filter((v) => v.status === "pending").length,
           runningCount: g.variants.filter((v) => v.status === "running").length,
         });
@@ -1562,6 +772,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     emit({ type: "error", message: lockErr instanceof Error ? lockErr.message : String(lockErr) });
     abortController = null;
     activeProjectDir = null;
+    currentRunner = null;
     return;
   }
 
@@ -1579,7 +790,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
         type: "variant_group_resume_needed",
         projectDir: config.projectDir,
         groupId: g.groupId,
-        stage: g.stage,
+        step: g.step,
         pendingCount: g.variants.filter((v) => v.status === "pending").length,
         runningCount: g.variants.filter((v) => v.status === "running").length,
       });
@@ -1596,26 +807,26 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     specDir: config.specDir,
     mode: config.mode,
     model: config.model,
-    phaseTraceId: "",
-    phaseNumber: 0,
-    phaseName: "",
+    agentRunId: "",
+    taskPhaseNumber: 0,
+    taskPhaseName: "",
   };
 
-  let phasesCompleted = 0;
+  let taskPhasesCompleted = 0;
   let totalCost = 0;
   const runStart = Date.now();
 
   try {
     if (config.mode === "loop") {
       const result = await runLoop(config, emit, runId, rlog);
-      phasesCompleted = result.phasesCompleted;
+      taskPhasesCompleted = result.taskPhasesCompleted;
       totalCost = result.totalCost;
       // Branch was created inside runLoop after prerequisites
       baseBranch = result.baseBranch;
       branchName = result.branchName;
     } else {
       const result = await runBuild(config, emit, runId, rlog);
-      phasesCompleted = result.phasesCompleted;
+      taskPhasesCompleted = result.taskPhasesCompleted;
       totalCost = result.totalCost;
     }
   } catch (err) {
@@ -1625,10 +836,11 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     const wasStopped = abortController?.signal.aborted ?? false;
     abortController = null;
     currentRunState = null;
+    currentRunner = null;
 
     const totalDuration = Date.now() - runStart;
     const finalStatus = wasStopped ? "stopped" : "completed";
-    runs.completeRun(config.projectDir, runId, finalStatus, totalCost, totalDuration, phasesCompleted);
+    runs.completeRun(config.projectDir, runId, finalStatus, totalCost, totalDuration, taskPhasesCompleted);
 
     // Update state file: paused if stopped, clear if completed
     if (activeProjectDir) {
@@ -1661,14 +873,14 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     activeProjectDir = null;
 
     let prUrl: string | null = null;
-    if (!wasStopped && phasesCompleted > 0 && branchName) {
+    if (!wasStopped && taskPhasesCompleted > 0 && branchName) {
       rlog.run("INFO", `run: creating PR for branch ${branchName}`);
       prUrl = createPullRequest(
         config.projectDir,
         branchName,
         baseBranch,
         config.mode,
-        phasesCompleted,
+        taskPhasesCompleted,
         totalCost,
         totalDuration
       );
@@ -1679,7 +891,7 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       type: "run_completed",
       totalCost,
       totalDuration,
-      phasesCompleted,
+      taskPhasesCompleted,
       branchName,
       prUrl,
     });
@@ -1712,14 +924,14 @@ async function runPrerequisites(
   emit({ type: "prerequisites_started", runId });
 
   // Create a phase record so the stage appears in preCycleStages
-  const phaseTraceId = crypto.randomUUID();
-  runs.startPhase(config.projectDir, runId, {
-    phaseTraceId,
+  const agentRunId = crypto.randomUUID();
+  runs.startAgentRun(config.projectDir, runId, {
+    agentRunId,
     runId,
     specDir: null,
-    phaseNumber: 0,
-    phaseName: "loop:prerequisites",
-    stage: "prerequisites",
+    taskPhaseNumber: 0,
+    taskPhaseName: "loop:prerequisites",
+    step: "prerequisites",
     cycleNumber: 0,
     featureSlug: null,
     startedAt: new Date().toISOString(),
@@ -1727,11 +939,11 @@ async function runPrerequisites(
   });
 
   emit({
-    type: "stage_started",
+    type: "step_started",
     runId,
     cycleNumber: 0,
-    stage: "prerequisites",
-    phaseTraceId,
+    step: "prerequisites",
+    agentRunId,
   });
 
   const startTime = Date.now();
@@ -1757,7 +969,7 @@ async function runPrerequisites(
     let resolved = false;
     while (!resolved) {
       if (abortController?.signal.aborted) return;
-      const answers = await waitForUserInput(emit, runId, [{
+      const answers = await waitForUserInput(config.projectDir, emit, runId, [{
         question: "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
         header: "Missing: Claude CLI",
         options: [
@@ -1798,7 +1010,7 @@ async function runPrerequisites(
     let resolved = false;
     while (!resolved) {
       if (abortController?.signal.aborted) return;
-      const answers = await waitForUserInput(emit, runId, [{
+      const answers = await waitForUserInput(config.projectDir, emit, runId, [{
         question: "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
         header: "Missing: Spec-Kit CLI",
         options: [
@@ -1935,7 +1147,7 @@ async function runPrerequisites(
         checkResults.set("github_repo", "fixed");
       } else {
         if (abortController?.signal.aborted) return;
-        const answers = await waitForUserInput(emit, runId, [{
+        const answers = await waitForUserInput(config.projectDir, emit, runId, [{
           question: "Would you like to create a GitHub repository for this project?",
           header: "GitHub Repository (optional)",
           options: [
@@ -1951,7 +1163,7 @@ async function runPrerequisites(
           checkResults.set("github_repo", "fixed");
         } else {
           if (abortController?.signal.aborted) return;
-          const repoAnswers = await waitForUserInput(emit, runId, [{
+          const repoAnswers = await waitForUserInput(config.projectDir, emit, runId, [{
             question: "Enter the name for your new GitHub repository:",
             header: "Repository Name",
             options: [
@@ -1994,7 +1206,7 @@ async function runPrerequisites(
     const failedNames = failedChecks.map(([name]) => name).join(", ");
     rlog.run("WARN", `runPrerequisites: ${failedChecks.length} check(s) failed: ${failedNames}`);
 
-    await waitForUserInput(emit, runId, [{
+    await waitForUserInput(config.projectDir, emit, runId, [{
       question: `${failedChecks.length} prerequisite check(s) failed: ${failedNames}. You can continue, but the loop may not work correctly.`,
       header: "Prerequisites incomplete",
       options: [
@@ -2006,7 +1218,7 @@ async function runPrerequisites(
 
   const allPassed = failedChecks.length === 0;
   const durationMs = Date.now() - startTime;
-  runs.completePhase(config.projectDir, runId, phaseTraceId, {
+  runs.completeAgentRun(config.projectDir, runId, agentRunId, {
     status: "completed",
     costUsd: 0,
     durationMs,
@@ -2015,11 +1227,11 @@ async function runPrerequisites(
   });
 
   emit({
-    type: "stage_completed",
+    type: "step_completed",
     runId,
     cycleNumber: 0,
-    stage: "prerequisites",
-    phaseTraceId,
+    step: "prerequisites",
+    agentRunId,
     costUsd: 0,
     durationMs,
   });
@@ -2035,7 +1247,7 @@ async function runLoop(
   emit: EmitFn,
   runId: string,
   rlog: RunLogger
-): Promise<{ phasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
+): Promise<{ taskPhasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
   // Validate: loop mode requires a GOAL.md input
   const goalPath = config.descriptionFile ?? path.join(config.projectDir, "GOAL.md");
   if (!fs.existsSync(goalPath)) {
@@ -2107,7 +1319,7 @@ async function runLoop(
 
       // Restore position from state file
       resumeSpecDir = savedState.currentSpecDir;
-      resumeLastStage = savedState.lastCompletedStage;
+      resumeLastStage = savedState.lastCompletedStep;
       cumulativeCost = savedState.cumulativeCostUsd;
       cyclesCompleted = savedState.cyclesCompleted;
       featuresCompleted.push(...savedState.featuresCompleted);
@@ -2145,15 +1357,15 @@ async function runLoop(
     await runPrerequisites(config, emit, runId, rlog);
     if (abortController?.signal.aborted) {
       emit({ type: "loop_terminated", runId, termination: { reason: "user_abort", cyclesCompleted: 0, totalCostUsd: 0, totalDurationMs: 0, featuresCompleted: [], featuresSkipped: [] } });
-      return { phasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
+      return { taskPhasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
     }
   } else {
     rlog.run("INFO", "runLoop: skipping prerequisites (resume)");
     // Emit synthetic events so the UI can reconstruct the stepper state
     emit({ type: "prerequisites_started", runId });
     const prereqTraceId = crypto.randomUUID();
-    emit({ type: "stage_started", runId, cycleNumber: 0, stage: "prerequisites", phaseTraceId: prereqTraceId });
-    emit({ type: "stage_completed", runId, cycleNumber: 0, stage: "prerequisites", phaseTraceId: prereqTraceId, costUsd: 0, durationMs: 0 });
+    emit({ type: "step_started", runId, cycleNumber: 0, step: "prerequisites", agentRunId: prereqTraceId });
+    emit({ type: "step_completed", runId, cycleNumber: 0, step: "prerequisites", agentRunId: prereqTraceId, costUsd: 0, durationMs: 0 });
     emit({ type: "prerequisites_completed", runId });
   }
 
@@ -2184,23 +1396,23 @@ async function runLoop(
   // ── Phase A: Multi-Domain Clarification ──
   // Skip if specs already exist (resume mode) — use existing GOAL_clarified.md
   // Helper to emit a synthetic completed stage event (for skipped stages)
-  const emitSkippedStage = (stage: import("./types.js").LoopStageType, cycleNum = 0) => {
+  const emitSkippedStep = (step: import("./types.js").StepType, cycleNum = 0) => {
     const traceId = crypto.randomUUID();
-    runs.startPhase(config.projectDir, runId, {
-      phaseTraceId: traceId,
+    runs.startAgentRun(config.projectDir, runId, {
+      agentRunId: traceId,
       runId,
       specDir: null,
-      phaseNumber: cycleNum,
-      phaseName: `loop:${stage}`,
-      stage,
+      taskPhaseNumber: cycleNum,
+      taskPhaseName: `loop:${step}`,
+      step,
       cycleNumber: cycleNum,
       featureSlug: null,
       startedAt: new Date().toISOString(),
       status: "running",
     });
-    emit({ type: "stage_started", runId, cycleNumber: cycleNum, stage, phaseTraceId: traceId });
-    runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-    emit({ type: "stage_completed", runId, cycleNumber: cycleNum, stage, phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+    emit({ type: "step_started", runId, cycleNumber: cycleNum, step, agentRunId: traceId });
+    runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
+    emit({ type: "step_completed", runId, cycleNumber: cycleNum, step, agentRunId: traceId, costUsd: 0, durationMs: 0 });
   };
 
   const existingSpecsAtStart = listSpecDirs(config.projectDir);
@@ -2209,10 +1421,10 @@ async function runLoop(
     rlog.run("INFO", `runLoop: specs exist (${existingSpecsAtStart.length}), skipping clarification, using ${clarifiedPath}`);
     // Emit synthetic clarification events so the UI stepper advances past clarification
     emit({ type: "clarification_started", runId });
-    emitSkippedStage("clarification_product");
-    emitSkippedStage("clarification_technical");
-    emitSkippedStage("clarification_synthesis");
-    emitSkippedStage("constitution");
+    emitSkippedStep("clarification_product");
+    emitSkippedStep("clarification_technical");
+    emitSkippedStep("clarification_synthesis");
+    emitSkippedStep("constitution");
     emit({ type: "clarification_completed", runId, fullPlanPath: clarifiedPath });
   } else {
     emit({ type: "clarification_started", runId });
@@ -2235,7 +1447,7 @@ async function runLoop(
       }
     } else {
       rlog.run("INFO", "runLoop: GOAL_product_domain.md exists, skipping product clarification");
-      emitSkippedStage("clarification_product");
+      emitSkippedStep("clarification_product");
     }
 
     // Step 2: Technical domain clarification
@@ -2252,7 +1464,7 @@ async function runLoop(
       }
     } else {
       rlog.run("INFO", "runLoop: GOAL_technical_domain.md exists, skipping technical clarification");
-      emitSkippedStage("clarification_technical");
+      emitSkippedStep("clarification_technical");
     }
 
     // Step 3: Synthesis → GOAL_clarified.md + CLAUDE.md (with structured confirmation)
@@ -2283,7 +1495,7 @@ async function runLoop(
       }
     } else {
       rlog.run("INFO", "runLoop: GOAL_clarified.md exists, skipping synthesis");
-      emitSkippedStage("clarification_synthesis");
+      emitSkippedStep("clarification_synthesis");
     }
 
     fullPlanPath = clarifiedPath;
@@ -2302,7 +1514,7 @@ async function runLoop(
       cumulativeCost += result.cost;
     } else {
       rlog.run("INFO", "runLoop: constitution already filled, skipping");
-      emitSkippedStage("constitution");
+      emitSkippedStep("constitution");
     }
 
     emit({ type: "clarification_completed", runId, fullPlanPath });
@@ -2397,35 +1609,35 @@ async function runLoop(
     // ── Gap Analysis — Deterministic Manifest Walk ──
     let decision: GapAnalysisDecision;
     if (resumeSpecDir && cycleNumber === cyclesCompleted + 1) {
-      // Mid-cycle resume: pick RESUME_AT_STAGE when a pre-implement stage
+      // Mid-cycle resume: pick RESUME_AT_STEP when a pre-implement stage
       // (specify or plan) completed before the abort. A completed "tasks"
       // stage means the pre-implement triad is done → classic RESUME_FEATURE
       // (jump straight to implement). Any later stage or null also maps to
       // RESUME_FEATURE since implement/verify/learnings have their own
       // resume paths.
       if (resumeLastStage === "specify" || resumeLastStage === "plan") {
-        decision = { type: "RESUME_AT_STAGE", specDir: resumeSpecDir, resumeAtStage: resumeLastStage };
-        rlog.run("INFO", `runLoop: resume — using RESUME_AT_STAGE(${resumeLastStage}) for ${resumeSpecDir}`);
+        decision = { type: "RESUME_AT_STEP", specDir: resumeSpecDir, resumeAtStep: resumeLastStage };
+        rlog.run("INFO", `runLoop: resume — using RESUME_AT_STEP(${resumeLastStage}) for ${resumeSpecDir}`);
       } else {
         decision = { type: "RESUME_FEATURE", specDir: resumeSpecDir };
         rlog.run("INFO", `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`);
       }
       const traceId = crypto.randomUUID();
-      runs.startPhase(config.projectDir, runId, {
-        phaseTraceId: traceId,
+      runs.startAgentRun(config.projectDir, runId, {
+        agentRunId: traceId,
         runId,
         specDir: resumeSpecDir,
-        phaseNumber: cycleNumber,
-        phaseName: "loop:gap_analysis",
-        stage: "gap_analysis",
+        taskPhaseNumber: cycleNumber,
+        taskPhaseName: "loop:gap_analysis",
+        step: "gap_analysis",
         cycleNumber,
         featureSlug: path.basename(resumeSpecDir),
         startedAt: new Date().toISOString(),
         status: "running",
       });
-      emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId });
-      runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-      emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+      emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId });
+      runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
+      emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
       resumeSpecDir = null;
     } else {
       try {
@@ -2435,7 +1647,7 @@ async function runLoop(
         }
 
         if (currentRunState) {
-          currentRunState.currentStage = "gap_analysis";
+          currentRunState.currentStep = "gap_analysis";
         }
 
         const active = getActiveFeature(manifest);
@@ -2444,21 +1656,21 @@ async function runLoop(
         // Emit a synthetic (deterministic, cost=0) gap_analysis stage so the UI shows it completed
         const emitSyntheticGapAnalysis = (specDir: string) => {
           const traceId = crypto.randomUUID();
-          runs.startPhase(config.projectDir, runId, {
-            phaseTraceId: traceId,
+          runs.startAgentRun(config.projectDir, runId, {
+            agentRunId: traceId,
             runId,
             specDir: specDir || null,
-            phaseNumber: cycleNumber,
-            phaseName: "loop:gap_analysis",
-            stage: "gap_analysis",
+            taskPhaseNumber: cycleNumber,
+            taskPhaseName: "loop:gap_analysis",
+            step: "gap_analysis",
             cycleNumber,
             featureSlug: specDir ? path.basename(specDir) : null,
             startedAt: new Date().toISOString(),
             status: "running",
           });
-          emit({ type: "stage_started", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, specDir });
-          runs.completePhase(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-          emit({ type: "stage_completed", runId, cycleNumber, stage: "gap_analysis", phaseTraceId: traceId, costUsd: 0, durationMs: 0 });
+          emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, specDir });
+          runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
+          emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
         };
 
         if (active) {
@@ -2516,7 +1728,7 @@ async function runLoop(
     const featureName = decision.type === "NEXT_FEATURE" ? decision.name : null;
     let specDir = decision.type === "RESUME_FEATURE"
       || decision.type === "REPLAN_FEATURE"
-      || decision.type === "RESUME_AT_STAGE"
+      || decision.type === "RESUME_AT_STEP"
       ? decision.specDir
       : null;
     let cycleFailed = false;
@@ -2571,7 +1783,7 @@ async function runLoop(
           } as never).catch(() => {});
         }
         cyclesCompleted++;
-        runs.updateRunLoopsCompleted(config.projectDir, runId, cyclesCompleted);
+        runs.updateRunCyclesCompleted(config.projectDir, runId, cyclesCompleted);
         continue;
       }
       if (record.implFailures >= 3) {
@@ -2590,17 +1802,17 @@ async function runLoop(
     // GAPS_COMPLETE is already handled by the early `break` above, so the
     // narrowed type at this point excludes it — the switch below is
     // exhaustive over the remaining four variants.
-    const shouldRun = (stage: LoopStageType): boolean => {
+    const shouldRun = (step: StepType): boolean => {
       switch (decision.type) {
         case "NEXT_FEATURE":
-          return stage !== "gap_analysis";
+          return step !== "gap_analysis";
         case "REPLAN_FEATURE":
-          return stage === "plan" || stage === "tasks" || stage === "implement"
-            || stage === "verify" || stage === "learnings";
+          return step === "plan" || step === "tasks" || step === "implement"
+            || step === "verify" || step === "learnings";
         case "RESUME_FEATURE":
-          return stage === "implement" || stage === "verify" || stage === "learnings";
-        case "RESUME_AT_STAGE":
-          return STAGE_ORDER.indexOf(stage) > STAGE_ORDER.indexOf(decision.resumeAtStage);
+          return step === "implement" || step === "verify" || step === "learnings";
+        case "RESUME_AT_STEP":
+          return STEP_ORDER.indexOf(step) > STEP_ORDER.indexOf(decision.resumeAtStep);
       }
     };
 
@@ -2608,14 +1820,14 @@ async function runLoop(
       // Emit synthetic completed events for stages that won't actually run,
       // so the UI stepper shows them ✓ instead of missing/stuck.
       if (decision.type === "RESUME_FEATURE") {
-        emitSkippedStage("specify", cycleNumber);
-        emitSkippedStage("plan", cycleNumber);
-        emitSkippedStage("tasks", cycleNumber);
-      } else if (decision.type === "RESUME_AT_STAGE") {
-        const resumeOrdinal = STAGE_ORDER.indexOf(decision.resumeAtStage);
+        emitSkippedStep("specify", cycleNumber);
+        emitSkippedStep("plan", cycleNumber);
+        emitSkippedStep("tasks", cycleNumber);
+      } else if (decision.type === "RESUME_AT_STEP") {
+        const resumeOrdinal = STEP_ORDER.indexOf(decision.resumeAtStep);
         for (const s of ["specify", "plan", "tasks"] as const) {
-          if (STAGE_ORDER.indexOf(s) <= resumeOrdinal) {
-            emitSkippedStage(s, cycleNumber);
+          if (STEP_ORDER.indexOf(s) <= resumeOrdinal) {
+            emitSkippedStep(s, cycleNumber);
           }
         }
       }
@@ -2624,7 +1836,7 @@ async function runLoop(
       if (decision.type === "NEXT_FEATURE") {
         // Specify (T030)
         if (currentRunState) {
-          currentRunState.currentStage = "specify";
+          currentRunState.currentStep = "specify";
         }
         const knownSpecs = listSpecDirs(config.projectDir);
         const specifyPrompt = buildSpecifyPrompt(decision.name, decision.description);
@@ -2644,7 +1856,7 @@ async function runLoop(
 
         // Persist the new spec directory to state immediately so a pause
         // between specify and plan is recoverable — the emitter reads
-        // currentSpecDir on the next resume to pick RESUME_AT_STAGE.
+        // currentSpecDir on the next resume to pick RESUME_AT_STEP.
         // Must run BEFORE the abort check below, otherwise a Stop click
         // right after specify completes orphans the new spec dir.
         if (activeProjectDir) {
@@ -2657,7 +1869,7 @@ async function runLoop(
         if (abortController?.signal.aborted) throw new AbortError();
       }
 
-      // Plan (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STAGE(specify)
+      // Plan (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STEP(specify)
       if (shouldRun("plan")) {
         if (abortController?.signal.aborted) throw new AbortError();
 
@@ -2667,7 +1879,7 @@ async function runLoop(
           : path.join(config.projectDir, targetSpecDir);
 
         if (currentRunState) {
-          currentRunState.currentStage = "plan";
+          currentRunState.currentStep = "plan";
         }
         // Update FeatureArtifacts.status to "planning"
         if (activeProjectDir && targetSpecDir) {
@@ -2682,7 +1894,7 @@ async function runLoop(
         if (abortController?.signal.aborted) throw new AbortError();
       }
 
-      // Tasks (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STAGE(specify|plan)
+      // Tasks (T031) — runs for NEXT_FEATURE, REPLAN_FEATURE, and RESUME_AT_STEP(specify|plan)
       if (shouldRun("tasks")) {
         if (abortController?.signal.aborted) throw new AbortError();
 
@@ -2692,7 +1904,7 @@ async function runLoop(
           : path.join(config.projectDir, targetSpecDir);
 
         if (currentRunState) {
-          currentRunState.currentStage = "tasks";
+          currentRunState.currentStep = "tasks";
         }
         const tasksPrompt = buildLoopTasksPrompt(config, specPath);
         const tasksResult = await runStage(config, tasksPrompt, emit, rlog, runId, cycleNumber, "tasks", targetSpecDir);
@@ -2708,7 +1920,7 @@ async function runLoop(
         : path.join(config.projectDir, implSpecDir);
 
       if (currentRunState) {
-        currentRunState.currentStage = "implement";
+        currentRunState.currentStep = "implement";
         currentRunState.specDir = implSpecDir;
       }
       // Update FeatureArtifacts.status to "implementing"
@@ -2720,13 +1932,13 @@ async function runLoop(
 
       // Create a stage-level phase record so the UI shows implement in the stage list
       const implStageTraceId = crypto.randomUUID();
-      runs.startPhase(config.projectDir, runId, {
-        phaseTraceId: implStageTraceId,
+      runs.startAgentRun(config.projectDir, runId, {
+        agentRunId: implStageTraceId,
         runId,
         specDir: implSpecDir,
-        phaseNumber: cycleNumber,
-        phaseName: "loop:implement",
-        stage: "implement",
+        taskPhaseNumber: cycleNumber,
+        taskPhaseName: "loop:implement",
+        step: "implement",
         cycleNumber,
         featureSlug: path.basename(implSpecDir),
         startedAt: new Date().toISOString(),
@@ -2734,11 +1946,11 @@ async function runLoop(
       });
 
       emit({
-        type: "stage_started",
+        type: "step_started",
         runId,
         cycleNumber,
-        stage: "implement",
-        phaseTraceId: implStageTraceId,
+        step: "implement",
+        agentRunId: implStageTraceId,
         specDir: implSpecDir,
       });
 
@@ -2757,22 +1969,22 @@ async function runLoop(
       const runTaskState = new RunTaskState(phases);
 
       // Emit initial task state so the UI can show the spec card immediately
-      emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+      emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
 
       try {
         for (const phase of phases) {
           if (abortController?.signal.aborted) break;
           if (phase.status === "complete") continue;
 
-          const phaseTraceId = crypto.randomUUID();
-          activePhaseTraceId = phaseTraceId;
-          runs.startPhase(config.projectDir, runId, {
-            phaseTraceId,
+          const agentRunId = crypto.randomUUID();
+          activePhaseTraceId = agentRunId;
+          runs.startAgentRun(config.projectDir, runId, {
+            agentRunId,
             runId,
             specDir: implSpecDir,
-            phaseNumber: phase.number,
-            phaseName: phase.name,
-            stage: null,
+            taskPhaseNumber: phase.number,
+            taskPhaseName: phase.name,
+            step: null,
             cycleNumber,
             featureSlug: path.basename(implSpecDir),
             startedAt: new Date().toISOString(),
@@ -2780,15 +1992,15 @@ async function runLoop(
           });
 
           if (currentRunState) {
-            currentRunState.phaseTraceId = phaseTraceId;
-            currentRunState.phaseNumber = phase.number;
-            currentRunState.phaseName = phase.name;
+            currentRunState.agentRunId = agentRunId;
+            currentRunState.taskPhaseNumber = phase.number;
+            currentRunState.taskPhaseName = phase.name;
           }
 
-          emit({ type: "phase_started", phase, iteration: 0, phaseTraceId });
+          emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
 
-          const phaseResult = await runPhase(implConfig, phase, phaseTraceId, runId, emit, rlog, runTaskState);
-          runs.completePhase(config.projectDir, runId, phaseTraceId, {
+          const phaseResult = await runPhase(implConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
+          runs.completeAgentRun(config.projectDir, runId, agentRunId, {
             status: "completed",
             costUsd: phaseResult.cost,
             durationMs: phaseResult.durationMs,
@@ -2804,10 +2016,10 @@ async function runLoop(
           // Reconcile task state from disk
           const freshPhases = parseTasksFile(config.projectDir, implSpecDir);
           runTaskState.reconcileFromDisk(freshPhases);
-          emit({ type: "tasks_updated", phases: runTaskState.getPhases() });
+          emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
           emit({
-            type: "phase_completed",
-            phase: { ...phase, status: "complete" },
+            type: "task_phase_completed",
+            taskPhase: { ...phase, status: "complete" },
             cost: phaseResult.cost,
             durationMs: phaseResult.durationMs,
           });
@@ -2817,7 +2029,7 @@ async function runLoop(
         // Mark any in-flight phase trace as failed so it doesn't dangle as "running"
         if (activePhaseTraceId) {
           try {
-            runs.completePhase(config.projectDir, runId, activePhaseTraceId, {
+            runs.completeAgentRun(config.projectDir, runId, activePhaseTraceId, {
               status: "failed",
               costUsd: 0,
               durationMs: Date.now() - implStageStart,
@@ -2831,7 +2043,7 @@ async function runLoop(
         const implStageDurationMs = Date.now() - implStageStart;
         const implAborted = abortController?.signal.aborted ?? false;
         const implFinalStatus = implAborted ? "stopped" : implStageFailed ? "failed" : "completed";
-        runs.completePhase(config.projectDir, runId, implStageTraceId, {
+        runs.completeAgentRun(config.projectDir, runId, implStageTraceId, {
           status: implFinalStatus,
           costUsd: implStageCost,
           durationMs: implStageDurationMs,
@@ -2839,11 +2051,11 @@ async function runLoop(
           outputTokens: implStageOutputTokens || null,
         });
         emit({
-          type: "stage_completed",
+          type: "step_completed",
           runId,
           cycleNumber,
-          stage: "implement",
-          phaseTraceId: implStageTraceId,
+          step: "implement",
+          agentRunId: implStageTraceId,
           costUsd: implStageCost,
           durationMs: implStageDurationMs,
           ...(implAborted ? { stopped: true } : {}),
@@ -2858,7 +2070,7 @@ async function runLoop(
 
       // Verify — structured output with fix-reverify loop
       if (currentRunState) {
-        currentRunState.currentStage = "verify";
+        currentRunState.currentStep = "verify";
       }
       // Update FeatureArtifacts.status to "verifying"
       if (activeProjectDir && implSpecDir) {
@@ -2935,7 +2147,7 @@ async function runLoop(
 
       // Learnings — structured output with dedup
       if (currentRunState) {
-        currentRunState.currentStage = "learnings";
+        currentRunState.currentStep = "learnings";
       }
       const learningsPrompt = buildLearningsPrompt(config, implSpecPath);
       const learningsResult = await runStage(
@@ -3004,8 +2216,8 @@ async function runLoop(
         if (specDir) {
           const record = getOrCreateFailureRecord(specDir);
           // Determine which counter to increment based on the current stage
-          const currentStage = currentRunState?.currentStage;
-          if (currentStage === "plan" || currentStage === "tasks") {
+          const currentStep = currentRunState?.currentStep;
+          if (currentStep === "plan" || currentStep === "tasks") {
             record.replanFailures++;
           } else {
             record.implFailures++;
@@ -3029,7 +2241,7 @@ async function runLoop(
 
     // (loop cycle row removed in 007-sqlite-removal — cycleCost/duration derived from phases)
     void cycleStatus;
-    runs.updateRunLoopsCompleted(config.projectDir, runId, cyclesCompleted);
+    runs.updateRunCyclesCompleted(config.projectDir, runId, cyclesCompleted);
 
     // Update state file with cycle completion
     if (activeProjectDir) {
@@ -3041,7 +2253,7 @@ async function runLoop(
     }
 
     if (currentRunState) {
-      currentRunState.loopsCompleted = cyclesCompleted;
+      currentRunState.cyclesCompleted = cyclesCompleted;
     }
 
     emit({
@@ -3104,7 +2316,7 @@ async function runLoop(
     }
   }
 
-  return { phasesCompleted: cyclesCompleted, totalCost: cumulativeCost, baseBranch, branchName };
+  return { taskPhasesCompleted: cyclesCompleted, totalCost: cumulativeCost, baseBranch, branchName };
 }
 
 export function stopRun(): void {

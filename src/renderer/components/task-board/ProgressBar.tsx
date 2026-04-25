@@ -1,8 +1,8 @@
 import { Clock, DollarSign, Layers } from "lucide-react";
-import type { Phase } from "../../../core/types.js";
+import type { TaskPhase } from "../../../core/types.js";
 
 interface ProgressBarProps {
-  phases: Phase[];
+  phases: TaskPhase[];
   totalCost: number;
   totalDuration: number;
 }

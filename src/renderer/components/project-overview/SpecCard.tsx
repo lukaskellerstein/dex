@@ -1,5 +1,5 @@
 import { CheckCircle, FileText, Loader2, Cog, Clock, DollarSign, Hash } from "lucide-react";
-import type { Phase, Task } from "../../../core/types.js";
+import type { TaskPhase, Task } from "../../../core/types.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { useState } from "react";
 
@@ -25,7 +25,7 @@ interface SpecCardProps {
 
   isActive?: boolean;
   isRunning?: boolean;
-  activePhase?: Phase | null;
+  activePhase?: TaskPhase | null;
   activeTask?: Task | null;
 }
 
@@ -137,7 +137,7 @@ export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, a
               color: "var(--primary)",
             }}
           >
-            <span style={{ fontWeight: 600 }}>Phase {activePhase.number}</span>
+            <span style={{ fontWeight: 600 }}>TaskPhase {activePhase.number}</span>
             <span style={{ color: "var(--foreground-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {activePhase.name}
             </span>
@@ -231,7 +231,7 @@ export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, a
         </div>
 
         {/* Aggregate stats from historical traces */}
-        {summary.stats && summary.stats.phasesWithTraces > 0 && (
+        {summary.stats && summary.stats.agentRunsWithTraces > 0 && (
           <div
             style={{
               display: "flex",

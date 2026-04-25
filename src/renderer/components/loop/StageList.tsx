@@ -1,11 +1,11 @@
 import { CheckCircle, Circle, Loader, Minus, Pause, ExternalLink } from "lucide-react";
 import { useState } from "react";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 import type { UiLoopStage, ImplementSubPhase } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { SpecCard } from "../project-overview/SpecCard.js";
 
-const CYCLE_STAGES: LoopStageType[] = [
+const CYCLE_STAGES: StepType[] = [
   "gap_analysis",
   "specify",
   "plan",
@@ -15,22 +15,30 @@ const CYCLE_STAGES: LoopStageType[] = [
   "learnings",
 ];
 
-const STAGE_LABELS: Record<LoopStageType, string> = {
+const STEP_LABELS: Record<StepType, string> = {
+  prerequisites: "Prerequisites",
+  create_branch: "Create Branch",
   clarification: "Clarification",
+  clarification_product: "Clarification (Product)",
+  clarification_technical: "Clarification (Technical)",
+  clarification_synthesis: "Clarification (Synthesis)",
   constitution: "Constitution",
+  manifest_extraction: "Manifest Extraction",
   gap_analysis: "Gap Analysis",
   specify: "Specify",
   plan: "Plan",
   tasks: "Tasks",
   implement: "Implement",
+  implement_fix: "Implement Fix",
   verify: "Verify",
   learnings: "Learnings",
+  commit: "Commit",
 };
 
 type StageStatus = "pending" | "running" | "completed" | "skipped" | "failed" | "paused";
 
 function getStageVisibility(
-  stageType: LoopStageType,
+  stageType: StepType,
   decision: string | null
 ): "show" | "skip" {
   if (!decision) return "show";
@@ -48,9 +56,9 @@ function getStageVisibility(
 }
 
 function deriveStageStatus(
-  stageType: LoopStageType,
+  stageType: StepType,
   actual: UiLoopStage | undefined,
-  currentStage: LoopStageType | null,
+  currentStage: StepType | null,
   isActiveCycle: boolean,
   decision: string | null,
   hasVerifyOrLater: boolean,
@@ -179,7 +187,7 @@ function StageRow({
   onClick,
   children,
 }: {
-  stageType: LoopStageType;
+  stageType: StepType;
   status: StageStatus;
   costUsd: number;
   durationMs: number;
@@ -243,7 +251,7 @@ function StageRow({
             transition: "color 0.15s",
           }}
         >
-          {STAGE_LABELS[stageType]}
+          {STEP_LABELS[stageType]}
         </span>
 
         {/* Cost + Duration */}
@@ -284,7 +292,7 @@ function StageRow({
       {/* Nested content (implement sub-phases) */}
       {children}
 
-      {/* Connector line to next stage */}
+      {/* Connector line to next step */}
       {!isLast && (
         <div style={{
           marginLeft: 17,
@@ -322,13 +330,13 @@ function ImplementSpecView({
 export interface StageListProps {
   stages: UiLoopStage[];
   implementPhases: ImplementSubPhase[];
-  currentStage: LoopStageType | null;
+  currentStage: StepType | null;
   isActiveCycle: boolean;
   isRunning: boolean;
   isPausedCycle: boolean;
   decision: string | null;
   specSummary: SpecSummary | undefined;
-  onStageClick: (stage: UiLoopStage) => void;
+  onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
 }
@@ -385,7 +393,7 @@ export function StageList({
             costUsd={actual?.costUsd ?? implCost}
             durationMs={actual?.durationMs ?? implDuration}
             isLast={i === visibleStages.length - 1}
-            hasTrace={!!actual?.phaseTraceId || (stageType === "implement" && (implementPhases.length > 0 || !!specSummary))}
+            hasTrace={!!actual?.agentRunId || (stageType === "implement" && (implementPhases.length > 0 || !!specSummary))}
             onClick={() => {
               if (stageType === "implement" && specSummary) {
                 onSelectSpec(specSummary.name);

@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Phase, Task } from "./types.js";
+import type { TaskPhase, Task } from "./types.js";
 
-const PHASE_HEADER = /^## Phase (\d+): (.+)$/;
+const PHASE_HEADER = /^## TaskPhase (\d+): (.+)$/;
 const PURPOSE_LINE = /^\*\*Purpose\*\*: (.+)$/;
 const TASK_LINE = /^- \[([ x~])\] (T\d+)\s+(.+)$/;
 const BRACKET_TAG = /\[([^\]]+)\]/g;
@@ -37,7 +37,7 @@ function extractTags(raw: string): {
   return { userStory, priority, description };
 }
 
-export function derivePhaseStatus(
+export function deriveTaskPhaseStatus(
   tasks: Task[]
 ): "complete" | "partial" | "not_started" {
   if (tasks.length === 0) return "not_started";
@@ -55,21 +55,21 @@ function parseTaskStatus(marker: string): Task["status"] {
   return "not_done";
 }
 
-export function parseTasksMd(content: string): Phase[] {
+export function parseTasksMd(content: string): TaskPhase[] {
   const lines = content.split("\n");
-  const phases: Phase[] = [];
-  let currentPhase: Phase | null = null;
+  const phases: TaskPhase[] = [];
+  let currentTaskPhase: TaskPhase | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     const phaseMatch = line.match(PHASE_HEADER);
     if (phaseMatch) {
-      if (currentPhase) {
-        currentPhase.status = derivePhaseStatus(currentPhase.tasks);
-        phases.push(currentPhase);
+      if (currentTaskPhase) {
+        currentTaskPhase.status = deriveTaskPhaseStatus(currentTaskPhase.tasks);
+        phases.push(currentTaskPhase);
       }
-      currentPhase = {
+      currentTaskPhase = {
         number: parseInt(phaseMatch[1], 10),
         name: phaseMatch[2].trim(),
         purpose: "",
@@ -79,32 +79,32 @@ export function parseTasksMd(content: string): Phase[] {
       continue;
     }
 
-    if (currentPhase) {
+    if (currentTaskPhase) {
       const purposeMatch = line.match(PURPOSE_LINE);
       if (purposeMatch) {
-        currentPhase.purpose = purposeMatch[1].trim();
+        currentTaskPhase.purpose = purposeMatch[1].trim();
         continue;
       }
 
       const taskMatch = line.match(TASK_LINE);
       if (taskMatch) {
         const { userStory, priority, description } = extractTags(taskMatch[3]);
-        currentPhase.tasks.push({
+        currentTaskPhase.tasks.push({
           id: taskMatch[2],
           userStory,
           priority,
           description,
           status: parseTaskStatus(taskMatch[1]),
           lineNumber: i + 1,
-          phase: currentPhase.number,
+          phase: currentTaskPhase.number,
         });
       }
     }
   }
 
-  if (currentPhase) {
-    currentPhase.status = derivePhaseStatus(currentPhase.tasks);
-    phases.push(currentPhase);
+  if (currentTaskPhase) {
+    currentTaskPhase.status = deriveTaskPhaseStatus(currentTaskPhase.tasks);
+    phases.push(currentTaskPhase);
   }
 
   return phases;
@@ -179,7 +179,7 @@ export function discoverNewSpecDir(
 export function parseTasksFile(
   projectDir: string,
   specDir: string
-): Phase[] {
+): TaskPhase[] {
   const tasksPath = path.join(projectDir, specDir, "tasks.md");
   const content = fs.readFileSync(tasksPath, "utf-8");
   return parseTasksMd(content);

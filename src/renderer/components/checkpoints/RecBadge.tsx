@@ -6,7 +6,7 @@ export function RecBadge({ recordMode }: Props) {
   if (!recordMode) return null;
   return (
     <div
-      title="Record mode: every completed stage is promoted to canonical automatically"
+      title="Record mode: every completed step is promoted to canonical automatically"
       style={{
         display: "inline-flex",
         alignItems: "center",

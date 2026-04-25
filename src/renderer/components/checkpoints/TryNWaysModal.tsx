@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { CheckpointModal } from "./Modal";
-import type { LoopStageType } from "../../../core/types.js";
+import type { StepType } from "../../../core/types.js";
 
 interface Props {
   projectDir: string;
   tag: string;
   /** Stage of the next-after-tag — used for cost estimate and parallel classification. */
-  nextStage: LoopStageType;
+  nextStage: StepType;
   onCancel: () => void;
   onConfirm: (n: number) => Promise<void>;
 }
@@ -50,7 +50,7 @@ export function TryNWaysModal({ projectDir, tag, nextStage, onCancel, onConfirm 
 
   return (
     <CheckpointModal
-      title={`Try N ways — next stage: ${nextStage}`}
+      title={`Try N ways — next step: ${nextStage}`}
       onClose={onCancel}
       footer={
         <>

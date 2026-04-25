@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld("dexAPI", {
   pathExists: (targetPath: string) =>
     ipcRenderer.invoke("project:path-exists", targetPath) as Promise<boolean>,
 
+  // App config (global ~/.dex/app-config.json)
+  getWelcomeDefaults: () =>
+    ipcRenderer.invoke("appConfig:getWelcomeDefaults") as Promise<{
+      defaultLocation: string;
+      defaultName: string;
+    }>,
+
   // Orchestrator
   startRun: (config: Record<string, unknown>) =>
     ipcRenderer.invoke("orchestrator:start", config),
@@ -33,13 +40,13 @@ contextBridge.exposeInMainWorld("dexAPI", {
     specDir: string;
     mode: string;
     model: string;
-    phaseTraceId: string;
-    phaseNumber: number;
-    phaseName: string;
+    agentRunId: string;
+    taskPhaseNumber: number;
+    taskPhaseName: string;
     currentCycle?: number;
-    currentStage?: string;
+    currentStep?: string;
     isClarifying?: boolean;
-    loopsCompleted?: number;
+    cyclesCompleted?: number;
   } | null>,
 
   // Orchestrator events
@@ -59,14 +66,14 @@ contextBridge.exposeInMainWorld("dexAPI", {
     ipcRenderer.invoke("history:get-run", projectDir, runId),
   getLatestProjectRun: (projectDir: string) =>
     ipcRenderer.invoke("history:get-latest-project-run", projectDir),
-  getPhaseSteps: (projectDir: string, runId: string, phaseTraceId: string) =>
-    ipcRenderer.invoke("history:get-phase-steps", projectDir, runId, phaseTraceId),
-  getPhaseSubagents: (projectDir: string, runId: string, phaseTraceId: string) =>
-    ipcRenderer.invoke("history:get-phase-subagents", projectDir, runId, phaseTraceId),
-  getLatestPhaseTrace: (projectDir: string, specDir: string, phaseNumber: number) =>
-    ipcRenderer.invoke("history:get-latest-phase-trace", projectDir, specDir, phaseNumber),
-  getSpecPhaseStats: (projectDir: string, specDir: string) =>
-    ipcRenderer.invoke("history:get-spec-phase-stats", projectDir, specDir),
+  getAgentSteps: (projectDir: string, runId: string, agentRunId: string) =>
+    ipcRenderer.invoke("history:get-agent-steps", projectDir, runId, agentRunId),
+  getAgentRunSubagents: (projectDir: string, runId: string, agentRunId: string) =>
+    ipcRenderer.invoke("history:get-agent-run-subagents", projectDir, runId, agentRunId),
+  getLatestAgentRun: (projectDir: string, specDir: string, taskPhaseNumber: number) =>
+    ipcRenderer.invoke("history:get-latest-agent-run", projectDir, specDir, taskPhaseNumber),
+  getSpecAgentRuns: (projectDir: string, specDir: string) =>
+    ipcRenderer.invoke("history:get-spec-agent-runs", projectDir, specDir),
   getSpecAggregateStats: (projectDir: string, specDir: string) =>
     ipcRenderer.invoke("history:get-spec-aggregate-stats", projectDir, specDir),
 
@@ -80,15 +87,15 @@ contextBridge.exposeInMainWorld("dexAPI", {
       ipcRenderer.invoke("checkpoints:checkIsRepo", projectDir) as Promise<boolean>,
     checkIdentity: (projectDir: string) =>
       ipcRenderer.invoke("checkpoints:checkIdentity", projectDir),
-    estimateVariantCost: (projectDir: string, stage: string, variantCount: number) =>
-      ipcRenderer.invoke("checkpoints:estimateVariantCost", projectDir, stage, variantCount),
+    estimateVariantCost: (projectDir: string, step: string, variantCount: number) =>
+      ipcRenderer.invoke("checkpoints:estimateVariantCost", projectDir, step, variantCount),
     readPendingVariantGroups: (projectDir: string) =>
       ipcRenderer.invoke("checkpoints:readPendingVariantGroups", projectDir),
     promote: (projectDir: string, tag: string, sha: string) =>
       ipcRenderer.invoke("checkpoints:promote", projectDir, tag, sha),
     goBack: (projectDir: string, tag: string, options?: { force?: "save" | "discard" }) =>
       ipcRenderer.invoke("checkpoints:goBack", projectDir, tag, options),
-    spawnVariants: (projectDir: string, request: { fromCheckpoint: string; variantLetters: string[]; stage: string }) =>
+    spawnVariants: (projectDir: string, request: { fromCheckpoint: string; variantLetters: string[]; step: string }) =>
       ipcRenderer.invoke("checkpoints:spawnVariants", projectDir, request),
     deleteAttempt: (projectDir: string, branch: string) =>
       ipcRenderer.invoke("checkpoints:deleteAttempt", projectDir, branch),
@@ -104,8 +111,8 @@ contextBridge.exposeInMainWorld("dexAPI", {
       ipcRenderer.invoke("checkpoints:setRecordMode", projectDir, on),
     setPauseAfterStage: (projectDir: string, on: boolean) =>
       ipcRenderer.invoke("checkpoints:setPauseAfterStage", projectDir, on),
-    compareAttempts: (projectDir: string, branchA: string, branchB: string, stage: string | null) =>
-      ipcRenderer.invoke("checkpoints:compareAttempts", projectDir, branchA, branchB, stage),
+    compareAttempts: (projectDir: string, branchA: string, branchB: string, step: string | null) =>
+      ipcRenderer.invoke("checkpoints:compareAttempts", projectDir, branchA, branchB, step),
   },
 
   // Window controls
