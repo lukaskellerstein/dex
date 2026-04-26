@@ -35,8 +35,6 @@ interface AgentStepListProps {
   agentId?: string;
   startedAt?: string;
   durationMs?: number;
-  costUsd?: number;
-  headerTitle?: string;
   subagents?: SubagentInfo[];
   onSubagentClick?: (subagentId: string) => void;
   onSubagentBadgeClick?: (subagent: SubagentInfo) => void;
@@ -90,7 +88,7 @@ type TimelineRow =
   | { kind: "single"; entry: GroupedStep; idx: number }
   | { kind: "parallel-spawns"; entries: GroupedStep[]; startIdx: number };
 
-export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs, costUsd, headerTitle, subagents, onSubagentClick, onSubagentBadgeClick, showSubagentSteps }: AgentStepListProps) {
+export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs, subagents, onSubagentClick, onSubagentBadgeClick, showSubagentSteps }: AgentStepListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
 
@@ -225,8 +223,8 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
   };
 
   const stats = useMemo(
-    () => computeStats(steps, { durationMs, costUsd }),
-    [steps, durationMs, costUsd]
+    () => computeStats(steps, { durationMs }),
+    [steps, durationMs]
   );
 
   return (
@@ -253,7 +251,7 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
           gap: 8,
         }}
       >
-        {headerTitle ?? "Agent Detail"}
+        Agent Detail
         {agentId && (
           <>
             <Bot size={13} color="var(--primary)" />

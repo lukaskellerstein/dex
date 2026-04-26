@@ -6,10 +6,10 @@ import type { StepType, AgentStep } from "./types.js";
 
 // ── Types ──
 
-export type RunMode = "loop" | "build" | "plan";
-export type RunStatus = "running" | "completed" | "paused" | "failed" | "stopped" | "crashed";
-export type AgentRunStatus = "running" | "completed" | "failed" | "stopped" | "crashed";
-export type SubagentStatus = "running" | "ok" | "failed" | "crashed";
+type RunMode = "loop" | "build" | "plan";
+type RunStatus = "running" | "completed" | "paused" | "failed" | "stopped" | "crashed";
+type AgentRunStatus = "running" | "completed" | "failed" | "stopped" | "crashed";
+type SubagentStatus = "running" | "ok" | "failed" | "crashed";
 
 export interface SubagentRecord {
   id: string;
@@ -76,17 +76,17 @@ export interface SpecStats {
 
 // ── Directory helpers ──
 
-export function runsDir(projectDir: string): string {
+function runsDir(projectDir: string): string {
   return path.join(projectDir, ".dex", "runs");
 }
 
-export function ensureRunsDir(projectDir: string): void {
+function ensureRunsDir(projectDir: string): void {
   fs.mkdirSync(runsDir(projectDir), { recursive: true });
 }
 
 // ── Low-level I/O ──
 
-export function writeRun(projectDir: string, run: RunRecord): void {
+function writeRun(projectDir: string, run: RunRecord): void {
   if (!run.runId || run.runId.includes("/") || run.runId.includes("\\")) {
     throw new Error(`writeRun: invalid runId ${JSON.stringify(run.runId)}`);
   }
@@ -173,7 +173,7 @@ export function updateRun(
   return run;
 }
 
-export interface StartRunInput {
+interface StartRunInput {
   runId: string;
   mode: RunMode;
   model: string;
@@ -241,7 +241,7 @@ export function updateRunCyclesCompleted(
 
 // ── AgentRun helpers ──
 
-export interface StartAgentRunInput {
+interface StartAgentRunInput {
   agentRunId: string;
   runId: string;
   specDir: string | null;
@@ -339,16 +339,6 @@ export function completeSubagent(
 
 // ── Failure-counter helpers ──
 
-export function getFailureCount(
-  projectDir: string,
-  runId: string,
-  specDir: string,
-): { impl: number; replan: number } {
-  const r = readRun(projectDir, runId);
-  if (!r) return { impl: 0, replan: 0 };
-  return r.failureCounters[specDir] ?? { impl: 0, replan: 0 };
-}
-
 export function upsertFailureCount(
   projectDir: string,
   runId: string,
@@ -359,10 +349,6 @@ export function upsertFailureCount(
   updateRun(projectDir, runId, (r) => {
     r.failureCounters[specDir] = { impl, replan };
   });
-}
-
-export function resetFailureCount(projectDir: string, runId: string, specDir: string): void {
-  upsertFailureCount(projectDir, runId, specDir, 0, 0);
 }
 
 // ── Crash-recovery sweep ──
@@ -420,7 +406,7 @@ function isAlive(pid: number): boolean {
 // existing log trees. Renaming the directory layout is deferred to a follow-up
 // (see plan: ~/.claude/plans/what-is-the-wording-wobbly-avalanche.md).
 
-export function agentRunLogDir(
+function agentRunLogDir(
   projectDir: string,
   runId: string,
   taskPhaseSlug: string,
@@ -471,31 +457,6 @@ export function readAgentSteps(
 
 // ── Derived views ──
 
-export interface CycleSummaryRow {
-  cycleNumber: number;
-  costUsd: number;
-  durationMs: number;
-  steps: string[];
-}
-
-export function cycleSummary(run: RunRecord): CycleSummaryRow[] {
-  const byCycle = new Map<number, AgentRunRecord[]>();
-  for (const ar of run.agentRuns) {
-    if (ar.cycleNumber == null) continue;
-    const list = byCycle.get(ar.cycleNumber) ?? [];
-    list.push(ar);
-    byCycle.set(ar.cycleNumber, list);
-  }
-  return [...byCycle.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([cycleNumber, agentRuns]) => ({
-      cycleNumber,
-      costUsd: agentRuns.reduce((s, a) => s + a.costUsd, 0),
-      durationMs: agentRuns.reduce((s, a) => s + (a.durationMs ?? 0), 0),
-      steps: agentRuns.map((a) => a.step ?? a.taskPhaseName),
-    }));
-}
-
 export function latestAgentRunsForSpec(projectRuns: RunRecord[], specDir: string): AgentRunRecord[] {
   const latest = new Map<number, AgentRunRecord>();
   for (const run of projectRuns) {
@@ -532,8 +493,6 @@ export function getSpecAggregateStats(projectRuns: RunRecord[], specDir: string)
 }
 
 // ── Utilities ──
-
-export const newRunId = (): string => crypto.randomUUID();
 
 export function slugForTaskPhaseName(taskPhaseName: string): string {
   return taskPhaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");

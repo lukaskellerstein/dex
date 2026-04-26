@@ -9,12 +9,9 @@ import type { StepType } from "../../../core/types.js";
 
 interface Props {
   projectDir: string | null;
-  /** Optional: called when repo-init succeeds so parent can refresh UI state. */
-  onRepoReady?: () => void;
 }
 
 interface CandidateInfo {
-  runId: string;
   step: StepType;
   cycleNumber: number;
   checkpointTag: string;
@@ -27,7 +24,7 @@ interface CandidateInfo {
  * subscribes to orchestrator events so the right modal opens at the right
  * moment. Mounts inside AppShell after a project is open.
  */
-export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
+export function CheckpointsEnvelope({ projectDir }: Props) {
   const [needsRepoInit, setNeedsRepoInit] = useState(false);
   const [needsIdentity, setNeedsIdentity] = useState<null | {
     name: string | null;
@@ -69,7 +66,6 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
     const off = window.dexAPI.onOrchestratorEvent((raw) => {
       const e = raw as unknown as {
         type?: string;
-        runId?: string;
         cycleNumber?: number;
         step?: StepType;
         checkpointTag?: string;
@@ -84,12 +80,10 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
             e.checkpointTag &&
             e.candidateSha &&
             e.step &&
-            e.runId &&
             e.attemptBranch !== undefined &&
             e.cycleNumber !== undefined
           ) {
             lastStageRef.current = {
-              runId: e.runId,
               step: e.step,
               cycleNumber: e.cycleNumber,
               checkpointTag: e.checkpointTag,
@@ -138,11 +132,10 @@ export function CheckpointsEnvelope({ projectDir, onRepoReady }: Props) {
     const r = await window.dexAPI.checkpoints.initRepo(projectDir);
     if (r.ok) {
       setNeedsRepoInit(false);
-      onRepoReady?.();
       const id = await window.dexAPI.checkpoints.checkIdentity(projectDir);
       if (!id.name || !id.email) setNeedsIdentity(id);
     }
-  }, [projectDir, onRepoReady]);
+  }, [projectDir]);
 
   const handleSaveIdentity = useCallback(
     async (name: string, email: string) => {

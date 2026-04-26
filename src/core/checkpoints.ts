@@ -21,7 +21,7 @@ const PARALLELIZABLE_STEPS: StepType[] = [
 
 // ── Minimal runlogger shape ──────────────────────────────
 
-export interface RunLoggerLike {
+interface RunLoggerLike {
   run?: (level: "INFO" | "WARN" | "ERROR" | "DEBUG", msg: string, data?: unknown) => void;
 }
 
@@ -67,7 +67,7 @@ export function captureBranchName(runId: string, date: Date = new Date()): strin
  * targets this prefix so navigation forks don't accumulate, while 008's
  * intentional attempt-* branches stay around until the user removes them.
  */
-export function selectedBranchName(date: Date = new Date()): string {
+function selectedBranchName(date: Date = new Date()): string {
   const stamp = date.toISOString().replaceAll(/[:.-]/g, "").slice(0, 15);
   return `selected-${stamp}`;
 }
@@ -127,44 +127,6 @@ export function promoteToCheckpoint(
     return { ok: true };
   } catch (err) {
     log(rlog, "WARN", `promoteToCheckpoint failed for ${tag}: ${String(err)}`);
-    return { ok: false, error: String(err) };
-  }
-}
-
-// ── Dirty-tree check ─────────────────────────────────────
-
-export function isWorkingTreeDirty(projectDir: string): { dirty: boolean; files: string[] } {
-  // Do NOT use the trimming helper — porcelain format starts with a space for
-  // common cases (e.g., " M README.md"), and trim would drop that leading space
-  // and skew the slice(3).
-  const out = execSync(`git status --porcelain`, { cwd: projectDir, encoding: "utf-8" });
-  if (!out) return { dirty: false, files: [] };
-  const lines = out.split("\n").filter((l) => l.length > 0);
-  if (lines.length === 0) return { dirty: false, files: [] };
-  return {
-    dirty: true,
-    files: lines.map((l) => l.slice(3)),
-  };
-}
-
-// ── Go back ──────────────────────────────────────────────
-
-export function startAttemptFrom(
-  projectDir: string,
-  checkpointTag: string,
-  rlog?: RunLoggerLike,
-  variant?: string
-): { ok: true; branch: string } | { ok: false; error: string } {
-  const branch = attemptBranchName(new Date(), variant);
-  try {
-    gitExec(`git rev-parse --verify refs/tags/${checkpointTag}`, projectDir);
-    gitExec(`git checkout -B ${branch} ${checkpointTag}`, projectDir);
-    // IMPORTANT: -fd not -fdx — preserve gitignored files (.env, build output, editor state).
-    gitExec(`git clean -fd -e .dex/state.lock`, projectDir);
-    log(rlog, "INFO", `startAttemptFrom: ${checkpointTag} → ${branch}`);
-    return { ok: true, branch };
-  } catch (err) {
-    log(rlog, "WARN", `startAttemptFrom failed: ${String(err)}`);
     return { ok: false, error: String(err) };
   }
 }
@@ -1025,7 +987,7 @@ export function readVariantGroupFile(projectDir: string, groupId: string): Varia
   }
 }
 
-export function listAllVariantGroupFiles(projectDir: string): VariantGroupFile[] {
+function listAllVariantGroupFiles(projectDir: string): VariantGroupFile[] {
   const dir = variantGroupsDir(projectDir);
   if (!fs.existsSync(dir)) return [];
   const out: VariantGroupFile[] = [];

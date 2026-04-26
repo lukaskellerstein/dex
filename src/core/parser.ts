@@ -55,7 +55,7 @@ function parseTaskStatus(marker: string): Task["status"] {
   return "not_done";
 }
 
-export function parseTasksMd(content: string): TaskPhase[] {
+function parseTasksMd(content: string): TaskPhase[] {
   const lines = content.split("\n");
   const phases: TaskPhase[] = [];
   let currentTaskPhase: TaskPhase | null = null;

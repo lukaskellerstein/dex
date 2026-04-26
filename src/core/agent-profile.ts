@@ -15,7 +15,7 @@ import path from "node:path";
 
 export type AgentRunnerKind = "claude-sdk" | "codex" | "copilot";
 
-export interface BaseProfile {
+interface BaseProfile {
   name: string;
   agentDir: string;
 }
@@ -27,13 +27,13 @@ export interface ClaudeProfile extends BaseProfile {
   allowedTools?: string[];
 }
 
-export interface CodexProfile extends BaseProfile {
+interface CodexProfile extends BaseProfile {
   agentRunner: "codex";
   model: string;
   systemPromptAppend?: string;
 }
 
-export interface CopilotProfile extends BaseProfile {
+interface CopilotProfile extends BaseProfile {
   agentRunner: "copilot";
   model: string;
   systemPromptAppend?: string;
@@ -65,27 +65,6 @@ export type ProfileEntry =
   | { kind: "warn"; folder: string; agentDir: string; reason: string };
 
 const VALID_RUNNERS: ReadonlySet<string> = new Set(["claude-sdk", "codex", "copilot"]);
-
-/** v1 quick-fill persona presets the modal wires to its persona-prompt buttons. */
-export const PERSONA_PRESETS: ReadonlyArray<{
-  name: string;
-  systemPromptAppend: string;
-}> = [
-  {
-    name: "Conservative",
-    systemPromptAppend:
-      "Minimize change. Prefer the smallest diff that satisfies the requirement. Avoid introducing new dependencies.",
-  },
-  {
-    name: "Standard",
-    systemPromptAppend: "",
-  },
-  {
-    name: "Innovative",
-    systemPromptAppend:
-      "Use modern libraries and idioms freely. Refactor opportunistically for clarity. Prefer clean abstractions over preserving legacy patterns.",
-  },
-];
 
 function agentsDir(projectDir: string): string {
   return path.join(projectDir, ".dex", "agents");
@@ -248,25 +227,6 @@ export function listProfiles(projectDir: string): ProfileEntry[] {
     result.push({ kind: "ok", profile, overlaySummary: buildOverlaySummary(folderPath) });
   }
   return result;
-}
-
-/**
- * Single-folder convenience wrapper. Returns null if the folder doesn't exist
- * or `dex.json` fails parse / validation.
- */
-export function loadProfile(projectDir: string, name: string): AgentProfile | null {
-  const folderPath = profileDir(projectDir, name);
-  const dexJsonPath = path.join(folderPath, "dex.json");
-  if (!fs.existsSync(dexJsonPath)) return null;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(fs.readFileSync(dexJsonPath, "utf-8"));
-  } catch {
-    return null;
-  }
-  const v = validateDexJson(raw);
-  if (!v.ok) return null;
-  return shapeToProfile(name, folderPath, v.value);
 }
 
 /**

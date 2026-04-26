@@ -12,8 +12,6 @@ interface Props {
   disabledReason?: string;
   /** Right-click "Try N ways from here" — parent opens the variant modal. */
   onTryNWaysAt?: (commit: TimelineCommit) => void;
-  /** Called after a click-to-jump succeeds and HEAD has moved. */
-  onAttemptSwitched?: () => void;
 }
 
 interface DirtyEnvelope {
@@ -50,7 +48,6 @@ export function TimelinePanel({
   disabled,
   disabledReason,
   onTryNWaysAt,
-  onAttemptSwitched,
 }: Props) {
   const { snapshot, refresh } = useTimeline(projectDir);
   const [dirty, setDirty] = useState<DirtyEnvelope | null>(null);
@@ -68,7 +65,6 @@ export function TimelinePanel({
       if (r.ok) {
         if (r.action !== "noop") {
           await refresh();
-          onAttemptSwitched?.();
         }
         return true;
       }
@@ -87,7 +83,7 @@ export function TimelinePanel({
       setError(`Jump failed: ${detail}`);
       return false;
     },
-    [projectDir, refresh, onAttemptSwitched],
+    [projectDir, refresh],
   );
 
   const handleJump = useCallback((sha: string) => performJump(sha), [performJump]);
@@ -135,9 +131,8 @@ export function TimelinePanel({
         return;
       }
       await refresh();
-      onAttemptSwitched?.();
     },
-    [projectDir, refresh, onAttemptSwitched],
+    [projectDir, refresh],
   );
 
   if (disabled) {

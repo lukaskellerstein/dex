@@ -3,10 +3,6 @@ import * as runs from "../../core/runs.js";
 import type { AgentRunRecord, RunRecord } from "../../core/runs.js";
 
 export function registerHistoryHandlers(): void {
-  ipcMain.handle("history:list-runs", (_event, projectDir: string, limit?: number) => {
-    return runs.listRuns(projectDir, limit);
-  });
-
   ipcMain.handle("history:get-run", (_event, projectDir: string, runId: string) => {
     return runs.readRun(projectDir, runId);
   });

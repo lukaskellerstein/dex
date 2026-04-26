@@ -12,20 +12,15 @@ export interface SpecSummary {
   stats?: SpecStats;
 }
 
-/** Map of phaseNumber → latest AgentRunRecord (for displaying per-phase stats) */
-export type PhaseStatsMap = Map<number, AgentRunRecord>;
-
 export function useProject() {
   const [projectDir, setProjectDir] = useState<string | null>(null);
-  const [specs, setSpecs] = useState<string[]>([]);
   const [specSummaries, setSpecSummaries] = useState<SpecSummary[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<string | null>(null);
   const [phases, setPhases] = useState<TaskPhase[]>([]);
-  const [phaseStats, setPhaseStats] = useState<PhaseStatsMap>(new Map());
+  const [phaseStats, setPhaseStats] = useState<Map<number, AgentRunRecord>>(new Map());
 
   const loadSpecs = async (dir: string) => {
     const specList = await window.dexAPI.listSpecs(dir);
-    setSpecs(specList);
 
     const summaries: SpecSummary[] = [];
     for (const spec of specList) {
@@ -56,7 +51,6 @@ export function useProject() {
     setProjectDir(null);
     setSelectedSpec(null);
     setPhases([]);
-    setSpecs([]);
     setSpecSummaries([]);
     setPhaseStats(new Map());
   };
@@ -89,7 +83,6 @@ export function useProject() {
       setProjectDir(result.path);
       setSelectedSpec(null);
       setPhases([]);
-      setSpecs([]);
       setSpecSummaries([]);
     }
     return result;
@@ -171,7 +164,6 @@ export function useProject() {
 
   return {
     projectDir,
-    specs,
     specSummaries,
     selectedSpec,
     phases,

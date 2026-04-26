@@ -24,7 +24,7 @@ export class DexConfigInvalidError extends Error {
   }
 }
 
-export const DEFAULT_DEX_CONFIG: DexConfig = { agent: "claude" };
+const DEFAULT_DEX_CONFIG: DexConfig = { agent: "claude" };
 
 export function dexConfigPath(projectDir: string): string {
   return path.join(projectDir, ".dex", "dex-config.json");

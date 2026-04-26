@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bug, Check, RotateCw, FolderOpen } from "lucide-react";
-import type { TaskPhase, Task, RunConfig, SubagentInfo } from "../core/types.js";
+import type { TaskPhase, RunConfig, SubagentInfo } from "../core/types.js";
 import { AgentStepList } from "./components/agent-trace/AgentStepList.js";
 import { SubagentDetailView } from "./components/agent-trace/SubagentDetailView.js";
 import { AppShell } from "./components/layout/AppShell.js";
@@ -91,7 +91,7 @@ function DebugCopyBadge({ context }: { context: DebugContext }) {
   );
 }
 
-type View = "overview" | "tasks" | "trace" | "subagent-detail" | "loop-start" | "loop-dashboard" | "loop-summary";
+type View = "overview" | "tasks" | "trace" | "subagent-detail" | "loop-start" | "loop-dashboard";
 
 export default function App() {
   const project = useProject();
@@ -736,7 +736,7 @@ export default function App() {
         />
       </div>
     );
-  } else if (currentView === "loop-dashboard" || currentView === "loop-summary" || (currentView === "trace" && orchestrator.mode === "loop" && orchestrator.isRunning && !orchestrator.currentStage && !orchestrator.isClarifying)) {
+  } else if (currentView === "loop-dashboard" || (currentView === "trace" && orchestrator.mode === "loop" && orchestrator.isRunning && !orchestrator.currentStage && !orchestrator.isClarifying)) {
     content = (
       <LoopDashboard
         cycles={orchestrator.loopCycles}

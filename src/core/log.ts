@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { DEX_HOME, LOGS_ROOT, FALLBACK_LOG, migrateIfNeeded } from "./paths.js";
 
-export type LogLevel = "INFO" | "ERROR" | "DEBUG" | "WARN";
+type LogLevel = "INFO" | "ERROR" | "DEBUG" | "WARN";
 
-export function formatLogLine(level: string, msg: string, data?: unknown): string {
+function formatLogLine(level: string, msg: string, data?: unknown): string {
   const ts = new Date().toISOString();
   return data
     ? `[${ts}] [${level}] ${msg} ${JSON.stringify(data, null, 0)}\n`
@@ -73,8 +73,6 @@ export class RunLogger {
     this.subagent(subagentId, level, msg, data);
   }
 
-  get currentRunDir(): string { return this.runDir; }
-  get currentAgentRunDir(): string | null { return this.agentRunDir; }
 }
 
 /** Fallback logger used before a run starts (global orchestrator log). */

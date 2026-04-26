@@ -17,15 +17,7 @@ import {
  * Construction is cheap: no SDK import until `runStep`/`runTaskPhase` is called.
  */
 export class ClaudeAgentRunner implements AgentRunner {
-  // These are held for future use (e.g., per-runner model overrides). They're
-  // intentionally not read in the method bodies below, which take everything
-  // they need from the per-call StageContext / PhaseContext.
-  private readonly runConfig: RunConfig;
-  private readonly projectDir: string;
-  constructor(runConfig: RunConfig, projectDir: string) {
-    this.runConfig = runConfig;
-    this.projectDir = projectDir;
-  }
+  constructor(_runConfig: RunConfig, _projectDir: string) {}
 
   async runStep(ctx: StepContext): Promise<StepResult> {
     const { config, prompt: rawPrompt, runId, cycleNumber, step, agentRunId, outputFormat, abortController, emit, rlog, profile, worktreePath } = ctx;

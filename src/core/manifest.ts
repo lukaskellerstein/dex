@@ -5,9 +5,9 @@ import { migrateIfNeeded } from "./paths.js";
 
 // ── Types ──
 
-export type ManifestFeatureStatus = "pending" | "active" | "completed" | "skipped";
+type ManifestFeatureStatus = "pending" | "active" | "completed" | "skipped";
 
-export interface FeatureManifestEntry {
+interface FeatureManifestEntry {
   id: number;
   title: string;
   description: string;

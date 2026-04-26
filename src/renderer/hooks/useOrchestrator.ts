@@ -11,7 +11,7 @@ import type {
   PrerequisiteCheck,
 } from "../../core/types.js";
 
-export interface PendingQuestion {
+interface PendingQuestion {
   requestId: string;
   questions: UserInputQuestion[];
 }
@@ -84,7 +84,7 @@ export interface LatestAction {
   createdAt: string;
 }
 
-export interface OrchestratorHook {
+interface OrchestratorHook {
   liveSteps: AgentStep[];
   /** Most recent "interesting" step in the running stage — what the agent is actively doing. */
   latestAction: LatestAction | null;
@@ -96,7 +96,6 @@ export interface OrchestratorHook {
   viewingHistorical: boolean;
   totalCost: number;
   totalDuration: number;
-  phasesCompleted: number;
   currentRunId: string | null;
   currentPhaseTraceId: string | null;
   // Loop-mode state
@@ -126,7 +125,6 @@ export function useOrchestrator(): OrchestratorHook {
   const [isRunning, setIsRunning] = useState(false);
   const [totalCost, setTotalCost] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
-  const [phasesCompleted, setPhasesCompleted] = useState(0);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [currentPhaseTraceId, setCurrentPhaseTraceId] = useState<string | null>(null);
   const [activeSpecDir, setActiveSpecDir] = useState<string | null>(null);
@@ -323,7 +321,6 @@ export function useOrchestrator(): OrchestratorHook {
             viewingHistoricalRef.current = false;
             setTotalCost(0);
             setTotalDuration(0);
-            setPhasesCompleted(0);
             setCurrentRunId(event.runId);
             setActiveSpecDir(event.config.specDir);
             setMode(event.config.mode);
@@ -437,7 +434,6 @@ export function useOrchestrator(): OrchestratorHook {
           case "task_phase_completed":
             setTotalCost((prev) => prev + event.cost);
             setTotalDuration((prev) => prev + event.durationMs);
-            setPhasesCompleted((prev) => prev + 1);
             phaseCompletedCb.current?.();
             // Update implement sub-phase in loop mode
             if (modeRef.current === "loop" && currentCycleRef.current != null && currentStageRef.current === "implement") {
@@ -466,7 +462,6 @@ export function useOrchestrator(): OrchestratorHook {
             setCurrentPhaseTraceId(null);
             setTotalCost(event.totalCost);
             setTotalDuration(event.totalDuration);
-            setPhasesCompleted(event.taskPhasesCompleted);
             setCurrentCycle(null);
             currentCycleRef.current = null;
             setCurrentStage(null);
@@ -959,7 +954,6 @@ export function useOrchestrator(): OrchestratorHook {
     viewingHistorical,
     totalCost,
     totalDuration,
-    phasesCompleted,
     currentRunId,
     currentPhaseTraceId,
     mode,

@@ -1733,9 +1733,6 @@ async function runLoop(
       : null;
     let cycleFailed = false;
 
-    // Cycle metadata (cycleNumber, featureName, decisionType, specDir) is
-    // captured per-phase via PhaseRecord.cycleNumber + featureSlug + stage.
-    // No separate cycle row needed — derived via runs.cycleSummary at read time.
     void cycleId;
 
     // ── GAPS_COMPLETE → terminate ──
@@ -2326,8 +2323,4 @@ export function stopRun(): void {
   } else {
     console.log("[stopRun] called but no active abortController");
   }
-}
-
-export function isRunning(): boolean {
-  return abortController !== null;
 }

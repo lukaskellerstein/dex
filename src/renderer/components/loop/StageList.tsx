@@ -380,7 +380,6 @@ function ImplementSpecView({
       <SpecCard
         summary={specSummary}
         onClick={() => onSelectSpec(specSummary.name)}
-        onStart={() => {}}
         isRunning={false}
       />
     </div>

@@ -1,4 +1,4 @@
-import type { OrchestratorEvent, TaskPhase, RunConfig, StepType, LoopTermination, UserInputQuestion, DriftSummary } from "../core/types.js";
+import type { OrchestratorEvent, TaskPhase, RunConfig, StepType } from "../core/types.js";
 import type { DexState } from "../core/state.js";
 import type {
   RunRecord,
@@ -21,7 +21,6 @@ import type {
 
 interface CheckpointsApi {
   listTimeline(projectDir: string): Promise<TimelineSnapshot>;
-  isLockedByAnother(projectDir: string): Promise<boolean>;
   checkIsRepo(projectDir: string): Promise<boolean>;
   checkIdentity(projectDir: string): Promise<{
     name: string | null;
@@ -60,13 +59,6 @@ interface CheckpointsApi {
     | { ok: false; error: string }
     | { ok: false; error: "locked_by_other_instance" }
   >;
-  goBack(projectDir: string, tag: string, options?: { force?: "save" | "discard" }): Promise<
-    | { ok: true; branch: string }
-    | { ok: false; error: "dirty_working_tree"; files: string[] }
-    | { ok: false; error: "save_failed"; detail: string }
-    | { ok: false; error: "locked_by_other_instance" }
-    | { ok: false; error: string }
-  >;
   jumpTo(
     projectDir: string,
     targetSha: string,
@@ -79,12 +71,6 @@ interface CheckpointsApi {
     | { ok: true; result: VariantSpawnResult }
     | { ok: false; error: string }
   >;
-  deleteAttempt(projectDir: string, branch: string): Promise<
-    { ok: true } | { ok: false; error: string }
-  >;
-  writeVariantGroup(projectDir: string, group: VariantGroupFile): Promise<
-    { ok: true } | { ok: false; error: string }
-  >;
   cleanupVariantGroup(
     projectDir: string,
     groupId: string,
@@ -95,8 +81,6 @@ interface CheckpointsApi {
   setIdentity(projectDir: string, name: string, email: string): Promise<
     { ok: true } | { ok: false; error: string }
   >;
-  setRecordMode(projectDir: string, on: boolean): Promise<{ ok: true }>;
-  setPauseAfterStage(projectDir: string, on: boolean): Promise<{ ok: true }>;
   compareAttempts(
     projectDir: string,
     branchA: string,
@@ -128,7 +112,6 @@ interface DexAPI {
   startRun(config: RunConfig): Promise<void>;
   stopRun(): Promise<void>;
   answerQuestion(requestId: string, answers: Record<string, string>): Promise<void>;
-  isRunning(): Promise<boolean>;
   getRunState(): Promise<{
     runId: string;
     projectDir: string;
@@ -148,7 +131,6 @@ interface DexAPI {
   onOrchestratorEvent(cb: (event: OrchestratorEvent) => void): () => void;
 
   // History — per-project JSON storage (007-sqlite-removal)
-  listRuns(projectDir: string, limit?: number): Promise<RunRecord[]>;
   getRun(projectDir: string, runId: string): Promise<RunRecord | null>;
   getLatestProjectRun(projectDir: string): Promise<RunRecord | null>;
   getAgentSteps(projectDir: string, runId: string, agentRunId: string): Promise<AgentStepRecord[]>;

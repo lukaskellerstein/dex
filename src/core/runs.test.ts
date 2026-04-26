@@ -17,8 +17,6 @@ import {
   appendStep,
   readSteps,
   upsertFailureCount,
-  getFailureCount,
-  cycleSummary,
   latestPhasesForSpec,
   getSpecAggregateStats,
   phaseLogDir,
@@ -224,46 +222,6 @@ test("readSteps returns [] for missing file", () => {
   const dir = tempProject("nosteps");
   const out = readSteps(dir, "no-such-run", "x", 1);
   assert.deepEqual(out, []);
-});
-
-test("failure counters get/upsert/reset", () => {
-  const dir = tempProject("fails");
-  const run = startRun(dir, makeRunInput());
-  assert.deepEqual(getFailureCount(dir, run.runId, "specs/foo"), { impl: 0, replan: 0 });
-  upsertFailureCount(dir, run.runId, "specs/foo", 2, 1);
-  assert.deepEqual(getFailureCount(dir, run.runId, "specs/foo"), { impl: 2, replan: 1 });
-});
-
-test("cycleSummary aggregates phases by cycleNumber", () => {
-  const run: RunRecord = {
-    runId: "x",
-    mode: "loop",
-    model: "m",
-    specDir: "s",
-    startedAt: "t",
-    endedAt: null,
-    status: "completed",
-    totalCostUsd: 0,
-    totalDurationMs: 0,
-    phasesCompleted: 0,
-    writerPid: 0,
-    description: null,
-    fullPlanPath: null,
-    maxLoopCycles: null,
-    maxBudgetUsd: null,
-    loopsCompleted: 1,
-    failureCounters: {},
-    phases: [
-      { phaseTraceId: "p1", runId: "x", specDir: "s", phaseNumber: 1, phaseName: "loop:specify", stage: "specify", cycleNumber: 1, featureSlug: "f", startedAt: "t", endedAt: "t", status: "completed", costUsd: 0.1, durationMs: 100, inputTokens: null, outputTokens: null, subagents: [], checkpointTag: null, candidateSha: null },
-      { phaseTraceId: "p2", runId: "x", specDir: "s", phaseNumber: 2, phaseName: "loop:plan", stage: "plan", cycleNumber: 1, featureSlug: "f", startedAt: "t", endedAt: "t", status: "completed", costUsd: 0.2, durationMs: 200, inputTokens: null, outputTokens: null, subagents: [], checkpointTag: null, candidateSha: null },
-    ],
-  };
-  const rows = cycleSummary(run);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].cycleNumber, 1);
-  assert.ok(Math.abs(rows[0].costUsd - 0.3) < 1e-9);
-  assert.equal(rows[0].durationMs, 300);
-  assert.deepEqual(rows[0].stages, ["specify", "plan"]);
 });
 
 test("getSpecAggregateStats picks latest phase per phaseNumber across runs", () => {

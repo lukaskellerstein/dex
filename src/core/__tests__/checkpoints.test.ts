@@ -14,8 +14,6 @@ import {
   promoteToCheckpoint,
   unmarkCheckpoint,
   unselect,
-  startAttemptFrom,
-  isWorkingTreeDirty,
   spawnVariants,
   listTimeline,
   writeVariantGroupFile,
@@ -24,9 +22,9 @@ import {
   readPendingVariantGroups,
   CHECKPOINT_MESSAGE_PREFIX,
 } from "../checkpoints.ts";
-import type { LoopStageType } from "../types.ts";
+import type { StepType } from "../types.ts";
 
-const STAGES: LoopStageType[] = [
+const STAGES: StepType[] = [
   "prerequisites",
   "clarification",
   "clarification_product",
@@ -148,60 +146,6 @@ test("promoteToCheckpoint: happy path + idempotent + bad SHA", () => {
     // Bad SHA (non-existent but syntactically valid hex)
     const rBad = promoteToCheckpoint(dir, "checkpoint/x", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
     assert.equal(rBad.ok, false);
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("startAttemptFrom: preserves gitignored files, removes stray untracked", () => {
-  const dir = mkTmpRepo();
-  try {
-    fs.writeFileSync(path.join(dir, ".gitignore"), ".env\n");
-    execSync("git add .gitignore", { cwd: dir });
-    execSync("git commit -q -m gitignore", { cwd: dir });
-    const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
-
-    promoteToCheckpoint(dir, "checkpoint/cycle-1-after-plan", sha);
-
-    // Seed .env (gitignored) and a stray untracked file
-    fs.writeFileSync(path.join(dir, ".env"), "SECRET=abc\n");
-    fs.writeFileSync(path.join(dir, "stray.txt"), "boom\n");
-
-    const r = startAttemptFrom(dir, "checkpoint/cycle-1-after-plan");
-    assert.equal(r.ok, true);
-    if (r.ok) {
-      assert.match(r.branch, /^attempt-/);
-      // .env preserved (gitignored)
-      assert.ok(fs.existsSync(path.join(dir, ".env")), ".env should be preserved");
-      // stray removed
-      assert.equal(fs.existsSync(path.join(dir, "stray.txt")), false);
-      // HEAD matches tag
-      const head = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
-      assert.equal(head, sha);
-    }
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("startAttemptFrom: missing tag returns ok:false", () => {
-  const dir = mkTmpRepo();
-  try {
-    const r = startAttemptFrom(dir, "checkpoint/nope");
-    assert.equal(r.ok, false);
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("isWorkingTreeDirty: detects modified tracked + untracked", () => {
-  const dir = mkTmpRepo();
-  try {
-    assert.deepEqual(isWorkingTreeDirty(dir), { dirty: false, files: [] });
-    fs.writeFileSync(path.join(dir, "README.md"), "# changed\n");
-    const r = isWorkingTreeDirty(dir);
-    assert.equal(r.dirty, true);
-    assert.ok(r.files.includes("README.md"));
   } finally {
     rmTmp(dir);
   }
@@ -474,7 +418,7 @@ test("variant group file: write → read → delete round-trip", () => {
     const group = {
       groupId: "00000000-0000-0000-0000-000000000000",
       fromCheckpoint: "checkpoint/cycle-1-after-tasks",
-      stage: "plan" as LoopStageType,
+      step: "plan" as StepType,
       parallel: true,
       createdAt: new Date().toISOString(),
       variants: [

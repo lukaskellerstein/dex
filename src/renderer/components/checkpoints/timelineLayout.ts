@@ -23,7 +23,7 @@ import type {
 
 export type ColorState = "default" | "selected" | "kept" | "selected+kept";
 
-export type TimelineNode =
+type TimelineNode =
   | { kind: "start"; data: StartingPoint }
   | { kind: "step-commit"; data: TimelineCommit };
 
@@ -57,7 +57,7 @@ export interface LaidOutEdge {
   fromPoint?: { x: number; y: number };
 }
 
-export interface BranchColumn {
+interface BranchColumn {
   branch: string;
   columnIndex: number;
   x: number;
@@ -82,7 +82,7 @@ export interface LayoutOutput {
   trunkLine: { x: number; y1: number; y2: number; color: string } | null;
 }
 
-export interface LayoutOpts {
+interface LayoutOpts {
   laneWidth: number;
   rowHeight: number;
   padX?: number;

@@ -29,8 +29,6 @@ export function getCommittedFileContent(projectDir: string, ref: string, filePat
   }
 }
 
-export const CHECKPOINT_MESSAGE_PREFIX = "[checkpoint:";
-
 export function commitCheckpoint(
   projectDir: string,
   stage: string,

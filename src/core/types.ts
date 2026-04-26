@@ -35,7 +35,7 @@ export interface Task {
 
 // ── Agent Step Types (one per tool call / text output) ──
 
-export type AgentStepType =
+type AgentStepType =
   | "debug"
   | "user_message"
   | "thinking"
@@ -91,61 +91,12 @@ export type StepType =
   | "learnings"
   | "commit";
 
-export type StepKind = "script" | "agent" | "interactive";
-
-export const STEP_KIND_MAP: Record<StepType, StepKind> = {
-  prerequisites: "interactive",
-  create_branch: "script",
-  clarification: "agent",
-  clarification_product: "agent",
-  clarification_technical: "agent",
-  clarification_synthesis: "agent",
-  constitution: "agent",
-  manifest_extraction: "agent",
-  gap_analysis: "script",
-  specify: "agent",
-  plan: "agent",
-  tasks: "agent",
-  implement: "agent",
-  implement_fix: "agent",
-  verify: "agent",
-  learnings: "agent",
-  commit: "script",
-};
-
-export interface Step {
-  type: StepType;
-  kind: StepKind;
-  specDir?: string;
-  taskPhaseNumber?: number;
-  startedAt: string;
-  completedAt?: string;
-  costUsd: number;
-  durationMs: number;
-  result?: string;
-}
-
 export type GapAnalysisDecision =
   | { type: "NEXT_FEATURE"; name: string; description: string; featureId: number }
   | { type: "RESUME_FEATURE"; specDir: string }
   | { type: "REPLAN_FEATURE"; specDir: string }
   | { type: "RESUME_AT_STEP"; specDir: string; resumeAtStep: StepType }
   | { type: "GAPS_COMPLETE" };
-
-export interface Cycle {
-  id: string;
-  runId: string;
-  cycleNumber: number;
-  featureName: string | null;
-  specDir: string | null;
-  decision: GapAnalysisDecision;
-  steps: Step[];
-  status: "running" | "completed" | "failed" | "skipped";
-  costUsd: number;
-  durationMs: number;
-  startedAt: string;
-  completedAt?: string;
-}
 
 export interface FailureRecord {
   specDir: string;
@@ -170,7 +121,7 @@ export interface LoopTermination {
 
 // ── User Input (AskUserQuestion) ──
 
-export interface UserInputQuestionOption {
+interface UserInputQuestionOption {
   label: string;
   description: string;
   recommended?: boolean;
@@ -186,7 +137,7 @@ export interface UserInputQuestion {
 // ── Prerequisites Check Types ──
 
 export type PrerequisiteCheckName = "claude_cli" | "specify_cli" | "git_init" | "github_repo" | "speckit_init";
-export type PrerequisiteCheckStatus = "running" | "pass" | "fail" | "fixed";
+type PrerequisiteCheckStatus = "running" | "pass" | "fail" | "fixed";
 
 export interface PrerequisiteCheck {
   name: PrerequisiteCheckName;

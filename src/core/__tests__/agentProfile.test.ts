@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import {
   listProfiles,
-  loadProfile,
   saveDexJson,
 } from "../agent-profile.ts";
 
@@ -243,44 +242,6 @@ test("listProfiles: counts MCP servers from .claude/.mcp.json top-level mcpServe
     if (entries[0].kind === "ok") {
       assert.equal(entries[0].overlaySummary.mcpServers, 3);
     }
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-// ── loadProfile ─────────────────────────────────────────
-
-test("loadProfile: returns the profile when valid", () => {
-  const dir = mkTmpProject();
-  try {
-    seedProfile(dir, "conservative", {
-      agentRunner: "claude-sdk",
-      model: "claude-opus-4-7",
-    });
-    const p = loadProfile(dir, "conservative");
-    assert.ok(p);
-    assert.equal(p!.name, "conservative");
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("loadProfile: returns null when folder doesn't exist", () => {
-  const dir = mkTmpProject();
-  try {
-    assert.equal(loadProfile(dir, "nonexistent"), null);
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("loadProfile: returns null when dex.json is malformed", () => {
-  const dir = mkTmpProject();
-  try {
-    const folder = path.join(dir, ".dex", "agents", "bad");
-    fs.mkdirSync(folder, { recursive: true });
-    fs.writeFileSync(path.join(folder, "dex.json"), "not json");
-    assert.equal(loadProfile(dir, "bad"), null);
   } finally {
     rmTmp(dir);
   }

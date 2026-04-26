@@ -7,7 +7,6 @@ export const DEX_HOME = path.join(os.homedir(), ".dex");
 // per-project <projectDir>/.dex/runs/<runId>.json files.
 export const LOGS_ROOT = path.join(DEX_HOME, "logs");
 export const FALLBACK_LOG = path.join(LOGS_ROOT, "_orchestrator.log");
-export const DEV_LOGS_DIR = path.join(DEX_HOME, "dev-logs");
 
 /** Idempotent one-time move. Safe to call repeatedly. */
 export function migrateIfNeeded(oldPath: string, newPath: string): void {

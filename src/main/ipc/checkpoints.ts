@@ -6,15 +6,12 @@ import { execSync } from "node:child_process";
 import {
   listTimeline,
   promoteToCheckpoint,
-  startAttemptFrom,
   spawnVariants,
   cleanupVariantWorktree,
-  isWorkingTreeDirty,
   readPendingVariantGroups,
   writeVariantGroupFile,
   readVariantGroupFile,
   deleteVariantGroupFile,
-  attemptBranchName,
   jumpTo,
   unmarkCheckpoint,
   unselect,
@@ -23,11 +20,7 @@ import {
   type VariantGroupFile,
   type JumpToResult,
 } from "../../core/checkpoints.js";
-import {
-  acquireStateLock,
-  isLockedByAnother,
-  updateState,
-} from "../../core/state.js";
+import { acquireStateLock } from "../../core/state.js";
 import * as runs from "../../core/runs.js";
 import type { StepType } from "../../core/types.js";
 
@@ -100,10 +93,6 @@ export function registerCheckpointsHandlers(): void {
         selectedPath: [],
       };
     }
-  });
-
-  ipcMain.handle("checkpoints:isLockedByAnother", (_e, projectDir: string) => {
-    return isLockedByAnother(projectDir);
   });
 
   ipcMain.handle("checkpoints:checkIsRepo", (_e, projectDir: string) => {
@@ -199,37 +188,6 @@ export function registerCheckpointsHandlers(): void {
   );
 
   ipcMain.handle(
-    "checkpoints:goBack",
-    async (
-      _e,
-      projectDir: string,
-      tag: string,
-      options?: { force?: "save" | "discard" },
-    ) =>
-      withLock(projectDir, () => {
-        const dirty = isWorkingTreeDirty(projectDir);
-        if (dirty.dirty && !options?.force) {
-          return { ok: false as const, error: "dirty_working_tree", files: dirty.files };
-        }
-        if (dirty.dirty && options?.force === "save") {
-          const saveBranch = attemptBranchName(new Date()) + "-saved";
-          try {
-            gitExec(`git checkout -B ${saveBranch}`, projectDir);
-            gitExec(`git add -A`, projectDir);
-            gitExec(`git commit -m "saved: uncommitted changes before go-back"`, projectDir);
-          } catch (err) {
-            return {
-              ok: false as const,
-              error: "save_failed",
-              detail: String(err),
-            };
-          }
-        }
-        return startAttemptFrom(projectDir, tag, ipcLogger);
-      }),
-  );
-
-  ipcMain.handle(
     "checkpoints:spawnVariants",
     async (_e, projectDir: string, request: VariantSpawnRequest) =>
       withLock(projectDir, () => {
@@ -263,36 +221,6 @@ export function registerCheckpointsHandlers(): void {
         };
         writeVariantGroupFile(projectDir, group);
         return spawn;
-      }),
-  );
-
-  ipcMain.handle(
-    "checkpoints:deleteAttempt",
-    async (_e, projectDir: string, branch: string) =>
-      withLock(projectDir, () => {
-        const current = gitExecSilent(`git rev-parse --abbrev-ref HEAD`, projectDir);
-        if (current === branch) {
-          return { ok: false as const, error: "cannot_delete_current" };
-        }
-        try {
-          gitExec(`git branch -D ${branch}`, projectDir);
-          return { ok: true as const };
-        } catch (err) {
-          return { ok: false as const, error: String(err) };
-        }
-      }),
-  );
-
-  ipcMain.handle(
-    "checkpoints:writeVariantGroup",
-    async (_e, projectDir: string, group: VariantGroupFile) =>
-      withLock(projectDir, () => {
-        try {
-          writeVariantGroupFile(projectDir, group);
-          return { ok: true as const };
-        } catch (err) {
-          return { ok: false as const, error: String(err) };
-        }
       }),
   );
 
@@ -388,24 +316,6 @@ export function registerCheckpointsHandlers(): void {
         } catch (err) {
           return { ok: false as const, error: String(err) };
         }
-      }),
-  );
-
-  ipcMain.handle(
-    "checkpoints:setRecordMode",
-    async (_e, projectDir: string, on: boolean) =>
-      withLock(projectDir, async () => {
-        await updateState(projectDir, { ui: { recordMode: on } });
-        return { ok: true as const };
-      }),
-  );
-
-  ipcMain.handle(
-    "checkpoints:setPauseAfterStage",
-    async (_e, projectDir: string, on: boolean) =>
-      withLock(projectDir, async () => {
-        await updateState(projectDir, { ui: { pauseAfterStage: on } });
-        return { ok: true as const };
       }),
   );
 

@@ -5,12 +5,10 @@ import type { StepType } from "../../../core/types.js";
 interface Props {
   step: StepType;
   cycleNumber: number;
-  featureSlug?: string | null;
   checkpointTag: string;
   candidateSha: string;
   onKeep: () => void;
   onTryAgain: () => void;
-  onTryNWays?: () => void;
   onDismiss: () => void;
 }
 
@@ -22,12 +20,10 @@ interface Props {
 export function CandidatePrompt({
   step,
   cycleNumber,
-  featureSlug,
   checkpointTag,
   candidateSha,
   onKeep,
   onTryAgain,
-  onTryNWays,
   onDismiss,
 }: Props) {
   return (
@@ -39,18 +35,13 @@ export function CandidatePrompt({
           <button className="btn-secondary" onClick={onTryAgain}>
             Try again
           </button>
-          {onTryNWays && (
-            <button className="btn-secondary" onClick={onTryNWays}>
-              Try N ways
-            </button>
-          )}
           <button className="btn-primary" onClick={onKeep}>
             Keep this
           </button>
         </>
       }
     >
-      <StageSummary step={step} cycleNumber={cycleNumber} featureSlug={featureSlug} />
+      <StageSummary step={step} cycleNumber={cycleNumber} />
       <div style={{ marginTop: 10, fontSize: 11, color: "var(--foreground-dim)", fontFamily: "var(--font-mono)" }}>
         candidate: {checkpointTag}
         <br />

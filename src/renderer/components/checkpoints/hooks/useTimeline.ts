@@ -17,24 +17,19 @@ const EMPTY: TimelineSnapshot = {
 export function useTimeline(projectDir: string | null): {
   snapshot: TimelineSnapshot;
   refresh: () => void;
-  loading: boolean;
 } {
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>(EMPTY);
-  const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!projectDir) {
       setSnapshot(EMPTY);
       return;
     }
-    setLoading(true);
     try {
       const snap = await window.dexAPI.checkpoints.listTimeline(projectDir);
       setSnapshot(snap);
     } catch {
       setSnapshot(EMPTY);
-    } finally {
-      setLoading(false);
     }
   }, [projectDir]);
 
@@ -71,5 +66,5 @@ export function useTimeline(projectDir: string | null): {
     return off;
   }, [projectDir, refresh]);
 
-  return { snapshot, refresh, loading };
+  return { snapshot, refresh };
 }

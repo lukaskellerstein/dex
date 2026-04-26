@@ -18,17 +18,17 @@ function stubConfig(): RunConfig {
     model: "claude-sonnet-4-6",
     maxIterations: 1,
     maxTurns: 1,
-    phases: "all",
+    taskPhases: "all",
   };
 }
 
 function makeStubRunner(): AgentRunner {
   return {
-    runStage: async () => ({
+    runStep: async () => ({
       cost: 0, durationMs: 0, structuredOutput: null, result: "",
       inputTokens: 0, outputTokens: 0, sessionId: null,
     }),
-    runPhase: async () => ({
+    runTaskPhase: async () => ({
       cost: 0, durationMs: 0, inputTokens: 0, outputTokens: 0,
     }),
   };

@@ -15,13 +15,13 @@ const LOCK_STALE_MS = 10 * 60 * 1000; // 10 minutes
 
 // ── Types ──
 
-export type DeepPartial<T> = {
+type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
 
-export type PauseReason = "user_abort" | "step_mode" | "budget" | "failure";
+type PauseReason = "user_abort" | "step_mode" | "budget" | "failure";
 
-export interface DexUiPrefs {
+interface DexUiPrefs {
   recordMode?: boolean;
   pauseAfterStage?: boolean;
 }
@@ -77,7 +77,7 @@ export interface DexState {
   pausedAt: string | null;
 }
 
-export interface ConfigSnapshot {
+interface ConfigSnapshot {
   model: string;
   maxLoopCycles?: number;
   maxBudgetUsd?: number;
@@ -86,7 +86,7 @@ export interface ConfigSnapshot {
   autoClarification?: boolean;
 }
 
-export interface ArtifactManifest {
+interface ArtifactManifest {
   goalFile: ArtifactEntry | null;
   clarifiedGoal: ArtifactEntry | null;
   productDomain: ArtifactEntry | null;
@@ -95,13 +95,13 @@ export interface ArtifactManifest {
   features: Record<string, FeatureArtifacts>;
 }
 
-export interface ArtifactEntry {
+interface ArtifactEntry {
   path: string;
   sha256: string;
   completedAt: string;
 }
 
-export interface FeatureArtifacts {
+interface FeatureArtifacts {
   specDir: string;
   status: "specifying" | "planning" | "implementing" | "verifying" | "completed" | "skipped";
   spec: ArtifactEntry | null;
@@ -110,23 +110,23 @@ export interface FeatureArtifacts {
   lastImplementedPhase: number;
 }
 
-export interface TasksArtifact extends ArtifactEntry {
+interface TasksArtifact extends ArtifactEntry {
   taskChecksums: Record<string, boolean>;
 }
 
-export interface CheckpointRef {
+interface CheckpointRef {
   sha: string;
   timestamp: string;
 }
 
-export interface PendingQuestion {
+interface PendingQuestion {
   id: string;
   question: string;
   context: string;
   askedAt: string;
 }
 
-export interface ReconciliationResult {
+interface ReconciliationResult {
   canResume: boolean;
   resumeFrom: ResumePoint;
   warnings: string[];
@@ -135,14 +135,12 @@ export interface ReconciliationResult {
   driftSummary: DriftSummary;
 }
 
-export interface ResumePoint {
+interface ResumePoint {
   phase: Phase;
   cycleNumber: number;
   step: StepType;
   specDir?: string;
 }
-
-export type { DriftSummary } from "./types.js";
 
 interface LockFile {
   pid: number;
@@ -151,7 +149,7 @@ interface LockFile {
 
 // ── Deep Merge ──
 
-export function deepMerge<T>(target: T, patch: DeepPartial<T>): T {
+function deepMerge<T>(target: T, patch: DeepPartial<T>): T {
   const result = { ...target };
   for (const key of Object.keys(patch) as Array<keyof T>) {
     const patchVal = (patch as Record<string, unknown>)[key as string];
@@ -686,16 +684,3 @@ export async function reconcileState(
   return result;
 }
 
-// ── isLockedByAnother probe ──
-
-export function isLockedByAnother(projectDir: string): boolean {
-  const lp = lockPath(projectDir);
-  try {
-    const raw = fs.readFileSync(lp, "utf-8");
-    const lock: LockFile = JSON.parse(raw);
-    if (isLockStale(lock)) return false;
-    return lock.pid !== process.pid;
-  } catch {
-    return false;
-  }
-}

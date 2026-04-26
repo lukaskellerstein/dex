@@ -264,7 +264,6 @@ export function SubagentDetailView({
       <AgentStepList
         steps={subagentSteps}
         isRunning={parentIsRunning && isRunning}
-        headerTitle="Agent Detail"
         agentId={subagent.subagentId}
         startedAt={subagent.startedAt}
         durationMs={durationMs}

@@ -32,7 +32,6 @@ contextBridge.exposeInMainWorld("dexAPI", {
   stopRun: () => ipcRenderer.invoke("orchestrator:stop"),
   answerQuestion: (requestId: string, answers: Record<string, string>) =>
     ipcRenderer.invoke("orchestrator:answer-question", requestId, answers),
-  isRunning: () => ipcRenderer.invoke("orchestrator:isRunning") as Promise<boolean>,
   getProjectState: (dir: string) => ipcRenderer.invoke("orchestrator:getProjectState", dir),
   getRunState: () => ipcRenderer.invoke("orchestrator:getRunState") as Promise<{
     runId: string;
@@ -60,8 +59,6 @@ contextBridge.exposeInMainWorld("dexAPI", {
   },
 
   // History — per-project JSON storage (007-sqlite-removal)
-  listRuns: (projectDir: string, limit?: number) =>
-    ipcRenderer.invoke("history:list-runs", projectDir, limit),
   getRun: (projectDir: string, runId: string) =>
     ipcRenderer.invoke("history:get-run", projectDir, runId),
   getLatestProjectRun: (projectDir: string) =>
@@ -81,8 +78,6 @@ contextBridge.exposeInMainWorld("dexAPI", {
   checkpoints: {
     listTimeline: (projectDir: string) =>
       ipcRenderer.invoke("checkpoints:listTimeline", projectDir),
-    isLockedByAnother: (projectDir: string) =>
-      ipcRenderer.invoke("checkpoints:isLockedByAnother", projectDir) as Promise<boolean>,
     checkIsRepo: (projectDir: string) =>
       ipcRenderer.invoke("checkpoints:checkIsRepo", projectDir) as Promise<boolean>,
     checkIdentity: (projectDir: string) =>
@@ -99,26 +94,16 @@ contextBridge.exposeInMainWorld("dexAPI", {
       ipcRenderer.invoke("checkpoints:unselect", projectDir, branchName),
     syncStateFromHead: (projectDir: string) =>
       ipcRenderer.invoke("checkpoints:syncStateFromHead", projectDir),
-    goBack: (projectDir: string, tag: string, options?: { force?: "save" | "discard" }) =>
-      ipcRenderer.invoke("checkpoints:goBack", projectDir, tag, options),
     jumpTo: (projectDir: string, targetSha: string, options?: { force?: "save" | "discard" }) =>
       ipcRenderer.invoke("checkpoints:jumpTo", projectDir, targetSha, options),
     spawnVariants: (projectDir: string, request: { fromCheckpoint: string; variantLetters: string[]; step: string }) =>
       ipcRenderer.invoke("checkpoints:spawnVariants", projectDir, request),
-    deleteAttempt: (projectDir: string, branch: string) =>
-      ipcRenderer.invoke("checkpoints:deleteAttempt", projectDir, branch),
-    writeVariantGroup: (projectDir: string, group: Record<string, unknown>) =>
-      ipcRenderer.invoke("checkpoints:writeVariantGroup", projectDir, group),
     cleanupVariantGroup: (projectDir: string, groupId: string, kind: "keep" | "discard", pickedLetter?: string) =>
       ipcRenderer.invoke("checkpoints:cleanupVariantGroup", projectDir, groupId, kind, pickedLetter),
     initRepo: (projectDir: string) =>
       ipcRenderer.invoke("checkpoints:initRepo", projectDir),
     setIdentity: (projectDir: string, name: string, email: string) =>
       ipcRenderer.invoke("checkpoints:setIdentity", projectDir, name, email),
-    setRecordMode: (projectDir: string, on: boolean) =>
-      ipcRenderer.invoke("checkpoints:setRecordMode", projectDir, on),
-    setPauseAfterStage: (projectDir: string, on: boolean) =>
-      ipcRenderer.invoke("checkpoints:setPauseAfterStage", projectDir, on),
     compareAttempts: (projectDir: string, branchA: string, branchB: string, step: string | null) =>
       ipcRenderer.invoke("checkpoints:compareAttempts", projectDir, branchA, branchB, step),
   },
