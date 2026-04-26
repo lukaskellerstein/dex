@@ -16,6 +16,7 @@ import {
   unmarkCheckpoint,
   unselect,
   syncStateFromHead,
+  PATHS_BY_STEP,
   type VariantSpawnRequest,
   type VariantGroupFile,
   type JumpToResult,
@@ -38,16 +39,6 @@ function gitExecSilent(cmd: string, projectDir: string): string {
     return "";
   }
 }
-
-const PATH_BY_STEP: Partial<Record<StepType, string[]>> = {
-  gap_analysis: [".dex/feature-manifest.json"],
-  manifest_extraction: [".dex/feature-manifest.json"],
-  specify: ["specs/"],
-  plan: ["specs/"],
-  tasks: ["specs/"],
-  learnings: [".dex/learnings.md"],
-  verify: [".dex/verify-output/"],
-};
 
 export function registerCheckpointsHandlers(): void {
   // ── Read-only ─────────────────────────────────────────
@@ -300,7 +291,7 @@ export function registerCheckpointsHandlers(): void {
     "checkpoints:compareAttempts",
     (_e, projectDir: string, branchA: string, branchB: string, step: StepType | null) => {
       try {
-        const paths = step ? PATH_BY_STEP[step] : undefined;
+        const paths = step ? PATHS_BY_STEP[step] : undefined;
         if (paths && paths.length > 0) {
           const diff = gitExecSilent(
             `git diff ${branchA}..${branchB} -- ${paths.map((p) => `"${p}"`).join(" ")}`,

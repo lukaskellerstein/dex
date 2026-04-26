@@ -5,7 +5,8 @@ import { execSync } from "node:child_process";
 import type { StepType } from "./types.js";
 import { applyOverlay } from "./agent-overlay.js";
 import type { AgentProfile } from "./agent-profile.js";
-import { updateState } from "./state.js";
+import { updateState, loadState } from "./state.js";
+import type { EmitFn } from "./events.js";
 
 // ── Constants ────────────────────────────────────────────
 
@@ -112,6 +113,21 @@ export function isParallelizable(step: StepType): boolean {
   return PARALLELIZABLE_STEPS.includes(step);
 }
 
+/**
+ * Files that materially change in each step — used for path-filtered diffs
+ * when comparing two attempts ("show me what changed at the spec level vs.
+ * everywhere"). Steps absent from this map fall through to a `--stat` diff.
+ */
+export const PATHS_BY_STEP: Partial<Record<StepType, string[]>> = {
+  gap_analysis: [".dex/feature-manifest.json"],
+  manifest_extraction: [".dex/feature-manifest.json"],
+  specify: ["specs/"],
+  plan: ["specs/"],
+  tasks: ["specs/"],
+  learnings: [".dex/learnings.md"],
+  verify: [".dex/verify-output/"],
+};
+
 // ── Promotion ────────────────────────────────────────────
 
 export function promoteToCheckpoint(
@@ -128,6 +144,43 @@ export function promoteToCheckpoint(
   } catch (err) {
     log(rlog, "WARN", `promoteToCheckpoint failed for ${tag}: ${String(err)}`);
     return { ok: false, error: String(err) };
+  }
+}
+
+/**
+ * Read the per-project record-mode flag (`.dex/state.json` `ui.recordMode`).
+ * Returns false on any IO error.
+ */
+export async function readRecordMode(projectDir: string): Promise<boolean> {
+  try {
+    const s = await loadState(projectDir);
+    return Boolean(s?.ui?.recordMode);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * If record mode is on (env var DEX_RECORD_MODE=1 or `.dex/state.json`
+ * `ui.recordMode === true`), promote `candidateSha` to `checkpointTag` and
+ * emit a `checkpoint_promoted` event. No-op otherwise. The orchestrator
+ * calls this after each step's commit candidate so a "record" session
+ * captures every step as a canonical checkpoint without manual promotion.
+ */
+export async function autoPromoteIfRecordMode(
+  projectDir: string,
+  checkpointTag: string,
+  candidateSha: string,
+  runId: string,
+  emit: EmitFn,
+  rlog?: RunLoggerLike,
+): Promise<void> {
+  const recordMode =
+    process.env.DEX_RECORD_MODE === "1" || (await readRecordMode(projectDir));
+  if (!recordMode) return;
+  const result = promoteToCheckpoint(projectDir, checkpointTag, candidateSha, rlog);
+  if (result.ok) {
+    emit({ type: "checkpoint_promoted", runId, checkpointTag, sha: candidateSha });
   }
 }
 

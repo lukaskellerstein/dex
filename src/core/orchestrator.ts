@@ -32,6 +32,8 @@ import {
   checkpointDoneTag,
   captureBranchName,
   promoteToCheckpoint,
+  autoPromoteIfRecordMode,
+  readRecordMode,
 } from "./checkpoints.js";
 import {
   createInitialState,
@@ -479,13 +481,7 @@ async function runStage(
       });
 
       // Record-mode: auto-promote every candidate to canonical.
-      const recordMode = process.env.DEX_RECORD_MODE === "1" || (await readRecordMode(activeProjectDir));
-      if (recordMode) {
-        const result = promoteToCheckpoint(activeProjectDir, checkpointTag, sha, rlog);
-        if (result.ok) {
-          emit({ type: "checkpoint_promoted", runId, checkpointTag, sha });
-        }
-      }
+      await autoPromoteIfRecordMode(activeProjectDir, checkpointTag, sha, runId, emit, rlog);
 
       // Step mode: pause after every stage awaiting user Keep/Try again.
       // Resume via config.resume=true picks up at the next stage.
@@ -516,15 +512,6 @@ async function readPauseAfterStage(projectDir: string): Promise<boolean> {
   try {
     const s = await loadState(projectDir);
     return Boolean(s?.ui?.pauseAfterStage);
-  } catch {
-    return false;
-  }
-}
-
-async function readRecordMode(projectDir: string): Promise<boolean> {
-  try {
-    const s = await loadState(projectDir);
-    return Boolean(s?.ui?.recordMode);
   } catch {
     return false;
   }
