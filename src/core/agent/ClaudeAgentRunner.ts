@@ -28,7 +28,15 @@ export class ClaudeAgentRunner implements AgentRunner {
   }
 
   async runStep(ctx: StepContext): Promise<StepResult> {
-    const { config, prompt, runId, cycleNumber, step, agentRunId, outputFormat, abortController, emit, rlog } = ctx;
+    const { config, prompt: rawPrompt, runId, cycleNumber, step, agentRunId, outputFormat, abortController, emit, rlog, profile, worktreePath } = ctx;
+    // 010 — apply per-variant agent profile overrides. Each is opt-in: if
+    // unset, behavior is byte-identical to pre-010.
+    const effectiveModel = profile?.model ?? config.model;
+    const effectiveCwd = worktreePath ?? config.projectDir;
+    const promptAddendum = profile?.systemPromptAppend
+      ? `[Profile: ${profile.name}]\n${profile.systemPromptAppend}\n\n`
+      : "";
+    const prompt = promptAddendum + rawPrompt;
     const startTime = Date.now();
     let stepIndex = 0;
     let totalCost = 0;
@@ -65,13 +73,14 @@ export class ClaudeAgentRunner implements AgentRunner {
     for await (const msg of query({
       prompt,
       options: {
-        model: config.model,
-        cwd: config.projectDir,
+        model: effectiveModel,
+        cwd: effectiveCwd,
         maxTurns: config.maxTurns,
         permissionMode: "bypassPermissions",
         settingSources: ["project"],
         abortController: abortController ?? undefined,
         ...(outputFormat ? { outputFormat } : {}),
+        ...(profile?.allowedTools ? { allowedTools: profile.allowedTools } : {}),
         canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
           if (toolName === "AskUserQuestion") {
             rlog.agentRun("INFO", "canUseTool: AskUserQuestion intercepted");
@@ -316,7 +325,14 @@ export class ClaudeAgentRunner implements AgentRunner {
   }
 
   async runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult> {
-    const { config, prompt, runId, taskPhase, agentRunId, abortController, emit, rlog, onTodoWrite } = ctx;
+    const { config, prompt: rawPrompt, runId, taskPhase, agentRunId, abortController, emit, rlog, onTodoWrite, profile, worktreePath } = ctx;
+    // 010 — see runStep above; same overrides applied here.
+    const effectiveModel = profile?.model ?? config.model;
+    const effectiveCwd = worktreePath ?? config.projectDir;
+    const promptAddendum = profile?.systemPromptAppend
+      ? `[Profile: ${profile.name}]\n${profile.systemPromptAppend}\n\n`
+      : "";
+    const prompt = promptAddendum + rawPrompt;
     const startTime = Date.now();
     let stepIndex = 0;
     let totalCost = 0;
@@ -371,11 +387,12 @@ export class ClaudeAgentRunner implements AgentRunner {
     for await (const msg of query({
       prompt,
       options: {
-        model: config.model,
-        cwd: config.projectDir,
+        model: effectiveModel,
+        cwd: effectiveCwd,
         maxTurns: config.maxTurns,
         permissionMode: "bypassPermissions",
         settingSources: ["project"],
+        ...(profile?.allowedTools ? { allowedTools: profile.allowedTools } : {}),
         hooks: {
           PreToolUse: [
             {

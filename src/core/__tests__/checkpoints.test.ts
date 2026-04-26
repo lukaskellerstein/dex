@@ -12,6 +12,8 @@ import {
   labelFor,
   isParallelizable,
   promoteToCheckpoint,
+  unmarkCheckpoint,
+  unselect,
   startAttemptFrom,
   isWorkingTreeDirty,
   spawnVariants,
@@ -264,6 +266,203 @@ test("listTimeline: seeded repo returns expected structure", () => {
     assert.equal(snap.checkpoints[0].step, "plan");
     assert.equal(snap.checkpoints[0].cycleNumber, 1);
     assert.equal(snap.attempts.length, 0);
+    // 010: extended snapshot fields are always arrays — never undefined.
+    assert.ok(Array.isArray(snap.commits));
+    assert.ok(Array.isArray(snap.selectedPath));
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+// ── 010: TimelineSnapshot.commits / selectedPath population ──
+
+/**
+ * Make a real commit whose subject matches the step-commit pattern
+ * `dex: <step> completed [cycle:N] [feature:-]`. Returns the SHA.
+ */
+function mkStepCommit(dir: string, step: string, cycle: number, fileName: string): string {
+  fs.writeFileSync(path.join(dir, fileName), `${step}-${cycle}\n`);
+  execSync(`git add ${fileName}`, { cwd: dir });
+  const subject = `dex: ${step} completed [cycle:${cycle}] [feature:-]`;
+  const body = `[checkpoint:${step}:${cycle}]`;
+  execSync(`git commit -q -m "${subject}" -m "${body}"`, { cwd: dir });
+  return execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
+}
+
+test("listTimeline: commits[] is sorted ascending by timestamp and skips WIP", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha1 = mkStepCommit(dir, "plan", 1, "plan.md");
+    // A non-step-commit "WIP" commit between two step-commits — must be skipped.
+    fs.writeFileSync(path.join(dir, "wip.txt"), "noise\n");
+    execSync("git add wip.txt", { cwd: dir });
+    execSync('git commit -q -m "wip: scratch work"', { cwd: dir });
+    const sha2 = mkStepCommit(dir, "tasks", 1, "tasks.md");
+
+    const snap = listTimeline(dir);
+    const shas = snap.commits.map((c) => c.sha);
+    assert.deepEqual(shas, [sha1, sha2]);
+    // Subjects are step-commit subjects (no "wip:" anywhere).
+    assert.ok(snap.commits.every((c) => c.subject.startsWith("dex:")));
+    // Each carries shortSha + step + cycle parsed from subject.
+    assert.equal(snap.commits[0].shortSha.length, 7);
+    assert.equal(snap.commits[0].step, "plan");
+    assert.equal(snap.commits[0].cycleNumber, 1);
+    assert.equal(snap.commits[1].step, "tasks");
+    // hasCheckpointTag: false for both (no tag created in this test).
+    assert.equal(snap.commits[0].hasCheckpointTag, false);
+    assert.equal(snap.commits[1].hasCheckpointTag, false);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("listTimeline: hasCheckpointTag flips true for promoted SHAs", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha = mkStepCommit(dir, "plan", 1, "plan.md");
+    promoteToCheckpoint(dir, "checkpoint/cycle-1-after-plan", sha);
+    const snap = listTimeline(dir);
+    const planCommit = snap.commits.find((c) => c.sha === sha);
+    assert.ok(planCommit, "plan commit should be in commits[]");
+    assert.equal(planCommit!.hasCheckpointTag, true);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("listTimeline: selectedPath is oldest-first along first-parent of HEAD", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha1 = mkStepCommit(dir, "plan", 1, "plan.md");
+    const sha2 = mkStepCommit(dir, "tasks", 1, "tasks.md");
+    const sha3 = mkStepCommit(dir, "implement", 1, "impl.md");
+    const snap = listTimeline(dir);
+    assert.deepEqual(snap.selectedPath, [sha1, sha2, sha3]);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("listTimeline: selectedPath shrinks after checking out an earlier commit", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha1 = mkStepCommit(dir, "plan", 1, "plan.md");
+    const sha2 = mkStepCommit(dir, "tasks", 1, "tasks.md");
+    mkStepCommit(dir, "implement", 1, "impl.md");
+
+    // Move HEAD back to the plan commit (detached). selectedPath now ends at sha1.
+    execSync(`git checkout -q ${sha1}`, { cwd: dir });
+    const snap = listTimeline(dir);
+    assert.deepEqual(snap.selectedPath, [sha1]);
+    // commits[] still surfaces all step-commits across all branches.
+    assert.equal(snap.commits.length, 3);
+    assert.ok(snap.commits.some((c) => c.sha === sha2));
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("unmarkCheckpoint: deletes canonical step tags at sha, leaves others alone", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha = mkStepCommit(dir, "plan", 1, "plan.md");
+    // Promote the canonical step tag.
+    promoteToCheckpoint(dir, "checkpoint/cycle-1-after-plan", sha);
+    // Add an unrelated checkpoint/done-* tag at the same sha — must NOT be deleted.
+    execSync(`git tag checkpoint/done-abcdef ${sha}`, { cwd: dir });
+
+    const r = unmarkCheckpoint(dir, sha);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.deepEqual(r.deleted, ["checkpoint/cycle-1-after-plan"]);
+    }
+    const remaining = execSync("git tag --list", { cwd: dir, encoding: "utf-8" }).trim().split("\n").sort();
+    assert.deepEqual(remaining, ["checkpoint/done-abcdef"]);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("unselect: switches HEAD to main and deletes the selected-* branch", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
+    execSync(`git checkout -q -b selected-20260101T000000 ${sha}`, { cwd: dir });
+
+    const r = unselect(dir, "selected-20260101T000000");
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.deleted, "selected-20260101T000000");
+      assert.match(r.switchedTo ?? "", /^(main|master)$/);
+    }
+    const branches = execSync("git branch", { cwd: dir, encoding: "utf-8" });
+    assert.equal(branches.includes("selected-20260101T000000"), false);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("unselect: refuses non-selected-* branches", () => {
+  const dir = mkTmpRepo();
+  try {
+    const r = unselect(dir, "main");
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.match(r.error, /selected-\*/);
+    }
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("unselect: prefers main/master over dex/* when both contain the SHA", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
+    execSync(`git checkout -q -b dex/2026-04-25-abcdef ${sha}`, { cwd: dir });
+    execSync(`git checkout -q -b selected-20260101T000000 ${sha}`, { cwd: dir });
+
+    const r = unselect(dir, "selected-20260101T000000");
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.match(r.switchedTo ?? "", /^(main|master)$/);
+    }
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("unmarkCheckpoint: no canonical tags → no-op success", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha = mkStepCommit(dir, "plan", 1, "plan.md");
+    const r = unmarkCheckpoint(dir, sha);
+    assert.equal(r.ok, true);
+    if (r.ok) assert.deepEqual(r.deleted, []);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("listTimeline: surfaces step-commits from a sibling branch", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha1 = mkStepCommit(dir, "plan", 1, "plan.md");
+    // Create an attempt branch off sha1 with its own step-commit.
+    execSync(`git checkout -q -b attempt-test-a ${sha1}`, { cwd: dir });
+    const sha1a = mkStepCommit(dir, "tasks", 1, "tasks-a.md");
+    // Switch back to main so HEAD's selectedPath does NOT include sha1a.
+    execSync("git checkout -q master 2>/dev/null || git checkout -q main", { cwd: dir });
+
+    const snap = listTimeline(dir);
+    const shas = new Set(snap.commits.map((c) => c.sha));
+    assert.ok(shas.has(sha1), "main's plan commit must be surfaced");
+    assert.ok(shas.has(sha1a), "attempt branch's tasks commit must be surfaced");
+    // selectedPath only follows first-parent of current HEAD (main), so
+    // sha1a is NOT on the path.
+    assert.equal(snap.selectedPath.includes(sha1a), false);
+    assert.equal(snap.selectedPath.includes(sha1), true);
   } finally {
     rmTmp(dir);
   }

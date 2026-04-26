@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { TaskPhase, Task } from "./types.js";
 
-const PHASE_HEADER = /^## TaskPhase (\d+): (.+)$/;
+const PHASE_HEADER = /^## (?:TaskPhase|Phase) (\d+): (.+)$/;
 const PURPOSE_LINE = /^\*\*Purpose\*\*: (.+)$/;
 const TASK_LINE = /^- \[([ x~])\] (T\d+)\s+(.+)$/;
 const BRACKET_TAG = /\[([^\]]+)\]/g;

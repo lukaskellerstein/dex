@@ -442,7 +442,7 @@ async function runStage(
         currentCycleNumber: cycleNumber,
         ...(specDir ? { currentSpecDir: specDir } : {}),
       });
-      const sha = commitCheckpoint(activeProjectDir, stageType, cycleNumber, specDir ?? null, totalCost);
+      const sha = commitCheckpoint(activeProjectDir, stageType, cycleNumber, specDir ?? null);
       await updateState(activeProjectDir, {
         lastCommit: { sha, timestamp: new Date().toISOString() },
       });

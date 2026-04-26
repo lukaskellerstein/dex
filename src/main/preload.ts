@@ -93,8 +93,16 @@ contextBridge.exposeInMainWorld("dexAPI", {
       ipcRenderer.invoke("checkpoints:readPendingVariantGroups", projectDir),
     promote: (projectDir: string, tag: string, sha: string) =>
       ipcRenderer.invoke("checkpoints:promote", projectDir, tag, sha),
+    unmark: (projectDir: string, sha: string) =>
+      ipcRenderer.invoke("checkpoints:unmark", projectDir, sha),
+    unselect: (projectDir: string, branchName: string) =>
+      ipcRenderer.invoke("checkpoints:unselect", projectDir, branchName),
+    syncStateFromHead: (projectDir: string) =>
+      ipcRenderer.invoke("checkpoints:syncStateFromHead", projectDir),
     goBack: (projectDir: string, tag: string, options?: { force?: "save" | "discard" }) =>
       ipcRenderer.invoke("checkpoints:goBack", projectDir, tag, options),
+    jumpTo: (projectDir: string, targetSha: string, options?: { force?: "save" | "discard" }) =>
+      ipcRenderer.invoke("checkpoints:jumpTo", projectDir, targetSha, options),
     spawnVariants: (projectDir: string, request: { fromCheckpoint: string; variantLetters: string[]; step: string }) =>
       ipcRenderer.invoke("checkpoints:spawnVariants", projectDir, request),
     deleteAttempt: (projectDir: string, branch: string) =>
@@ -113,6 +121,14 @@ contextBridge.exposeInMainWorld("dexAPI", {
       ipcRenderer.invoke("checkpoints:setPauseAfterStage", projectDir, on),
     compareAttempts: (projectDir: string, branchA: string, branchB: string, step: string | null) =>
       ipcRenderer.invoke("checkpoints:compareAttempts", projectDir, branchA, branchB, step),
+  },
+
+  // Agent profiles (010 — US4)
+  profiles: {
+    list: (projectDir: string) =>
+      ipcRenderer.invoke("profiles:list", projectDir),
+    saveDexJson: (projectDir: string, name: string, dexJson: Record<string, unknown>) =>
+      ipcRenderer.invoke("profiles:saveDexJson", projectDir, name, dexJson),
   },
 
   // Window controls

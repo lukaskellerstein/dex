@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { select as d3Select } from "d3-selection";
 import { zoom as d3Zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
 import { linkVertical } from "d3-shape";
@@ -7,27 +7,53 @@ import {
   type LaidOutNode,
   type LaidOutEdge,
   type LayoutOutput,
+  type ColorState,
 } from "./timelineLayout";
-import type { TimelineSnapshot } from "../../../core/checkpoints.js";
-import type { SelectedNode } from "./PastAttemptsList";
+import type { TimelineSnapshot, TimelineCommit } from "../../../core/checkpoints.js";
 
 interface Props {
   snapshot: TimelineSnapshot;
-  selectedId: string | null;
-  onSelect: (node: SelectedNode) => void;
+  /** Left-click on a step-commit. Caller invokes window.dexAPI.checkpoints.jumpTo. */
+  onJumpTo: (sha: string) => void;
+  /** Right-click on a step-commit. Caller opens CommitContextMenu (US3). */
+  onContextMenu?: (commit: TimelineCommit, position: { x: number; y: number }) => void;
+  /** SHA of the commit corresponding to current HEAD; rendered with a slight emphasis. */
+  headSha?: string | null;
+  /** Click the ✕ on a selected-* lane's pill. Caller calls checkpoints:unselect. */
+  onUnselect?: (branchName: string) => void;
 }
 
-const NODE_RADIUS = 9;
+const DOT_RADIUS = 7;
+const COLOR_KEPT_RING = "#ef4444";
+
+/**
+ * Mermaid-style: every dot is solid-filled with its lane color. The
+ * "selected" highlight is a thicker stroke + a subtle inner ring rather than
+ * a different fill, so the lane palette stays consistent across the canvas.
+ */
+function fillFor(node: LaidOutNode): string {
+  return node.laneColor;
+}
+
+function ringFor(state: ColorState): string | null {
+  return state === "kept" || state === "selected+kept" ? COLOR_KEPT_RING : null;
+}
+
+function shortBranch(name: string): string {
+  // Show the full branch name. The canvas overflows horizontally and the
+  // wrapper scrolls (`overflow: auto`) when there are many branches.
+  return name;
+}
 
 /** React-owned SVG, d3-zoom for pan/zoom, d3-shape for path geometry. */
-export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
+export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUnselect }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState<LaidOutNode | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
 
   const layout: LayoutOutput = useMemo(
-    () => layoutTimeline(snapshot, { columnWidth: 72, rowHeight: 64 }),
+    () => layoutTimeline(snapshot, { laneWidth: 170, rowHeight: 30, headerHeight: 40, gutterGap: 36 }),
     [snapshot],
   );
 
@@ -46,33 +72,31 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
     };
   }, []);
 
-  // Auto-focus newest node when snapshot grows.
-  useEffect(() => {
-    // Simple heuristic — center on the last canonical or attempt we saw.
-    // Without a persistent prior-snapshot ref, we just re-apply identity when
-    // switching projects; pan is user-controlled otherwise.
-    setTransform(zoomIdentity);
-  }, [snapshot.checkpoints.length === 0 ? "empty" : snapshot.checkpoints[0]?.tag]);
+  const nodeById = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout.nodes]);
 
   const linkGen = useMemo(
     () =>
       linkVertical<LaidOutEdge, { x: number; y: number }>()
         .source((e) => {
-          const n = layout.nodes.find((nn) => nn.id === e.fromId);
+          // Edges with an explicit fromPoint (e.g. "trunk-sprout") originate
+          // from a phantom point on the trunk lane, not from a real node.
+          if (e.fromPoint) return e.fromPoint;
+          const n = nodeById.get(e.fromId);
           return n ? { x: n.x, y: n.y } : { x: 0, y: 0 };
         })
         .target((e) => {
-          const n = layout.nodes.find((nn) => nn.id === e.toId);
+          const n = nodeById.get(e.toId);
           return n ? { x: n.x, y: n.y } : { x: 0, y: 0 };
         })
         .x((p) => p.x)
         .y((p) => p.y),
-    [layout.nodes],
+    [nodeById],
   );
 
   if (layout.nodes.length === 0) {
     return (
       <div
+        data-testid="timeline-empty"
         style={{
           padding: 16,
           color: "var(--foreground-muted)",
@@ -91,108 +115,271 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
     );
   }
 
+  const handleClick = (n: LaidOutNode) => {
+    if (n.node.kind === "step-commit") {
+      onJumpTo(n.node.data.sha);
+    } else if (n.node.kind === "start") {
+      onJumpTo(n.node.data.sha);
+    }
+  };
+
+  const handleContextMenu = (n: LaidOutNode, ev: MouseEvent<SVGGElement>) => {
+    if (!onContextMenu || n.node.kind !== "step-commit") return;
+    ev.preventDefault();
+    onContextMenu(n.node.data, { x: ev.clientX, y: ev.clientY });
+  };
+
   return (
     <div
       ref={wrapperRef}
+      data-testid="timeline-graph"
       style={{
         position: "relative",
         border: "1px solid var(--border)",
         borderRadius: "var(--radius)",
         background: "var(--surface)",
-        overflow: "hidden",
-        minHeight: 240,
+        overflow: "auto",
+        // Take all the available height from the parent so the wrapper
+        // bounds itself to the viewport — both scrollbars stay inside the
+        // visible area instead of the horizontal one living at the bottom
+        // of a 1000+px-tall SVG.
+        flex: 1,
+        minHeight: 0,
       }}
     >
       <svg
         ref={svgRef}
         role="img"
         aria-label="Checkpoint timeline"
-        width="100%"
+        width={Math.max(layout.width, 480)}
         height={Math.max(layout.height, 240)}
         style={{ display: "block", cursor: "grab" }}
       >
         <g transform={transform.toString()}>
-          {/* Alternating cycle shading — subtle row bands for canonical lane */}
-          {layout.nodes
-            .filter((n) => n.lane === "canonical")
-            .map((n, i) => (
-              <rect
-                key={`band-${n.id}`}
-                x={0}
-                y={n.y - 24}
-                width={layout.width}
-                height={48}
-                fill={i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)"}
-              />
-            ))}
-          {layout.edges.map((e) => (
-            <path
-              key={`${e.fromId}-${e.toId}`}
-              d={linkGen(e) ?? ""}
-              fill="none"
-              stroke={e.kind === "canonical" ? "var(--primary)" : "var(--border-bright)"}
-              strokeWidth={e.kind === "canonical" ? 2 : 1.5}
-              opacity={0.8}
-            />
-          ))}
-          {layout.nodes.map((n) => {
-            const isSelected = selectedId === n.id;
-            const isHovered = hovered?.id === n.id;
-            const stroke = n.unavailable ? "var(--foreground-disabled)" : n.laneColor;
+          {/* Branch column headers — horizontal pills above each lane. */}
+          {layout.columns.map((col) => {
+            const label = shortBranch(col.branch);
+            const isSelected = col.branch.startsWith("selected-");
+            const padX = 8;
+            const charW = 6.4;
+            const xBtnW = isSelected && onUnselect ? 18 : 0;
+            const w = Math.max(label.length * charW + padX * 2 + xBtnW, 36);
             return (
-              <g
-                key={n.id}
-                transform={`translate(${n.x}, ${n.y})`}
-                style={{ cursor: n.unavailable ? "not-allowed" : "pointer" }}
-                onMouseEnter={() => setHovered(n)}
-                onMouseLeave={() => setHovered(null)}
-                onClick={() => {
-                  if (n.unavailable) return;
-                  if (n.node.kind === "checkpoint" || n.node.kind === "attempt") {
-                    onSelect(n.node as SelectedNode);
-                  }
-                }}
-              >
-                <circle
-                  r={NODE_RADIUS + (isSelected ? 3 : isHovered ? 1 : 0)}
-                  fill={n.unavailable ? "transparent" : n.laneColor}
-                  stroke={stroke}
-                  strokeWidth={isSelected ? 3 : 1.5}
-                  opacity={n.unavailable ? 0.4 : 1}
+              <g key={`col-${col.branch}`} transform={`translate(${col.x - w / 2}, 8)`}>
+                <rect
+                  x={0}
+                  y={0}
+                  width={w}
+                  height={18}
+                  rx={4}
+                  ry={4}
+                  fill={col.laneColor}
+                  fillOpacity={0.18}
+                  stroke={col.laneColor}
+                  strokeWidth={1}
                 />
-                {n.lane === "canonical" && (
-                  <text
-                    x={NODE_RADIUS + 6}
-                    y={4}
-                    fontSize={11}
-                    fill="var(--foreground)"
-                    style={{ pointerEvents: "none" }}
+                <text
+                  x={(w - xBtnW) / 2}
+                  y={13}
+                  fontSize={10.5}
+                  fontFamily="var(--font-mono, monospace)"
+                  fill={col.laneColor}
+                  textAnchor="middle"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {label}
+                </text>
+                {isSelected && onUnselect && (
+                  <g
+                    data-testid={`unselect-${col.branch}`}
+                    transform={`translate(${w - xBtnW + 2}, 0)`}
+                    style={{ cursor: "pointer" }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onUnselect(col.branch);
+                    }}
                   >
-                    {n.node.kind === "checkpoint"
-                      ? n.node.data.label
-                      : n.node.kind === "start"
-                        ? `${n.node.data.branch} @ ${n.node.data.shortSha}`
-                        : ""}
-                  </text>
-                )}
-                {n.lane !== "canonical" && (
-                  <text
-                    x={NODE_RADIUS + 6}
-                    y={4}
-                    fontSize={10}
-                    fill="var(--foreground-muted)"
-                    style={{ pointerEvents: "none" }}
-                  >
-                    {n.node.kind === "attempt"
-                      ? n.node.data.branch.slice(-16)
-                      : n.node.kind === "pending"
-                        ? `pending ${n.node.data.step}`
-                        : ""}
-                  </text>
+                    <rect x={0} y={0} width={xBtnW - 2} height={18} fill="transparent" />
+                    <text
+                      x={(xBtnW - 2) / 2}
+                      y={13}
+                      fontSize={13}
+                      fill={col.laneColor}
+                      textAnchor="middle"
+                      style={{ pointerEvents: "none", fontWeight: 700 }}
+                    >
+                      ×
+                    </text>
+                  </g>
                 )}
               </g>
             );
           })}
+
+          {/* Trunk line — main's continuous backbone, drawn behind everything
+              so branch-off arcs visually emerge from it. */}
+          {layout.trunkLine && (
+            <line
+              x1={layout.trunkLine.x}
+              y1={layout.trunkLine.y1}
+              x2={layout.trunkLine.x}
+              y2={layout.trunkLine.y2}
+              stroke={layout.trunkLine.color}
+              strokeWidth={2}
+              opacity={0.55}
+              strokeDasharray="2 4"
+            />
+          )}
+
+          {/* Edges — straight vertical for within-lane (mermaid-style track),
+              curved for cross-lane branch-offs and trunk-sprouts. */}
+          {layout.edges.map((e) => {
+            const to = nodeById.get(e.toId);
+            if (!to) return null;
+            // Trunk-sprout (origin = phantom point on main lane at target row)
+            // → always curved.
+            if (e.fromPoint) {
+              return (
+                <path
+                  key={`${e.fromId}-${e.toId}`}
+                  d={linkGen(e) ?? ""}
+                  fill="none"
+                  stroke={e.laneColor}
+                  strokeWidth={1.75}
+                  opacity={0.9}
+                />
+              );
+            }
+            const from = nodeById.get(e.fromId);
+            if (!from) return null;
+            // Same column → straight vertical line.
+            if (from.columnIndex === to.columnIndex) {
+              return (
+                <line
+                  key={`${e.fromId}-${e.toId}`}
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={e.laneColor}
+                  strokeWidth={2}
+                  opacity={0.9}
+                />
+              );
+            }
+            // Different column → curved arc.
+            return (
+              <path
+                key={`${e.fromId}-${e.toId}`}
+                d={linkGen(e) ?? ""}
+                fill="none"
+                stroke={e.laneColor}
+                strokeWidth={1.75}
+                opacity={0.85}
+              />
+            );
+          })}
+
+          {/* Dots */}
+          {layout.nodes.map((n) => {
+            const isHovered = hovered?.id === n.id;
+            const isHead = n.node.kind === "step-commit" && headSha === n.node.data.sha;
+            const ring = ringFor(n.colorState);
+            return (
+              <g
+                key={n.id}
+                data-testid={
+                  n.node.kind === "start"
+                    ? "timeline-anchor"
+                    : `timeline-node-${(n.node.data as TimelineCommit).shortSha}`
+                }
+                transform={`translate(${n.x}, ${n.y})`}
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setHovered(n)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => handleClick(n)}
+                onContextMenu={(ev) => handleContextMenu(n, ev)}
+              >
+                {ring && (
+                  <circle
+                    r={DOT_RADIUS + 3}
+                    fill="transparent"
+                    stroke={ring}
+                    strokeWidth={2}
+                  />
+                )}
+                <circle
+                  r={DOT_RADIUS + (isHovered ? 1 : 0)}
+                  fill={fillFor(n)}
+                  stroke={isHead ? "var(--foreground, #fff)" : "transparent"}
+                  strokeWidth={isHead ? 2 : 0}
+                />
+                {/* Inner highlight for "on selected path" — a small white core
+                    inside the lane-colored dot, like mermaid's HEAD marker. */}
+                {(n.colorState === "selected" || n.colorState === "selected+kept") && (
+                  <circle r={DOT_RADIUS - 3} fill="var(--surface, #0e1120)" />
+                )}
+              </g>
+            );
+          })}
+
+          {/* Right-side label gutter — one row per commit, vertically aligned
+              with the dot row. Skipped for the starting-point anchor because
+              its row is best understood as "the run's origin". */}
+          {layout.nodes
+            .filter((n) => n.node.kind === "step-commit")
+            .map((n) => {
+              const c = n.node.data as TimelineCommit;
+              const isHead = headSha === c.sha;
+              return (
+                <g
+                  key={`label-${n.id}`}
+                  transform={`translate(${layout.labelGutterX}, ${n.y})`}
+                  style={{ pointerEvents: "none" }}
+                >
+                  <text
+                    fontSize={11}
+                    fontFamily="var(--font-mono, monospace)"
+                    fill={isHead ? "var(--foreground)" : "var(--foreground-muted)"}
+                    fontWeight={isHead ? 600 : 400}
+                    y={4}
+                  >
+                    {c.shortSha}
+                    <tspan fill="var(--foreground-dim, #64748b)" fontFamily="var(--font, sans-serif)">
+                      {"  "}
+                      {c.step}
+                      {c.cycleNumber > 0 ? ` · cycle ${c.cycleNumber}` : ""}
+                    </tspan>
+                  </text>
+                </g>
+              );
+            })}
+          {/* Anchor label — show "starting-point" hint at the anchor row. */}
+          {layout.nodes
+            .filter((n) => n.node.kind === "start")
+            .map((n) => {
+              const sp = n.node.data;
+              if (n.node.kind !== "start") return null;
+              return (
+                <g
+                  key={`label-${n.id}`}
+                  transform={`translate(${layout.labelGutterX}, ${n.y})`}
+                  style={{ pointerEvents: "none" }}
+                >
+                  <text
+                    fontSize={11}
+                    fontFamily="var(--font-mono, monospace)"
+                    fill="var(--foreground-dim, #64748b)"
+                    y={4}
+                  >
+                    {sp.shortSha}
+                    <tspan fontFamily="var(--font, sans-serif)">
+                      {"  "}starting-point · {shortBranch(sp.branch)}
+                    </tspan>
+                  </text>
+                </g>
+              );
+            })}
         </g>
       </svg>
       {hovered && (
@@ -207,27 +394,20 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
             padding: "6px 8px",
             fontSize: 11,
             borderRadius: "var(--radius)",
-            maxWidth: 280,
+            maxWidth: 360,
           }}
         >
-          {hovered.node.kind === "checkpoint" ? (
+          {hovered.node.kind === "step-commit" ? (
             <>
-              <div style={{ fontWeight: 600 }}>{hovered.node.data.label}</div>
-              <div style={{ color: "var(--foreground-dim)" }}>
-                step: {hovered.node.data.step} · cycle {hovered.node.data.cycleNumber}
+              <div style={{ fontWeight: 600 }}>{hovered.node.data.subject}</div>
+              <div style={{ color: "var(--foreground-dim)", fontFamily: "var(--font-mono)" }}>
+                {hovered.node.data.shortSha} · {hovered.node.data.branch}
               </div>
-              <div style={{ fontFamily: "var(--font-mono)", color: "var(--foreground-dim)" }}>
+              <div style={{ color: "var(--foreground-dim)", fontFamily: "var(--font-mono)" }}>
                 {hovered.node.data.timestamp}
               </div>
             </>
-          ) : hovered.node.kind === "attempt" ? (
-            <>
-              <div style={{ fontWeight: 600 }}>{hovered.node.data.branch}</div>
-              <div style={{ color: "var(--foreground-dim)" }}>
-                {hovered.node.data.stepsAhead} step(s) ahead
-              </div>
-            </>
-          ) : hovered.node.kind === "start" ? (
+          ) : (
             <>
               <div style={{ fontWeight: 600 }}>
                 {hovered.node.data.branch} @ {hovered.node.data.shortSha}
@@ -236,11 +416,6 @@ export function TimelineGraph({ snapshot, selectedId, onSelect }: Props) {
               <div style={{ fontFamily: "var(--font-mono)", color: "var(--foreground-dim)" }}>
                 {hovered.node.data.timestamp}
               </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontWeight: 600 }}>pending {hovered.node.data.step}</div>
-              <div style={{ color: "var(--foreground-dim)" }}>cycle {hovered.node.data.cycleNumber}</div>
             </>
           )}
         </div>
