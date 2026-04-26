@@ -1,33 +1,44 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { TimelinePanel } from "./TimelinePanel";
-import { RecBadge } from "./RecBadge";
-import { useRecordMode } from "./hooks/useRecordMode";
-import { usePauseAfterStage } from "./hooks/usePauseAfterStage";
 import { TryNWaysModal } from "./TryNWaysModal";
-import { AttemptCompareModal } from "./AttemptCompareModal";
-import type { StepType } from "../../../core/types.js";
+import type { VariantSlotState } from "./AgentProfileForm";
 import { STAGE_ORDER_RENDERER } from "./stageOrder";
+import type { TimelineCommit } from "../../../core/checkpoints.js";
+import type { ClaudeProfile } from "../../../core/agent-profile.js";
+import type { StepType } from "../../../core/types.js";
 
 interface Props {
   projectDir: string;
 }
 
+function tagFor(step: string, cycleNumber: number): string {
+  const slug = step.replaceAll("_", "-");
+  return cycleNumber === 0
+    ? `checkpoint/after-${slug}`
+    : `checkpoint/cycle-${cycleNumber}-after-${slug}`;
+}
+
+function nextStageOf(step: StepType): StepType {
+  const idx = STAGE_ORDER_RENDERER.indexOf(step);
+  if (idx < 0 || idx >= STAGE_ORDER_RENDERER.length - 1) return step;
+  return STAGE_ORDER_RENDERER[idx + 1];
+}
+
+interface TryNWaysAnchor {
+  tag: string;
+  nextStage: StepType;
+}
+
 /**
- * Full-page Timeline tab. Hosts the Record / Pause toggles, the timeline
- * graph (TimelinePanel), and the variant-spawn / attempt-compare modals.
+ * 010 Timeline tab. Hosts the Record / Pause toggles, the Timeline canvas,
+ * and the variant-spawn modal triggered by the right-click menu (US3).
+ *
+ * The variant modal is still on its 008 body in this iteration — US4 rebuilds
+ * it around the per-variant agent profile picker.
  */
 export function TimelineView({ projectDir }: Props) {
-  const { recordMode, setRecordMode } = useRecordMode(projectDir);
-  const { pauseAfterStage, setPauseAfterStage } = usePauseAfterStage(projectDir);
-
   const [repoReady, setRepoReady] = useState(true);
-  const [tryNWaysTag, setTryNWaysTag] = useState<string | null>(null);
-  const [compareTarget, setCompareTarget] = useState<null | {
-    a: string;
-    b: string;
-    step: StepType | null;
-  }>(null);
-  const [compareSourceA, setCompareSourceA] = useState<string | null>(null);
+  const [tryNWaysAnchor, setTryNWaysAnchor] = useState<TryNWaysAnchor | null>(null);
 
   useEffect(() => {
     window.dexAPI.checkpoints
@@ -36,32 +47,64 @@ export function TimelineView({ projectDir }: Props) {
       .catch(() => setRepoReady(false));
   }, [projectDir]);
 
-  const handleTryNWays = (tag: string) => setTryNWaysTag(tag);
+  /**
+   * The 008 spawnVariants flow takes a checkpoint tag, not a SHA. To wire the
+   * 010 right-click "Try N ways from here" without changing 008's interface,
+   * we ensure the target commit carries its canonical step tag (auto-promote
+   * if not) before opening the modal. US4 will rebuild the modal to accept a
+   * SHA directly and remove this stitch.
+   */
+  const handleTryNWaysAt = useCallback(
+    async (commit: TimelineCommit) => {
+      const tag = tagFor(commit.step, commit.cycleNumber);
+      if (!commit.hasCheckpointTag) {
+        const r = await window.dexAPI.checkpoints.promote(projectDir, tag, commit.sha);
+        if (!("ok" in r) || !r.ok) {
+          console.warn("[timeline-view] auto-promote before try-n-ways failed", r);
+          return;
+        }
+      }
+      setTryNWaysAnchor({ tag, nextStage: nextStageOf(commit.step as StepType) });
+    },
+    [projectDir],
+  );
 
-  const handleConfirmSpawn = async (n: number) => {
-    if (!tryNWaysTag) return;
-    const parsedStage = parseStageFromTag(tryNWaysTag);
-    const nextStage = nextStageOf(parsedStage);
-    const letters = ["a", "b", "c", "d", "e"].slice(0, n);
-    const r = await window.dexAPI.checkpoints.spawnVariants(projectDir, {
-      fromCheckpoint: tryNWaysTag,
-      variantLetters: letters,
-      step: nextStage,
-    });
-    setTryNWaysTag(null);
-    if (!r.ok) {
-      console.warn("[timeline-view] spawnVariants failed", r.error);
-    }
-  };
-
-  const handleCompareStart = (branch: string) => {
-    if (!compareSourceA) {
-      setCompareSourceA(branch);
-      return;
-    }
-    setCompareTarget({ a: compareSourceA, b: branch, step: null });
-    setCompareSourceA(null);
-  };
+  const handleConfirmSpawn = useCallback(
+    async (n: number, slots: VariantSlotState[]) => {
+      if (!tryNWaysAnchor) return;
+      const letters = ["a", "b", "c", "d", "e"].slice(0, n);
+      // Build per-variant profile bindings. A slot with `selectedName === null`
+      // means "(none)" — runner uses orchestrator defaults, no overlay.
+      // Slots that picked a profile populate a transient ClaudeProfile that
+      // mirrors what the picker showed (model / persona / allowed-tools), with
+      // agentDir resolved from the project's .dex/agents/<name>/ folder.
+      const profiles = slots.map((slot, i): { letter: string; profile: ClaudeProfile | null } => {
+        if (!slot.selectedName) return { letter: letters[i], profile: null };
+        return {
+          letter: letters[i],
+          profile: {
+            name: slot.selectedName,
+            agentDir: `${projectDir}/.dex/agents/${slot.selectedName}`,
+            agentRunner: "claude-sdk",
+            model: slot.model,
+            systemPromptAppend: slot.systemPromptAppend || undefined,
+            allowedTools: slot.allowedTools.length > 0 ? slot.allowedTools : undefined,
+          },
+        };
+      });
+      const r = await window.dexAPI.checkpoints.spawnVariants(projectDir, {
+        fromCheckpoint: tryNWaysAnchor.tag,
+        variantLetters: letters,
+        step: tryNWaysAnchor.nextStage,
+        profiles,
+      });
+      setTryNWaysAnchor(null);
+      if (!("ok" in r) || !r.ok) {
+        console.warn("[timeline-view] spawnVariants failed", r);
+      }
+    },
+    [projectDir, tryNWaysAnchor],
+  );
 
   return (
     <div
@@ -74,69 +117,11 @@ export function TimelineView({ projectDir }: Props) {
     >
       <div
         style={{
-          display: "flex",
-          gap: 12,
-          alignItems: "center",
-          padding: "8px 14px",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--surface)",
-        }}
-      >
-        <label
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: 12,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={recordMode}
-            onChange={(e) => setRecordMode(e.target.checked)}
-          />
-          Record mode
-        </label>
-        <label
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: 12,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={pauseAfterStage}
-            onChange={(e) => setPauseAfterStage(e.target.checked)}
-          />
-          Pause after each step
-        </label>
-        <RecBadge recordMode={recordMode} />
-        {compareSourceA && (
-          <div style={{ fontSize: 11, color: "var(--foreground-muted)" }}>
-            Comparing from <code>{compareSourceA}</code> — click Compare on
-            another attempt…
-            <button
-              onClick={() => setCompareSourceA(null)}
-              style={{
-                marginLeft: 6,
-                background: "transparent",
-                border: "none",
-                color: "var(--foreground-dim)",
-                cursor: "pointer",
-              }}
-            >
-              cancel
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
           flex: 1,
-          overflow: "auto",
+          // Inner TimelineGraph wrapper scrolls in both axes; this container
+          // just provides the padding around it without competing for scroll.
+          display: "flex",
+          flexDirection: "column",
           padding: "12px 14px",
           minHeight: 0,
         }}
@@ -149,42 +134,19 @@ export function TimelineView({ projectDir }: Props) {
               ? "Initialize version control to enable the timeline."
               : undefined
           }
-          onTryNWays={handleTryNWays}
-          onCompareStart={handleCompareStart}
-          canTryNWays
+          onTryNWaysAt={handleTryNWaysAt}
         />
       </div>
 
-      {tryNWaysTag && (
+      {tryNWaysAnchor && (
         <TryNWaysModal
           projectDir={projectDir}
-          tag={tryNWaysTag}
-          nextStage={nextStageOf(parseStageFromTag(tryNWaysTag))}
-          onCancel={() => setTryNWaysTag(null)}
+          tag={tryNWaysAnchor.tag}
+          nextStage={tryNWaysAnchor.nextStage}
+          onCancel={() => setTryNWaysAnchor(null)}
           onConfirm={handleConfirmSpawn}
-        />
-      )}
-      {compareTarget && (
-        <AttemptCompareModal
-          projectDir={projectDir}
-          branchA={compareTarget.a}
-          branchB={compareTarget.b}
-          step={compareTarget.step}
-          onClose={() => setCompareTarget(null)}
         />
       )}
     </div>
   );
-}
-
-function parseStageFromTag(tag: string): StepType {
-  const m = tag.match(/^checkpoint\/(?:cycle-\d+-)?after-(.+)$/);
-  if (!m) return "plan";
-  return m[1].replaceAll("-", "_") as StepType;
-}
-
-function nextStageOf(step: StepType): StepType {
-  const idx = STAGE_ORDER_RENDERER.indexOf(step);
-  if (idx < 0 || idx >= STAGE_ORDER_RENDERER.length - 1) return step;
-  return STAGE_ORDER_RENDERER[idx + 1];
 }

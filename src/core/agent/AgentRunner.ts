@@ -5,6 +5,7 @@ import type {
   RunConfig,
 } from "../types.js";
 import type { RunLogger } from "../log.js";
+import type { ClaudeProfile } from "../agent-profile.js";
 
 /** Context passed to runStep. Everything a runner needs to execute one step. */
 export interface StepContext {
@@ -25,6 +26,20 @@ export interface StepContext {
   emit: EmitFn;
   /** Structured logger supplied by the orchestrator. */
   rlog: RunLogger;
+  /**
+   * 010 — per-variant agent profile. When set, overrides `config.model`,
+   * appends `systemPromptAppend` to the assembled system prompt, and passes
+   * `allowedTools` as the SDK's allowed-tools restriction. Default behavior
+   * is unchanged when undefined.
+   */
+  profile?: ClaudeProfile;
+  /**
+   * 010 — variant-specific working directory. When set, the runner spawns
+   * the SDK with this CWD instead of `config.projectDir`, so the runner's
+   * native config discovery picks up the overlaid `.claude/` inside the
+   * worktree.
+   */
+  worktreePath?: string;
 }
 
 export interface StepResult {
@@ -53,6 +68,10 @@ export interface TaskPhaseContext {
   rlog: RunLogger;
   /** Callback to apply TodoWrite updates — owned by the orchestrator. */
   onTodoWrite: (todos: Array<{ content?: string; status?: string }>) => void;
+  /** 010 — same as StepContext.profile. */
+  profile?: ClaudeProfile;
+  /** 010 — same as StepContext.worktreePath. */
+  worktreePath?: string;
 }
 
 export interface TaskPhaseResult {

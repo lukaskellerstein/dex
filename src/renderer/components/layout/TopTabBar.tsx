@@ -8,8 +8,8 @@ interface Props {
 }
 
 const TABS: { id: TopTab; label: string; Icon: typeof ListChecks }[] = [
-  { id: "steps", label: "Steps", Icon: ListChecks },
   { id: "timeline", label: "Timeline", Icon: GitBranch },
+  { id: "steps", label: "Steps", Icon: ListChecks },
 ];
 
 export function TopTabBar({ active, onChange }: Props) {

@@ -1,9 +1,10 @@
-import { CheckCircle, Circle, Loader, Minus, Pause, ExternalLink } from "lucide-react";
+import { CheckCircle, Circle, Loader, Minus, Pause, PauseCircle, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import type { StepType } from "../../../core/types.js";
-import type { UiLoopStage, ImplementSubPhase } from "../../hooks/useOrchestrator.js";
+import type { UiLoopStage, ImplementSubPhase, LatestAction } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { SpecCard } from "../project-overview/SpecCard.js";
+import { useNow, relativeTimeShort } from "../../hooks/useNow.js";
 
 const CYCLE_STAGES: StepType[] = [
   "gap_analysis",
@@ -35,7 +36,7 @@ const STEP_LABELS: Record<StepType, string> = {
   commit: "Commit",
 };
 
-type StageStatus = "pending" | "running" | "completed" | "skipped" | "failed" | "paused";
+type StageStatus = "pending" | "running" | "completed" | "skipped" | "failed" | "paused" | "pause-pending";
 
 function getStageVisibility(
   stageType: StepType,
@@ -64,7 +65,11 @@ function deriveStageStatus(
   hasVerifyOrLater: boolean,
   implementPhases: ImplementSubPhase[],
   isRunning: boolean,
-  isPausedCycle: boolean
+  isPausedCycle: boolean,
+  /** 010: stage types whose step-commit is on the active path. Overlay for navigated state. */
+  pathStages: ReadonlySet<StepType>,
+  /** 010: stage types reserved as the "next" pause-pending row when paused. */
+  pausePendingStage: StepType | null,
 ): StageStatus {
   // For implement, derive from currentStage and implementPhases
   if (stageType === "implement") {
@@ -87,6 +92,9 @@ function deriveStageStatus(
       if (allDone) return "completed";
       return isRunning ? "running" : "paused";
     }
+    // 010 — selectedPath overlay before the pending fallback.
+    if (pathStages.has("implement")) return "completed";
+    if (pausePendingStage === "implement") return "pause-pending";
     if (!isActiveCycle && decision) return "pending";
     return "pending";
   }
@@ -106,6 +114,16 @@ function deriveStageStatus(
   }
 
   if (getStageVisibility(stageType, decision) === "skip") return "skipped";
+
+  // 010 — selectedPath overlay: the orchestrator has no record for this
+  // stage, but the active path's commit history says it ran. Common when
+  // the user navigates via the Timeline to a branch that has step-commits
+  // beyond what `useOrchestrator` last loaded.
+  if (pathStages.has(stageType)) return "completed";
+
+  // 010 — pause-pending: when the run is paused, mark the next unstarted
+  // stage so users see *where* the run will resume from.
+  if (pausePendingStage === stageType) return "pause-pending";
 
   return "pending";
 }
@@ -164,6 +182,20 @@ function StatusDot({ status }: { status: StageStatus }) {
           <Pause size={10} fill="currentColor" />
         </div>
       );
+    case "pause-pending":
+      // Orange hollow pause-circle marking the next-unstarted row when the
+      // run is paused. Distinct from "paused" (which marks the stage that
+      // was actively running when the pause hit).
+      return (
+        <div style={{
+          ...base,
+          background: "transparent",
+          border: "2px dashed var(--status-warning, #f59e0b)",
+          color: "var(--status-warning, #f59e0b)",
+        }}>
+          <PauseCircle size={11} strokeWidth={2} />
+        </div>
+      );
     case "failed":
       return (
         <div style={{ ...base, background: "color-mix(in srgb, var(--status-error) 15%, var(--surface-elevated))", border: "2px solid var(--status-error)", color: "var(--status-error)" }}>
@@ -186,6 +218,7 @@ function StageRow({
   hasTrace,
   onClick,
   children,
+  latestAction,
 }: {
   stageType: StepType;
   status: StageStatus;
@@ -195,12 +228,19 @@ function StageRow({
   hasTrace: boolean;
   onClick: () => void;
   children?: React.ReactNode;
+  /** Live indicator content; only honored when this row is the running one. */
+  latestAction?: LatestAction | null;
 }) {
   const [hovered, setHovered] = useState(false);
   const isRunning = status === "running";
   const isCompleted = status === "completed";
   const isSkipped = status === "skipped";
   const isPaused = status === "paused";
+  const isPausePending = status === "pause-pending";
+
+  // Tick once per second only while this row is showing a live indicator,
+  // so paused/idle UIs don't waste frames.
+  const now = useNow(1000, isRunning && !!latestAction);
 
   return (
     <div>
@@ -219,7 +259,7 @@ function StageRow({
             ? "color-mix(in srgb, var(--status-info) 8%, transparent)"
             : isRunning
               ? "color-mix(in srgb, var(--status-info) 5%, transparent)"
-              : isPaused
+              : isPaused || isPausePending
                 ? "color-mix(in srgb, var(--status-warning, #f59e0b) 5%, transparent)"
                 : "transparent",
           transition: "background 0.15s",
@@ -234,14 +274,14 @@ function StageRow({
         <span
           style={{
             fontSize: "0.8rem",
-            fontWeight: isRunning || isPaused ? 600 : 400,
+            fontWeight: isRunning || isPaused || isPausePending ? 600 : 400,
             color: hovered && hasTrace
               ? "var(--status-info)"
               : isSkipped
                 ? "var(--foreground-dim)"
                 : isRunning
                   ? "var(--status-info)"
-                  : isPaused
+                  : isPaused || isPausePending
                     ? "var(--status-warning, #f59e0b)"
                     : isCompleted
                       ? "var(--foreground-muted)"
@@ -263,14 +303,34 @@ function StageRow({
         )}
 
         {isRunning && (
-          <span style={{ fontSize: "0.68rem", color: "var(--status-info)", fontStyle: "italic" }}>
-            running...
+          <span
+            style={{
+              fontSize: "0.68rem",
+              color: "var(--status-info)",
+              fontStyle: "italic",
+              fontFamily: latestAction ? "var(--font-mono)" : undefined,
+              maxWidth: 280,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={latestAction ? `${latestAction.label} · ${relativeTimeShort(latestAction.createdAt, now)}` : undefined}
+          >
+            {latestAction
+              ? `${latestAction.label} · ${relativeTimeShort(latestAction.createdAt, now)}`
+              : "running…"}
           </span>
         )}
 
         {isPaused && (
           <span style={{ fontSize: "0.68rem", color: "var(--status-warning, #f59e0b)", fontWeight: 500 }}>
             paused
+          </span>
+        )}
+
+        {isPausePending && (
+          <span style={{ fontSize: "0.68rem", color: "var(--status-warning, #f59e0b)", fontWeight: 500, fontStyle: "italic" }}>
+            next on resume
           </span>
         )}
 
@@ -339,6 +399,10 @@ export interface StageListProps {
   onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
+  /** 010 — step types whose step-commits live on the active path for this cycle. */
+  pathStages?: ReadonlySet<StepType>;
+  /** Latest "interesting" agent step in the running stage — used for the live indicator. */
+  latestAction?: LatestAction | null;
 }
 
 export function StageList({
@@ -353,6 +417,8 @@ export function StageList({
   onStageClick,
   onImplPhaseClick,
   onSelectSpec,
+  pathStages,
+  latestAction,
 }: StageListProps) {
   const hasVerifyOrLater = stages.some(
     (s) => (s.type === "verify" || s.type === "learnings") && s.status === "completed"
@@ -361,6 +427,21 @@ export function StageList({
   const visibleStages = CYCLE_STAGES.filter(
     (st) => getStageVisibility(st, decision) === "show" || stages.some((s) => s.type === st)
   );
+
+  // 010 — `pause-pending` is the FIRST visible stage that has neither an
+  // orchestrator record nor a step-commit on the active path, when this cycle
+  // is paused. That's the row that will run next when the user resumes.
+  const path = pathStages ?? new Set<StepType>();
+  let pausePendingStage: StepType | null = null;
+  if (isPausedCycle && isActiveCycle) {
+    for (const st of visibleStages) {
+      const hasActual = stages.some((s) => s.type === st);
+      if (hasActual) continue;
+      if (path.has(st)) continue;
+      pausePendingStage = st;
+      break;
+    }
+  }
 
   return (
     <div style={{ padding: "4px 0 4px 8px" }}>
@@ -375,7 +456,9 @@ export function StageList({
           hasVerifyOrLater,
           implementPhases,
           isRunning,
-          isPausedCycle
+          isPausedCycle,
+          path,
+          pausePendingStage,
         );
 
         const implCost = stageType === "implement"
@@ -401,6 +484,7 @@ export function StageList({
                 onStageClick(actual);
               }
             }}
+            latestAction={status === "running" ? latestAction : null}
           >
             {stageType === "implement" && (status === "running" || status === "completed" || status === "paused") && (
               <ImplementSpecView

@@ -15,8 +15,13 @@ import {
   readVariantGroupFile,
   deleteVariantGroupFile,
   attemptBranchName,
+  jumpTo,
+  unmarkCheckpoint,
+  unselect,
+  syncStateFromHead,
   type VariantSpawnRequest,
   type VariantGroupFile,
+  type JumpToResult,
 } from "../../core/checkpoints.js";
 import {
   acquireStateLock,
@@ -91,6 +96,8 @@ export function registerCheckpointsHandlers(): void {
         pending: [],
         captureBranches: [],
         startingPoint: null,
+        commits: [],
+        selectedPath: [],
       };
     }
   });
@@ -163,6 +170,35 @@ export function registerCheckpointsHandlers(): void {
   );
 
   ipcMain.handle(
+    "checkpoints:unmark",
+    async (_e, projectDir: string, sha: string) =>
+      withLock(projectDir, () => unmarkCheckpoint(projectDir, sha, ipcLogger)),
+  );
+
+  ipcMain.handle(
+    "checkpoints:unselect",
+    async (_e, projectDir: string, branchName: string) =>
+      withLock(projectDir, () => unselect(projectDir, branchName, ipcLogger)),
+  );
+
+  ipcMain.handle(
+    "checkpoints:syncStateFromHead",
+    async (_e, projectDir: string) =>
+      withLock(projectDir, () => syncStateFromHead(projectDir, ipcLogger)),
+  );
+
+  ipcMain.handle(
+    "checkpoints:jumpTo",
+    async (
+      _e,
+      projectDir: string,
+      targetSha: string,
+      options?: { force?: "save" | "discard" },
+    ): Promise<JumpToResult | { ok: false; error: "locked_by_other_instance" }> =>
+      withLock(projectDir, () => jumpTo(projectDir, targetSha, options, ipcLogger)),
+  );
+
+  ipcMain.handle(
     "checkpoints:goBack",
     async (
       _e,
@@ -206,15 +242,23 @@ export function registerCheckpointsHandlers(): void {
           step: request.step,
           parallel: spawn.result.parallel,
           createdAt: now,
-          variants: spawn.result.branches.map((branch, i) => ({
-            letter: request.variantLetters[i],
-            branch,
-            worktree: spawn.result.worktrees?.[i] ?? null,
-            status: "pending",
-            runId: null,
-            candidateSha: null,
-            errorMessage: null,
-          })),
+          variants: spawn.result.branches.map((branch, i) => {
+            const letter = request.variantLetters[i];
+            const profileBinding = request.profiles?.find((p) => p.letter === letter)?.profile ?? null;
+            return {
+              letter,
+              branch,
+              worktree: spawn.result.worktrees?.[i] ?? null,
+              status: "pending" as const,
+              runId: null,
+              candidateSha: null,
+              errorMessage: null,
+              // 010 — record profile binding for resume-mid-variant.
+              profile: profileBinding
+                ? { name: profileBinding.name, agentDir: profileBinding.agentDir }
+                : null,
+            };
+          }),
           resolved: { kind: null, pickedLetter: null, resolvedAt: null },
         };
         writeVariantGroupFile(projectDir, group);

@@ -97,7 +97,7 @@ export default function App() {
   const project = useProject();
   const orchestrator = useOrchestrator();
   const [currentView, setCurrentView] = useState<View>("overview");
-  const [topTab, setTopTab] = useState<TopTab>("steps");
+  const [topTab, setTopTab] = useState<TopTab>("timeline");
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
 
   // Derive selectedSubagent from live data so completedAt updates propagate
@@ -321,13 +321,21 @@ export default function App() {
     }
   };
 
-  const handleStart = (partial: Partial<RunConfig>) => {
+  const handleStart = async (partial: Partial<RunConfig>) => {
     const projectDir = partial.projectDir ?? project.projectDir!;
 
     // If we have loop history (paused loop), resume in loop mode
     const hasLoopHistory = orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
     if (hasLoopHistory || orchestrator.mode === "loop") {
-      // Resume from state file
+      // 010 — sync state.json from HEAD's step-commit before resuming so the
+      // orchestrator continues from wherever the user navigated to in the
+      // Timeline, not from where state.json was last frozen by the previous
+      // run. No-op when HEAD isn't on a step-commit.
+      try {
+        await window.dexAPI.checkpoints.syncStateFromHead(projectDir);
+      } catch (err) {
+        console.warn("[app] syncStateFromHead before resume failed:", err);
+      }
       handleStartLoop({ resume: true });
       return;
     }
@@ -747,6 +755,7 @@ export default function App() {
         onSelectSpec={handleSelectSpec}
         debugBadge={<DebugCopyBadge context={debugContext} />}
         projectDir={project.projectDir}
+        latestAction={orchestrator.latestAction}
       />
     );
   } else if (currentView === "loop-start") {
@@ -832,9 +841,46 @@ export default function App() {
     <TopTabBar active={topTab} onChange={setTopTab} />
   ) : null;
 
+  // 010 — when the user is on the Steps tab, force the Loop dashboard regardless
+  // of whichever sub-view currentView points at. Spec / trace / subagent
+  // detail views remain reachable from inside the dashboard via spec-card
+  // clicks; they don't belong on the top-level "Steps" tab.
+  const stepsTabContent =
+    project.projectDir && project.specSummaries.length === 0 && !orchestrator.isRunning ? (
+      <LoopStartPanel
+        projectDir={project.projectDir}
+        isRunning={orchestrator.isRunning}
+        onStart={handleStartLoop}
+      />
+    ) : project.projectDir ? (
+      <LoopDashboard
+        cycles={orchestrator.loopCycles}
+        preCycleStages={orchestrator.preCycleStages}
+        prerequisitesChecks={orchestrator.prerequisitesChecks}
+        isCheckingPrerequisites={orchestrator.isCheckingPrerequisites}
+        currentCycle={orchestrator.currentCycle}
+        currentStage={orchestrator.currentStage}
+        isClarifying={orchestrator.isClarifying}
+        isRunning={orchestrator.isRunning}
+        totalCost={orchestrator.totalCost}
+        loopTermination={orchestrator.loopTermination}
+        specSummaries={project.specSummaries}
+        onStageClick={handleStageClick}
+        onImplPhaseClick={handleImplPhaseClick}
+        onSelectSpec={handleSelectSpec}
+        debugBadge={<DebugCopyBadge context={debugContext} />}
+        projectDir={project.projectDir}
+        latestAction={orchestrator.latestAction}
+      />
+    ) : (
+      content
+    );
+
   const shellContent =
     topTab === "timeline" && project.projectDir ? (
       <TimelineView projectDir={project.projectDir} />
+    ) : topTab === "steps" && project.projectDir ? (
+      stepsTabContent
     ) : (
       content
     );

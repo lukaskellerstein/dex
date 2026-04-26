@@ -36,13 +36,11 @@ export function commitCheckpoint(
   stage: string,
   cycleNumber: number,
   featureName: string | null,
-  cost: number
 ): string {
   // Two-line structured message per 008 contract. Line 2 is machine-parseable.
   const featureSlug = featureName ?? "-";
-  const costStr = cost.toFixed(2);
   const message =
-    `dex: ${stage} completed [cycle:${cycleNumber}] [feature:${featureSlug}] [cost:$${costStr}]\n` +
+    `dex: ${stage} completed [cycle:${cycleNumber}] [feature:${featureSlug}]\n` +
     `[checkpoint:${stage}:${cycleNumber}]`;
 
   // Stage tracked Dex files only. state.json is gitignored (008 P3); committing

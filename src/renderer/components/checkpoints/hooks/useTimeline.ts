@@ -10,6 +10,8 @@ const EMPTY: TimelineSnapshot = {
   pending: [],
   captureBranches: [],
   startingPoint: null,
+  commits: [],
+  selectedPath: [],
 };
 
 export function useTimeline(projectDir: string | null): {

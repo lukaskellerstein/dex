@@ -12,7 +12,12 @@ import type {
   VariantGroupFile,
   VariantSpawnRequest,
   VariantSpawnResult,
+  JumpToResult,
 } from "../core/checkpoints.js";
+import type {
+  ProfileEntry,
+  DexJsonShape,
+} from "../core/agent-profile.js";
 
 interface CheckpointsApi {
   listTimeline(projectDir: string): Promise<TimelineSnapshot>;
@@ -40,6 +45,21 @@ interface CheckpointsApi {
     | { ok: true }
     | { ok: false; error: string }
   >;
+  unmark(projectDir: string, sha: string): Promise<
+    | { ok: true; deleted: string[] }
+    | { ok: false; error: string }
+    | { ok: false; error: "locked_by_other_instance" }
+  >;
+  unselect(projectDir: string, branchName: string): Promise<
+    | { ok: true; switchedTo: string | null; deleted: string }
+    | { ok: false; error: string }
+    | { ok: false; error: "locked_by_other_instance" }
+  >;
+  syncStateFromHead(projectDir: string): Promise<
+    | { ok: true; updated: boolean; step?: string; cycle?: number }
+    | { ok: false; error: string }
+    | { ok: false; error: "locked_by_other_instance" }
+  >;
   goBack(projectDir: string, tag: string, options?: { force?: "save" | "discard" }): Promise<
     | { ok: true; branch: string }
     | { ok: false; error: "dirty_working_tree"; files: string[] }
@@ -47,6 +67,11 @@ interface CheckpointsApi {
     | { ok: false; error: "locked_by_other_instance" }
     | { ok: false; error: string }
   >;
+  jumpTo(
+    projectDir: string,
+    targetSha: string,
+    options?: { force?: "save" | "discard" },
+  ): Promise<JumpToResult | { ok: false; error: "locked_by_other_instance" }>;
   spawnVariants(
     projectDir: string,
     request: VariantSpawnRequest,
@@ -134,6 +159,16 @@ interface DexAPI {
 
   // Checkpoints (008)
   checkpoints: CheckpointsApi;
+
+  // Agent profiles (010 — US4)
+  profiles: {
+    list(projectDir: string): Promise<ProfileEntry[]>;
+    saveDexJson(projectDir: string, name: string, dexJson: DexJsonShape): Promise<
+      | { ok: true }
+      | { ok: false; error: string }
+      | { ok: false; error: "locked_by_other_instance" }
+    >;
+  };
 
   // Window controls
   minimize(): Promise<void>;

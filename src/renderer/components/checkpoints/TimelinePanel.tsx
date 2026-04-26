@@ -1,89 +1,143 @@
 import { useCallback, useState } from "react";
 import { useTimeline } from "./hooks/useTimeline";
-import { PastAttemptsList, type SelectedNode } from "./PastAttemptsList";
-import { NodeDetailPanel } from "./NodeDetailPanel";
 import { GoBackConfirm } from "./GoBackConfirm";
 import { TimelineGraph } from "./TimelineGraph";
+import { CommitContextMenu } from "./CommitContextMenu";
+import type { TimelineCommit } from "../../../core/checkpoints.js";
 
 interface Props {
   projectDir: string;
   /** Disabled: no git repo / no identity. */
   disabled?: boolean;
   disabledReason?: string;
-  /** When US4 lands, parent opens the variant spawn flow. */
-  onTryNWays?: (tag: string) => void;
-  /** When US6 lands, parent opens the attempt compare modal. */
-  onCompareStart?: (branch: string) => void;
-  /** Called after the user takes an action that may require an orchestrator nudge. */
+  /** Right-click "Try N ways from here" — parent opens the variant modal. */
+  onTryNWaysAt?: (commit: TimelineCommit) => void;
+  /** Called after a click-to-jump succeeds and HEAD has moved. */
   onAttemptSwitched?: () => void;
-  /** When true, the "Keep this" action is enabled (step mode + pending candidate selected). */
-  canPromote?: boolean;
-  canTryNWays?: boolean;
 }
 
 interface DirtyEnvelope {
-  tag: string;
+  /** SHA the user originally wanted to jump to. The save/discard retry uses it. */
+  targetSha: string;
   files: string[];
 }
 
+interface MenuState {
+  commit: TimelineCommit;
+  isKept: boolean;
+  position: { x: number; y: number };
+}
+
 /**
- * Container for the checkpoint UX. Composes the graph (above) + past-attempts
- * list (below) + detail panel (side) + dirty-tree modal.
+ * Canonical step-commit tag for a (step, cycleNumber) pair, mirroring the
+ * core's `checkpointTagFor` helper. Kept inline here to avoid pulling the
+ * core module into the renderer at runtime.
+ */
+function tagFor(step: string, cycleNumber: number): string {
+  const slug = step.replaceAll("_", "-");
+  return cycleNumber === 0
+    ? `checkpoint/after-${slug}`
+    : `checkpoint/cycle-${cycleNumber}-after-${slug}`;
+}
+
+/**
+ * 010 — full-width Timeline canvas. Single-click on a node calls jumpTo;
+ * right-click opens the CommitContextMenu (Keep / Unmark / Try N ways).
+ * No side detail panel, no bottom past-attempts list.
  */
 export function TimelinePanel({
   projectDir,
   disabled,
   disabledReason,
-  onTryNWays,
-  onCompareStart,
+  onTryNWaysAt,
   onAttemptSwitched,
-  canPromote,
-  canTryNWays,
 }: Props) {
   const { snapshot, refresh } = useTimeline(projectDir);
-  const [selected, setSelected] = useState<SelectedNode | null>(null);
   const [dirty, setDirty] = useState<DirtyEnvelope | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const performGoBack = useCallback(
-    async (tag: string, force?: "save" | "discard") => {
+  const performJump = useCallback(
+    async (targetSha: string, force?: "save" | "discard") => {
       setError(null);
-      const r = await window.dexAPI.checkpoints.goBack(projectDir, tag, force ? { force } : undefined);
+      const r = await window.dexAPI.checkpoints.jumpTo(
+        projectDir,
+        targetSha,
+        force ? { force } : undefined,
+      );
       if (r.ok) {
-        await refresh();
-        onAttemptSwitched?.();
+        if (r.action !== "noop") {
+          await refresh();
+          onAttemptSwitched?.();
+        }
         return true;
       }
       if (r.error === "dirty_working_tree") {
-        setDirty({ tag, files: (r as { files: string[] }).files });
+        setDirty({ targetSha, files: (r as { files: string[] }).files });
         return false;
       }
-      setError(`Go back failed: ${r.error}`);
+      if (r.error === "locked_by_other_instance") {
+        setError("Another Dex instance holds the project lock — try again in a moment.");
+        return false;
+      }
+      const detail =
+        "message" in r && typeof (r as { message?: string }).message === "string"
+          ? (r as { message: string }).message
+          : r.error;
+      setError(`Jump failed: ${detail}`);
       return false;
     },
     [projectDir, refresh, onAttemptSwitched],
   );
 
-  const handleGoBack = useCallback((tag: string) => performGoBack(tag), [performGoBack]);
-
-  const handleTryAgain = useCallback(
-    async (tag: string) => {
-      const ok = await performGoBack(tag);
-      if (!ok) return;
-      // Caller (LoopDashboard) can pick up the "re-run the step" from onAttemptSwitched
-      // — we don't automatically start the orchestrator here; that's a cross-cutting decision.
-    },
-    [performGoBack],
-  );
+  const handleJump = useCallback((sha: string) => performJump(sha), [performJump]);
 
   const handleKeep = useCallback(
-    async (tag: string, sha: string) => {
+    async (commit: TimelineCommit) => {
       setError(null);
-      const r = await window.dexAPI.checkpoints.promote(projectDir, tag, sha);
-      if (!r.ok) setError(`Keep failed: ${r.error}`);
-      else await refresh();
+      const tag = tagFor(commit.step, commit.cycleNumber);
+      const r = await window.dexAPI.checkpoints.promote(projectDir, tag, commit.sha);
+      if (!("ok" in r) || !r.ok) {
+        setError(`Keep failed: ${("error" in r && r.error) || "unknown"}`);
+        return;
+      }
+      await refresh();
     },
     [projectDir, refresh],
+  );
+
+  const handleUnkeep = useCallback(
+    async (commit: TimelineCommit) => {
+      setError(null);
+      const r = await window.dexAPI.checkpoints.unmark(projectDir, commit.sha);
+      if (!("ok" in r) || !r.ok) {
+        setError(`Unmark failed: ${("error" in r && r.error) || "unknown"}`);
+        return;
+      }
+      await refresh();
+    },
+    [projectDir, refresh],
+  );
+
+  const handleTryNWays = useCallback(
+    (commit: TimelineCommit) => {
+      onTryNWaysAt?.(commit);
+    },
+    [onTryNWaysAt],
+  );
+
+  const handleUnselect = useCallback(
+    async (branchName: string) => {
+      setError(null);
+      const r = await window.dexAPI.checkpoints.unselect(projectDir, branchName);
+      if (!("ok" in r) || !r.ok) {
+        setError(`Unselect failed: ${("error" in r && r.error) || "unknown"}`);
+        return;
+      }
+      await refresh();
+      onAttemptSwitched?.();
+    },
+    [projectDir, refresh, onAttemptSwitched],
   );
 
   if (disabled) {
@@ -103,8 +157,16 @@ export function TimelinePanel({
     );
   }
 
+  // headSha — try to derive from the last entry of selectedPath, else from
+  // the starting-point if no commits exist yet. The graph uses this to
+  // emphasize the current HEAD's node.
+  const headSha =
+    snapshot.selectedPath.length > 0
+      ? snapshot.selectedPath[snapshot.selectedPath.length - 1]
+      : (snapshot.startingPoint?.sha ?? null);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0, flex: 1 }}>
       {error && (
         <div
           role="alert"
@@ -119,56 +181,35 @@ export function TimelinePanel({
           {error}
         </div>
       )}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) 300px",
-          gap: 8,
-          minHeight: 240,
-        }}
-      >
-        <TimelineGraph
-          snapshot={snapshot}
-          selectedId={
-            selected?.kind === "checkpoint"
-              ? selected.data.tag
-              : selected?.kind === "attempt"
-                ? selected.data.branch
-                : null
-          }
-          onSelect={setSelected}
-        />
-        <NodeDetailPanel
-          selected={selected}
-          onGoBack={handleGoBack}
-          onTryAgain={handleTryAgain}
-          onTryNWays={onTryNWays}
-          onKeep={handleKeep}
-          onCompare={onCompareStart}
-          canPromote={canPromote}
-          canTryNWays={canTryNWays}
-        />
-      </div>
-      <PastAttemptsList
+      <TimelineGraph
         snapshot={snapshot}
-        onSelect={setSelected}
-        selectedId={
-          selected?.kind === "checkpoint"
-            ? selected.data.tag
-            : selected?.kind === "attempt"
-              ? selected.data.branch
-              : null
-        }
+        onJumpTo={handleJump}
+        onContextMenu={(commit, position) => {
+          setMenu({ commit, isKept: commit.hasCheckpointTag, position });
+        }}
+        headSha={headSha}
+        onUnselect={handleUnselect}
       />
+      {menu && (
+        <CommitContextMenu
+          commit={menu.commit}
+          isKept={menu.isKept}
+          position={menu.position}
+          onKeep={handleKeep}
+          onUnkeep={handleUnkeep}
+          onTryNWays={handleTryNWays}
+          onClose={() => setMenu(null)}
+        />
+      )}
       {dirty && (
         <GoBackConfirm
-          tag={dirty.tag}
+          tag={`commit ${dirty.targetSha.slice(0, 7)}`}
           files={dirty.files}
           onCancel={() => setDirty(null)}
           onChoose={async (action) => {
-            const tag = dirty.tag;
+            const target = dirty.targetSha;
             setDirty(null);
-            await performGoBack(tag, action);
+            await performJump(target, action);
           }}
         />
       )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   AgentStep,
   SubagentInfo,
@@ -14,6 +14,36 @@ import type {
 export interface PendingQuestion {
   requestId: string;
   questions: UserInputQuestion[];
+}
+
+function truncate(s: string, n: number): string {
+  const trimmed = s.trim().replace(/\s+/g, " ");
+  return trimmed.length > n ? trimmed.slice(0, n - 1) + "…" : trimmed;
+}
+
+/** Human label for a step, or null if it's not "live indicator" material. */
+function labelForStep(step: AgentStep): string | null {
+  const meta = (step.metadata ?? {}) as Record<string, unknown>;
+  switch (step.type) {
+    case "tool_call": {
+      const tool = typeof meta.toolName === "string" ? meta.toolName : "tool";
+      return tool;
+    }
+    case "subagent_spawn": {
+      const desc = typeof meta.description === "string" && meta.description ? meta.description : "subagent";
+      return `Task: ${truncate(desc, 40)}`;
+    }
+    case "subagent_result":
+      return "Task done";
+    case "thinking":
+      return "thinking…";
+    case "text": {
+      const preview = step.content ? truncate(step.content, 40) : "";
+      return preview ? `replying: ${preview}` : "replying…";
+    }
+    default:
+      return null;
+  }
 }
 
 // UI-side accumulated step/cycle data
@@ -49,8 +79,15 @@ export interface UiLoopCycle {
   startedAt: string;
 }
 
+export interface LatestAction {
+  label: string;
+  createdAt: string;
+}
+
 export interface OrchestratorHook {
   liveSteps: AgentStep[];
+  /** Most recent "interesting" step in the running stage — what the agent is actively doing. */
+  latestAction: LatestAction | null;
   subagents: SubagentInfo[];
   currentPhase: TaskPhase | null;
   activeSpecDir: string | null;
@@ -902,8 +939,18 @@ export function useOrchestrator(): OrchestratorHook {
     viewingHistoricalRef.current = false;
   }, []);
 
+  const latestAction = useMemo<LatestAction | null>(() => {
+    for (let i = liveSteps.length - 1; i >= 0; i--) {
+      const step = liveSteps[i];
+      const label = labelForStep(step);
+      if (label) return { label, createdAt: step.createdAt };
+    }
+    return null;
+  }, [liveSteps]);
+
   return {
     liveSteps,
+    latestAction,
     subagents,
     currentPhase,
     activeSpecDir,

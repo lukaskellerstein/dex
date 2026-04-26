@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { CheckCircle, ChevronDown, ChevronRight, Circle, DollarSign, SkipForward, Loader, Pause } from "lucide-react";
 import type { StepType } from "../../../core/types.js";
-import type { UiLoopCycle, UiLoopStage } from "../../hooks/useOrchestrator.js";
+import type { UiLoopCycle, UiLoopStage, LatestAction } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { StageList } from "./StageList.js";
 
@@ -23,6 +23,8 @@ function CycleTimelineItem({
   onSelectSpec,
   specSummaries,
   isLast,
+  pathStages,
+  latestAction,
 }: {
   cycle: UiLoopCycle;
   isActive: boolean;
@@ -35,6 +37,8 @@ function CycleTimelineItem({
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   specSummaries: SpecSummary[];
+  pathStages?: ReadonlySet<StepType>;
+  latestAction?: LatestAction | null;
 }) {
   const isCycleRunning = cycle.status === "running" && isRunning;
   // "paused" = cycle was mid-flight when the run was stopped. In the DB it may
@@ -277,6 +281,8 @@ function CycleTimelineItem({
             onStageClick={onStageClick}
             onImplPhaseClick={onImplPhaseClick}
             onSelectSpec={onSelectSpec}
+            pathStages={pathStages}
+            latestAction={isActive ? latestAction : null}
           />
         )}
       </div>
@@ -293,6 +299,10 @@ export interface CycleTimelineProps {
   onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
+  /** 010 — per-cycle map of stages whose step-commits live on the active path. */
+  pathStagesByCycle?: ReadonlyMap<number, ReadonlySet<StepType>>;
+  /** Latest "interesting" agent step in the running stage — used for the live indicator. */
+  latestAction?: LatestAction | null;
 }
 
 export function CycleTimeline({
@@ -304,6 +314,8 @@ export function CycleTimeline({
   onStageClick,
   onImplPhaseClick,
   onSelectSpec,
+  pathStagesByCycle,
+  latestAction,
 }: CycleTimelineProps) {
   // Active cycle expanded by default, completed ones collapsed
   const [manualExpanded, setManualExpanded] = useState<Set<number>>(new Set());
@@ -369,6 +381,8 @@ export function CycleTimeline({
           onImplPhaseClick={onImplPhaseClick}
           onSelectSpec={onSelectSpec}
           specSummaries={specSummaries}
+          pathStages={pathStagesByCycle?.get(cycle.cycleNumber)}
+          latestAction={currentCycle === cycle.cycleNumber ? latestAction : null}
         />
       ))}
 
