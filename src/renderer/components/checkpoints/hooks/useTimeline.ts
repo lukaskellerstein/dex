@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { TimelineSnapshot } from "../../../../core/checkpoints.js";
+import { checkpointService } from "../../../services/checkpointService.js";
+import { orchestratorService } from "../../../services/orchestratorService.js";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -26,7 +28,7 @@ export function useTimeline(projectDir: string | null): {
       return;
     }
     try {
-      const snap = await window.dexAPI.checkpoints.listTimeline(projectDir);
+      const snap = await checkpointService.listTimeline(projectDir);
       setSnapshot(snap);
     } catch {
       setSnapshot(EMPTY);
@@ -53,7 +55,7 @@ export function useTimeline(projectDir: string | null): {
   // Invalidate on orchestrator step events (triggered externally via refresh())
   useEffect(() => {
     if (!projectDir) return;
-    const off = window.dexAPI.onOrchestratorEvent((e) => {
+    const off = orchestratorService.subscribeEvents((e) => {
       const type = (e as { type?: string }).type;
       if (
         type === "stage_candidate" ||

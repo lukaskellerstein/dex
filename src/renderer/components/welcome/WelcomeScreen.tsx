@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen } from "lucide-react";
+import { projectService } from "../../services/projectService.js";
 
 export type WelcomeNextView = "overview" | "loop-dashboard" | "loop-start";
 
@@ -26,7 +27,7 @@ export function WelcomeScreen({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const defaults = await window.dexAPI.getWelcomeDefaults();
+      const defaults = await projectService.getWelcomeDefaults();
       if (cancelled) return;
       setPath((current) => current || defaults.defaultLocation);
       setName((current) => current || defaults.defaultName);
@@ -46,14 +47,14 @@ export function WelcomeScreen({
     }
     const target = `${trimmedPath.replace(/\/$/, "")}/${trimmedName}`;
     const id = setTimeout(async () => {
-      const exists = await window.dexAPI.pathExists(target);
+      const exists = await projectService.pathExists(target);
       setTargetExists(exists);
     }, 150);
     return () => clearTimeout(id);
   }, [path, name]);
 
   const handlePickFolder = useCallback(async () => {
-    const folder = await window.dexAPI.pickFolder();
+    const folder = await projectService.pickFolder();
     if (folder) {
       setPath(folder);
       setError(null);

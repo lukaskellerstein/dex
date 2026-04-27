@@ -6,6 +6,8 @@ import { VariantCompareModal } from "./VariantCompareModal";
 import { ContinueVariantGroupModal } from "./ContinueVariantGroupModal";
 import type { VariantGroupFile } from "../../../core/checkpoints.js";
 import type { StepType } from "../../../core/types.js";
+import { checkpointService } from "../../services/checkpointService.js";
+import { orchestratorService } from "../../services/orchestratorService.js";
 
 interface Props {
   projectDir: string | null;
@@ -43,17 +45,17 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
   useEffect(() => {
     if (!projectDir) return;
     (async () => {
-      const isRepo = await window.dexAPI.checkpoints.checkIsRepo(projectDir);
+      const isRepo = await checkpointService.checkIsRepo(projectDir);
       if (!isRepo) {
         setNeedsRepoInit(true);
         return;
       }
-      const id = await window.dexAPI.checkpoints.checkIdentity(projectDir);
+      const id = await checkpointService.checkIdentity(projectDir);
       if (!id.name || !id.email) {
         setNeedsIdentity(id);
       }
       // Surface any stranded variant group immediately
-      const pending = await window.dexAPI.checkpoints.readPendingVariantGroups(projectDir);
+      const pending = await checkpointService.readPendingVariantGroups(projectDir);
       if (pending.length > 0) {
         setVariantResume(pending[0] as unknown as VariantGroupFile);
       }
@@ -63,7 +65,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
   // Subscribe to orchestrator events → open modals
   useEffect(() => {
     if (!projectDir) return;
-    const off = window.dexAPI.onOrchestratorEvent((raw) => {
+    const off = orchestratorService.subscribeEvents((raw) => {
       const e = raw as unknown as {
         type?: string;
         cycleNumber?: number;
@@ -100,7 +102,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
         case "variant_group_complete":
           if (e.groupId) {
             // Need to fetch the group file to render compare.
-            window.dexAPI.checkpoints
+            checkpointService
               .readPendingVariantGroups(projectDir)
               .then((groups) => {
                 const match = (groups as unknown as VariantGroupFile[]).find(
@@ -112,7 +114,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
           break;
         case "variant_group_resume_needed":
           if (e.groupId) {
-            window.dexAPI.checkpoints
+            checkpointService
               .readPendingVariantGroups(projectDir)
               .then((groups) => {
                 const match = (groups as unknown as VariantGroupFile[]).find(
@@ -129,10 +131,10 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
 
   const handleInitRepo = useCallback(async () => {
     if (!projectDir) return;
-    const r = await window.dexAPI.checkpoints.initRepo(projectDir);
+    const r = await checkpointService.initRepo(projectDir);
     if (r.ok) {
       setNeedsRepoInit(false);
-      const id = await window.dexAPI.checkpoints.checkIdentity(projectDir);
+      const id = await checkpointService.checkIdentity(projectDir);
       if (!id.name || !id.email) setNeedsIdentity(id);
     }
   }, [projectDir]);
@@ -140,7 +142,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
   const handleSaveIdentity = useCallback(
     async (name: string, email: string) => {
       if (!projectDir) return;
-      await window.dexAPI.checkpoints.setIdentity(projectDir, name, email);
+      await checkpointService.setIdentity(projectDir, name, email);
       setNeedsIdentity(null);
     },
     [projectDir],
@@ -148,7 +150,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
 
   const handleKeepCandidate = useCallback(async () => {
     if (!projectDir || !candidate) return;
-    await window.dexAPI.checkpoints.promote(
+    await checkpointService.promote(
       projectDir,
       candidate.checkpointTag,
       candidate.candidateSha,
@@ -183,8 +185,8 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
       // extracted from the parent). For MVP we just tag with
       // `checkpoint/variant-<groupId>-<letter>`.
       const tag = `checkpoint/variant-${variantCompare.groupId.slice(0, 6)}-${letter}`;
-      await window.dexAPI.checkpoints.promote(projectDir, tag, variant.candidateSha);
-      await window.dexAPI.checkpoints.cleanupVariantGroup(
+      await checkpointService.promote(projectDir, tag, variant.candidateSha);
+      await checkpointService.cleanupVariantGroup(
         projectDir,
         variantCompare.groupId,
         "keep",
@@ -197,7 +199,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
 
   const handleDiscardAllVariants = useCallback(async () => {
     if (!projectDir || !variantCompare) return;
-    await window.dexAPI.checkpoints.cleanupVariantGroup(
+    await checkpointService.cleanupVariantGroup(
       projectDir,
       variantCompare.groupId,
       "discard",
@@ -213,7 +215,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
 
   const handleDiscardResume = useCallback(async () => {
     if (!projectDir || !variantResume) return;
-    await window.dexAPI.checkpoints.cleanupVariantGroup(
+    await checkpointService.cleanupVariantGroup(
       projectDir,
       variantResume.groupId,
       "discard",

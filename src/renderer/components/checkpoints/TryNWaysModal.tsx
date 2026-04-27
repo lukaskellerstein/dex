@@ -3,6 +3,8 @@ import { CheckpointModal } from "./Modal";
 import { AgentProfileForm, DEFAULT_SLOT, type VariantSlotState } from "./AgentProfileForm";
 import type { StepType } from "../../../core/types.js";
 import type { ProfileEntry } from "../../../core/agent-profile.js";
+import { checkpointService } from "../../services/checkpointService.js";
+import { profilesService } from "../../services/profilesService.js";
 
 const PARALLELIZABLE_STEPS: ReadonlySet<StepType> = new Set([
   "gap_analysis",
@@ -48,7 +50,7 @@ export function TryNWaysModal({ projectDir, tag, nextStage, onCancel, onConfirm 
   // Load profile list on open.
   useEffect(() => {
     let cancelled = false;
-    window.dexAPI.profiles
+    profilesService
       .list(projectDir)
       .then((e) => {
         if (!cancelled) setEntries(e);
@@ -64,7 +66,7 @@ export function TryNWaysModal({ projectDir, tag, nextStage, onCancel, onConfirm 
   // Cost estimate.
   useEffect(() => {
     let cancelled = false;
-    window.dexAPI.checkpoints
+    checkpointService
       .estimateVariantCost(projectDir, nextStage, n)
       .then((e) => {
         if (!cancelled) setEstimate(e as Estimate);
@@ -98,7 +100,7 @@ export function TryNWaysModal({ projectDir, tag, nextStage, onCancel, onConfirm 
 
   const handleSaveBack = async (name: string, slot: VariantSlotState) => {
     setBusyMsg(`Saving ${name}…`);
-    const r = await window.dexAPI.profiles.saveDexJson(projectDir, name, {
+    const r = await profilesService.saveDexJson(projectDir, name, {
       agentRunner: slot.agentRunner,
       model: slot.model,
       systemPromptAppend: slot.systemPromptAppend || undefined,
@@ -106,7 +108,7 @@ export function TryNWaysModal({ projectDir, tag, nextStage, onCancel, onConfirm 
     });
     if (r.ok) {
       // Refresh entries so the chip + dropdown reflect the new state.
-      const fresh = await window.dexAPI.profiles.list(projectDir);
+      const fresh = await profilesService.list(projectDir);
       setEntries(fresh);
       setBusyMsg(`Saved ${name}.`);
       window.setTimeout(() => setBusyMsg(null), 1500);

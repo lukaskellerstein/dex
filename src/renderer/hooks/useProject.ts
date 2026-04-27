@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { TaskPhase } from "../../core/types.js";
 import type { AgentRunRecord, SpecStats } from "../../core/runs.js";
+import { projectService } from "../services/projectService.js";
+import { historyService } from "../services/historyService.js";
 
 export interface SpecSummary {
   name: string;
@@ -20,13 +22,13 @@ export function useProject() {
   const [phaseStats, setPhaseStats] = useState<Map<number, AgentRunRecord>>(new Map());
 
   const loadSpecs = async (dir: string) => {
-    const specList = await window.dexAPI.listSpecs(dir);
+    const specList = await projectService.listSpecs(dir);
 
     const summaries: SpecSummary[] = [];
     for (const spec of specList) {
       const [parsed, stats] = await Promise.all([
-        window.dexAPI.parseSpec(dir, spec),
-        window.dexAPI.getSpecAggregateStats(dir, spec).catch(() => undefined),
+        projectService.parseSpec(dir, spec),
+        historyService.getSpecAggregateStats(dir, spec).catch(() => undefined),
       ]);
       const totalTasks = parsed.reduce((s, p) => s + p.tasks.length, 0);
       const doneTasks = parsed.reduce(
@@ -56,7 +58,7 @@ export function useProject() {
   };
 
   const openProject = async (): Promise<string | null> => {
-    const dir = await window.dexAPI.openProject();
+    const dir = await projectService.openProject();
     if (dir) {
       setProjectDir(dir);
       setSelectedSpec(null);
@@ -67,7 +69,7 @@ export function useProject() {
   };
 
   const openProjectPath = async (projectPath: string): Promise<{ path: string } | { error: string }> => {
-    const result = await window.dexAPI.openProjectPath(projectPath);
+    const result = await projectService.openProjectPath(projectPath);
     if ("path" in result) {
       setProjectDir(result.path);
       setSelectedSpec(null);
@@ -78,7 +80,7 @@ export function useProject() {
   };
 
   const createProject = async (parentDir: string, name: string): Promise<{ path: string } | { error: string }> => {
-    const result = await window.dexAPI.createProject(parentDir, name);
+    const result = await projectService.createProject(parentDir, name);
     if ("path" in result) {
       setProjectDir(result.path);
       setSelectedSpec(null);
@@ -97,7 +99,7 @@ export function useProject() {
       setPhases([]);
     } else if (selectedSpec) {
       // Re-parse the selected spec to pick up task changes
-      const parsed = await window.dexAPI.parseSpec(projectDir, selectedSpec);
+      const parsed = await projectService.parseSpec(projectDir, selectedSpec);
       setPhases(parsed);
     }
   };
@@ -106,8 +108,8 @@ export function useProject() {
     if (!projectDir) return;
     setSelectedSpec(specName);
     const [parsed, traceRows] = await Promise.all([
-      window.dexAPI.parseSpec(projectDir, specName),
-      window.dexAPI.getSpecAgentRuns(projectDir, specName).catch(() => [] as AgentRunRecord[]),
+      projectService.parseSpec(projectDir, specName),
+      historyService.getSpecAgentRuns(projectDir, specName).catch(() => [] as AgentRunRecord[]),
     ]);
     setPhases(parsed);
     const statsMap = new Map<number, AgentRunRecord>();

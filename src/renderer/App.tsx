@@ -17,6 +17,8 @@ import { ClarificationPanel } from "./components/loop/ClarificationPanel.js";
 import { useOrchestrator } from "./hooks/useOrchestrator.js";
 import { useProject } from "./hooks/useProject.js";
 import { CheckpointsEnvelope } from "./components/checkpoints/CheckpointsEnvelope.js";
+import { orchestratorService } from "./services/orchestratorService.js";
+import { checkpointService } from "./services/checkpointService.js";
 
 interface DebugContext {
   runId: string | null;
@@ -212,7 +214,7 @@ export default function App() {
       ...rest,
       ...(resume ? { resume: true } : {}),
     };
-    window.dexAPI.startRun(config);
+    orchestratorService.startRun(config);
   };
 
   const handleSelectSpec = (spec: string) => {
@@ -247,7 +249,7 @@ export default function App() {
       // Timeline, not from where state.json was last frozen by the previous
       // run. No-op when HEAD isn't on a step-commit.
       try {
-        await window.dexAPI.checkpoints.syncStateFromHead(projectDir);
+        await checkpointService.syncStateFromHead(projectDir);
       } catch (err) {
         console.warn("[app] syncStateFromHead before resume failed:", err);
       }
@@ -271,7 +273,7 @@ export default function App() {
       taskPhases: "all",
       runAllSpecs: true,
     };
-    window.dexAPI.startRun(config);
+    orchestratorService.startRun(config);
   };
 
 
@@ -306,7 +308,7 @@ export default function App() {
     candidateSha: string | null;
   }>({ currentAttemptBranch: null, lastCheckpointTag: null, candidateSha: null });
   useEffect(() => {
-    const off = window.dexAPI.onOrchestratorEvent((raw) => {
+    const off = orchestratorService.subscribeEvents((raw) => {
       const e = raw as unknown as {
         type?: string;
         checkpointTag?: string;
@@ -703,17 +705,12 @@ export default function App() {
         onRefreshProject={project.refreshProject}
         onDeselectSpec={handleDeselectSpec}
         onStart={handleStart}
-        onStop={() => window.dexAPI.stopRun()}
+        onStop={() => orchestratorService.stopRun()}
         tabs={tabs}
         content={shellContent}
       />
-      {orchestrator.pendingQuestion && (
-        <ClarificationPanel
-          requestId={orchestrator.pendingQuestion.requestId}
-          questions={orchestrator.pendingQuestion.questions}
-          onAnswer={orchestrator.answerQuestion}
-        />
-      )}
+      <ClarificationPanel />
+
       <CheckpointsEnvelope projectDir={project.projectDir ?? null} />
     </>
   );

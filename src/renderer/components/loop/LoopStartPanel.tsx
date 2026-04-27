@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Play, FileText, Bold, Italic, Heading1, Heading2, List, ListOrdered, Code, Minus } from "lucide-react";
+import { projectService } from "../../services/projectService.js";
 
 interface LoopStartPanelProps {
   projectDir: string;
@@ -101,7 +102,7 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
   // Auto-detect GOAL.md in project root
   useEffect(() => {
     const defaultPath = `${projectDir}/GOAL.md`;
-    window.dexAPI.readFile(defaultPath).then((content) => {
+    projectService.readFile(defaultPath).then((content) => {
       if (content !== null) {
         setGoalPath(defaultPath);
         setGoalDetected(true);
@@ -119,7 +120,7 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
   const handleSaveGoal = useCallback(async () => {
     const filePath = `${projectDir}/GOAL.md`;
     setSaving(true);
-    const ok = await window.dexAPI.writeFile(filePath, goalContent);
+    const ok = await projectService.writeFile(filePath, goalContent);
     setSaving(false);
     if (ok) {
       setGoalPath(filePath);
@@ -351,7 +352,7 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
               onClick={() => {
                 setShowEditor(true);
                 if (!goalContent && goalPath) {
-                  window.dexAPI.readFile(goalPath).then((c) => {
+                  projectService.readFile(goalPath).then((c) => {
                     if (c) setGoalContent(c);
                   });
                 }

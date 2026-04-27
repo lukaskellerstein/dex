@@ -81,9 +81,9 @@ The wave-gate diff (`diff golden-trace-pre-A.txt /tmp/golden-post.txt`) is read 
 
 ---
 
-## State → hook ownership matrix
+## State → hook ownership matrix (LOCKED at B0 — Phase 5)
 
-> ⚠️ Filled at **B0 (start of Phase 5 / Wave B)**. Seeded here as the target structure; the actual matrix is locked when Wave B begins.
+State partition is strict — every `useState` in the legacy `useOrchestrator.ts` is owned by exactly one hook.
 
 | Hook | States |
 |---|---|
@@ -93,25 +93,36 @@ The wave-gate diff (`diff golden-trace-pre-A.txt /tmp/golden-post.txt`) is read 
 | `useRunSession` | `mode`, `isRunning`, `currentRunId`, `totalDuration`, `activeSpecDir`, `activeTask`, `viewingHistorical` |
 | `usePrerequisites` | `prerequisitesChecks`, `isCheckingPrerequisites` |
 
-**Total**: 21 useState calls. Every state in the existing `useOrchestrator.ts` MUST be assigned to exactly one hook. Verified at the Wave B gate by manual cross-check (or a small audit script if drift becomes a recurring concern).
+**Total**: 21 useState calls (matches the legacy `useOrchestrator.ts`). Every state is assigned to exactly one hook; verified at Wave B gate by cross-check.
+
+**Refs** (not React state but worth tracking): `viewingHistoricalRef`, `modeRef`, `currentCycleRef`, `currentStageRef`, `livePhaseTraceIdRef`, `livePhaseRef` move with the state slice they shadow (e.g. `viewingHistoricalRef` → `useRunSession`).
 
 ---
 
-## Event → hook ownership matrix
+## Event → hook subscription matrix (LOCKED at B0 — Phase 5)
 
-> ⚠️ Filled at **B0 (start of Phase 5 / Wave B)**. Seeded here from the target in `data-model.md` §"Renderer hook state ownership"; locked when Wave B begins.
+Audit of the legacy switch shows that 7 of the 25 cases legitimately touch state in **two or more** hooks (e.g. `step_started` updates `useLiveTrace`'s `liveSteps/currentPhase` AND `useLoopState`'s `currentStage/preCycleStages` AND `useRunSession`'s `activeSpecDir`). A strict 1-event-to-1-hook partition would require introducing a coordinator, which contradicts FR-008's behaviour-preservation gate.
 
-| Hook | Events |
+**Resolution**: each hook subscribes to `orchestratorService.subscribeEvents` independently and handles only the cases that touch its own state slice. Multiple hooks may subscribe to the same event — each mutates only its own state. The cost is 5 IPC subscriptions instead of 1; the benefit is hook-level testability.
+
+| Hook | Events handled (× = primary owner; ○ = cross-cutting touch on own state) |
 |---|---|
-| `useLoopState` | `loop_cycle_started`, `loop_cycle_completed`, `loop_terminated`, `task_phase_started`, `task_phase_completed`, `spec_started`, `spec_completed` |
-| `useLiveTrace` | `step_started`, `step_completed`, `agent_step`, `subagent_started`, `subagent_completed`, `subagent_result` |
-| `useUserQuestion` | `clarification_started`, `clarification_question`, `clarification_completed`, `user_input_request`, `user_input_response` |
-| `useRunSession` | `run_started`, `run_completed`, `state_reconciled`, plus run-level `error` only |
-| `usePrerequisites` | `prerequisites_started`, `prerequisites_check`, `prerequisites_completed` |
+| `useLoopState` | × `loop_cycle_started`, × `loop_cycle_completed`, × `loop_terminated`, ○ `task_phase_started` (impl sub-phase tracking; current cycle/stage refs), ○ `task_phase_completed` (impl sub-phase status; `totalCost` accumulation), ○ `step_started` (`currentStage`, `preCycleStages`/`loopCycles` insert), ○ `step_completed` (stage status update; `totalCost` accumulation), ○ `run_started` (clear cycles/stages/cycle/stage/termination), ○ `run_completed` (clear cycle/stage; freeze `totalCost` to event total) |
+| `useLiveTrace` | × `agent_step`, × `subagent_started`, × `subagent_completed`, ○ `step_started` (reset `liveSteps`/`subagents`; set `currentPhase`/`currentPhaseTraceId`), ○ `task_phase_started` (set `currentPhase`/`currentPhaseTraceId`; reset `liveSteps`/`subagents`), ○ `spec_completed` (clear `currentPhase`/`currentPhaseTraceId`), ○ `run_completed` (clear `currentPhase`/`currentPhaseTraceId`), ○ `tasks_updated` (sync `currentPhase`'s task list) |
+| `useUserQuestion` | × `clarification_started`, × `clarification_completed`, × `user_input_request`, × `user_input_response`, × `clarification_question` (no-op today; reserved), ○ `run_started` (clear `pendingQuestion`/`isClarifying`), ○ `run_completed` (clear `pendingQuestion`/`isClarifying`) |
+| `useRunSession` | × `run_started`, × `run_completed`, × `state_reconciled`, × `error` (run-level — phase-discriminator policy below), ○ `spec_started` (`activeSpecDir`), ○ `spec_completed` (clear `activeSpecDir`), ○ `step_started` (`activeSpecDir` if present in event), ○ `task_phase_started` (clear `activeTask` on entry), ○ `task_phase_completed` (`totalDuration` accumulation), ○ `step_completed` (`totalDuration` accumulation), ○ `tasks_updated` (`activeTask` from in-progress task) |
+| `usePrerequisites` | × `prerequisites_started`, × `prerequisites_check`, × `prerequisites_completed`, ○ `run_started` (clear checks; set `isCheckingPrerequisites=false`) |
 
-**Total**: 25 distinct `event.type` cases. Every case in the existing `useOrchestrator` switch MUST be assigned to exactly one hook.
+**Total**: 25 distinct event-type cases. Every case is handled by at least one hook; **none** is silently dropped. Cases handled by multiple hooks are documented above with the primary-owner discriminator.
 
-The 5 `AgentStep` subtypes (`subagent_result`, `subagent_spawn`, `text`, `thinking`, `tool_call`) are used inside `useLiveTrace`'s `labelForStep` helper; they are not top-level events and don't appear in the matrix. Verified at B0 that no other consumer uses them — if zero, they may be deletable raw SDK passthroughs.
+**Audit policy**: at the Wave B gate, manual diff between the legacy `useOrchestrator.ts` switch and the union of the 5 new hooks' switches must show **zero** orphaned cases (a case in the legacy switch with no handler in any new hook). The 1 ignored case (`error` with empty body in the legacy switch) is preserved in `useRunSession` as a no-op pending the composer-level fatal-error sink in B4.
+
+The 5 `AgentStep` subtypes (`subagent_result`, `subagent_spawn`, `text`, `thinking`, `tool_call`) live in `useLiveTrace`'s `labelForStep` helper only.
+
+**AgentStep subtype audit** (T077): grepped renderer for consumers of the 5 subtypes. Findings:
+- `subagent_spawn`, `text`, `thinking`, `tool_call`, `subagent_result` are consumed by `labelForStep` (now in `useLiveTrace`) AND by various `agent-trace/` components (`AgentStepList`, `ToolCard`, etc.) that render the live step list.
+- The components consume `liveSteps: AgentStep[]` from the composer — they don't read the subtype enum directly, just dispatch on `step.type`.
+- Conclusion: the 5 subtypes are **not deletable**; multiple consumers besides `labelForStep` exist. They stay as-is.
 
 ---
 

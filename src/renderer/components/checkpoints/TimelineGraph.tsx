@@ -5,7 +5,7 @@ import { useD3Timeline } from "./hooks/useD3Timeline.js";
 
 interface Props {
   snapshot: TimelineSnapshot;
-  /** Left-click on a step-commit. Caller invokes window.dexAPI.checkpoints.jumpTo. */
+  /** Left-click on a step-commit. Caller invokes checkpointService.jumpTo. */
   onJumpTo: (sha: string) => void;
   /** Right-click on a step-commit. Caller opens CommitContextMenu (US3). */
   onContextMenu?: (commit: TimelineCommit, position: { x: number; y: number }) => void;
