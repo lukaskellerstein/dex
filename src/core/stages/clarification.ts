@@ -1,7 +1,7 @@
 /**
  * What: Phase A clarification — runs the 4-step interactive clarification flow (product → technical → synthesis → constitution) producing GOAL_clarified.md and a filled constitution. Skips entirely when prior specs already exist alongside a clarified plan.
  * Not: Does not run gap-analysis or the per-feature implement loop. Does not own runStage — that lives in orchestrator.ts and is imported. Does not extract clarification questions; auto-clarification is signaled via `config.autoClarification` and consumed by the prompt builders, not here.
- * Deps: OrchestrationContext, RunConfig (for descriptionFile / autoClarification / model), runStage (from ../orchestrator.js — circular but call-time-safe), prompts.ts builders, runs.* for synthetic skipped-step audit records.
+ * Deps: OrchestrationContext, RunConfig (for descriptionFile / autoClarification / model), runStage (from ../orchestrator.js — circular but call-time-safe), prompts.ts builders, phase-lifecycle.emitSkippedStep for synthetic skipped-step audit records.
  */
 
 import crypto from "node:crypto";
@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
 import type { RunConfig, StepType } from "../types.js";
-import * as runs from "../runs.js";
+import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
 import {
   buildProductClarificationPrompt,
   buildTechnicalClarificationPrompt,
@@ -50,23 +50,8 @@ export async function runClarificationPhase(
   let fullPlanPath = "";
 
   const emitSkippedStep = (step: StepType, cycleNum = 0) => {
-    // Synthetic phase record so the renderer's stepper advances past skipped stages.
-    const traceId = crypto.randomUUID();
-    runs.startAgentRun(projectDir, runId, {
-      agentRunId: traceId,
-      runId,
-      specDir: null,
-      taskPhaseNumber: cycleNum,
-      taskPhaseName: `loop:${step}`,
-      step,
-      cycleNumber: cycleNum,
-      featureSlug: null,
-      startedAt: new Date().toISOString(),
-      status: "running",
-    });
-    emit({ type: "step_started", runId, cycleNumber: cycleNum, step, agentRunId: traceId });
-    runs.completeAgentRun(projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-    emit({ type: "step_completed", runId, cycleNumber: cycleNum, step, agentRunId: traceId, costUsd: 0, durationMs: 0 });
+    // Delegates to the consolidated helper in phase-lifecycle.ts (T043 wire-in).
+    phaseEmitSkippedStep({ ctx, runId, agentRunId: crypto.randomUUID(), step, cycleNumber: cycleNum });
   };
 
   // ── Skip path: prior specs + clarified plan exist ────────

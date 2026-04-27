@@ -23,7 +23,7 @@ import type {
   LoopTermination,
   FailureRecord,
 } from "../types.js";
-import { parseTasksFile, discoverNewSpecDir } from "../parser.js";
+import { discoverNewSpecDir } from "../parser.js";
 import * as runs from "../runs.js";
 import { updateState, STEP_ORDER } from "../state.js";
 import {
@@ -32,29 +32,27 @@ import {
   getActiveFeature,
   updateFeatureStatus,
   updateFeatureSpecDir,
-  appendLearnings,
 } from "../manifest.js";
 import {
   buildSpecifyPrompt,
   buildLoopPlanPrompt,
   buildLoopTasksPrompt,
-  buildVerifyPrompt,
-  buildVerifyFixPrompt,
-  buildLearningsPrompt,
   buildFeatureEvaluationPrompt,
   GAP_ANALYSIS_SCHEMA,
-  VERIFY_SCHEMA,
-  LEARNINGS_SCHEMA,
 } from "../prompts.js";
 // Circular: orchestrator.ts and this module call each other's exports at call
 // time; both sides export functions/classes only, so ESM module init is safe.
 import {
   runStage,
-  runPhase,
   AbortError,
-  RunTaskState,
   listSpecDirs,
 } from "../orchestrator.js";
+import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
+import {
+  parseGapAnalysisDecision,
+  shouldRunStage as shouldRunStageFromDecision,
+} from "../gap-analysis.js";
+import { runImplementVerifyLearnings } from "./cycle-stages.js";
 
 export interface MainLoopResult {
   cyclesCompleted: number;
@@ -111,24 +109,9 @@ export async function runMainLoop(
     }).catch(() => { /* state write failure shouldn't crash the run */ });
   };
 
-  // Duplicated from orchestrator.ts:1059. A4.5 may consolidate.
+  // Delegates to the consolidated helper in phase-lifecycle.ts (A6/T043 wire-in).
   const emitSkippedStep = (step: StepType, cycleNum = 0) => {
-    const traceId = crypto.randomUUID();
-    runs.startAgentRun(config.projectDir, runId, {
-      agentRunId: traceId,
-      runId,
-      specDir: null,
-      taskPhaseNumber: cycleNum,
-      taskPhaseName: `loop:${step}`,
-      step,
-      cycleNumber: cycleNum,
-      featureSlug: null,
-      startedAt: new Date().toISOString(),
-      status: "running",
-    });
-    emit({ type: "step_started", runId, cycleNumber: cycleNum, step, agentRunId: traceId });
-    runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-    emit({ type: "step_completed", runId, cycleNumber: cycleNum, step, agentRunId: traceId, costUsd: 0, durationMs: 0 });
+    phaseEmitSkippedStep({ ctx, runId, agentRunId: crypto.randomUUID(), step, cycleNumber: cycleNum });
   };
 
   // ── Phase B: Autonomous Loop ────────────────────────────
@@ -241,15 +224,11 @@ export async function runMainLoop(
               { type: "json_schema", schema: GAP_ANALYSIS_SCHEMA as unknown as Record<string, unknown> }
             );
             cumulativeCost += evalResult.cost;
-            const evaluation = evalResult.structuredOutput as { decision: string; reason: string } | null;
-            if (!evaluation) {
-              throw new Error(`Gap analysis for ${active.specDir} returned null structured output — cannot determine RESUME vs REPLAN`);
-            }
-            if (evaluation.decision === "REPLAN_FEATURE") {
-              decision = { type: "REPLAN_FEATURE", specDir: active.specDir };
-            } else {
-              decision = { type: "RESUME_FEATURE", specDir: active.specDir };
-            }
+            // Delegate to gap-analysis.parseGapAnalysisDecision (A5 wire-in).
+            // The parser throws on null/malformed; the surrounding try/catch
+            // surfaces it as `gap analysis failed` and breaks the cycle —
+            // matches the previous behaviour exactly.
+            decision = parseGapAnalysisDecision(evalResult.structuredOutput, active.specDir);
           } else {
             // Active but no specDir — re-run specify for this feature (deterministic)
             emitSyntheticGapAnalysis("");
@@ -350,26 +329,11 @@ export async function runMainLoop(
 
     let cycleCost = 0;
 
-    // Closed over the finalized `decision` (after force-replan promotion).
-    // Centralizes the decision→stages mapping; only callers for plan/tasks
-    // use it today. The switch has no `default` — TypeScript enforces
-    // exhaustiveness if a new decision variant is added.
-    // GAPS_COMPLETE is already handled by the early `break` above, so the
-    // narrowed type at this point excludes it — the switch below is
-    // exhaustive over the remaining four variants.
-    const shouldRun = (step: StepType): boolean => {
-      switch (decision.type) {
-        case "NEXT_FEATURE":
-          return step !== "gap_analysis";
-        case "REPLAN_FEATURE":
-          return step === "plan" || step === "tasks" || step === "implement"
-            || step === "verify" || step === "learnings";
-        case "RESUME_FEATURE":
-          return step === "implement" || step === "verify" || step === "learnings";
-        case "RESUME_AT_STEP":
-          return STEP_ORDER.indexOf(step) > STEP_ORDER.indexOf(decision.resumeAtStep);
-      }
-    };
+    // Decision→stages mapping delegated to gap-analysis.shouldRunStage (A5
+    // wire-in). The exhaustiveness check (TypeScript `never` on missing
+    // variants) lives in gap-analysis.ts — adding a new GapAnalysisDecision
+    // variant produces a compile error there, the single source of truth.
+    const shouldRun = (step: StepType): boolean => shouldRunStageFromDecision(decision, step);
 
     try {
       // Emit synthetic completed events for stages that won't actually run,
@@ -468,258 +432,14 @@ export async function runMainLoop(
 
       if (abortController?.signal.aborted) throw new AbortError();
 
-      // Implement (T032)
+      // ── Implement → Verify → Learnings (extracted to stages/cycle-stages.ts in 011-A4.5) ──
       const implSpecDir = specDir!;
-      const implSpecPath = implSpecDir.startsWith("/")
-        ? implSpecDir
-        : path.join(config.projectDir, implSpecDir);
-
-      if (currentRunState) {
-        currentRunState.currentStep = "implement";
-        currentRunState.specDir = implSpecDir;
-      }
-      // Update FeatureArtifacts.status to "implementing"
-      if (activeProjectDir && implSpecDir) {
-        updateState(activeProjectDir, {
-          artifacts: { features: { [implSpecDir]: { status: "implementing" } } },
-        } as never).catch(() => {});
-      }
-
-      // Create a stage-level phase record so the UI shows implement in the stage list
-      const implStageTraceId = crypto.randomUUID();
-      runs.startAgentRun(config.projectDir, runId, {
-        agentRunId: implStageTraceId,
-        runId,
-        specDir: implSpecDir,
-        taskPhaseNumber: cycleNumber,
-        taskPhaseName: "loop:implement",
-        step: "implement",
-        cycleNumber,
-        featureSlug: path.basename(implSpecDir),
-        startedAt: new Date().toISOString(),
-        status: "running",
+      const ivlResult = await runImplementVerifyLearnings({
+        ctx, config, runId, cycleNumber,
+        specDir: implSpecDir, fullPlanPath, rlog,
       });
-
-      emit({
-        type: "step_started",
-        runId,
-        cycleNumber,
-        step: "implement",
-        agentRunId: implStageTraceId,
-        specDir: implSpecDir,
-      });
-
-      const implStageStart = Date.now();
-      let implStageCost = 0;
-      let implStageInputTokens = 0;
-      let implStageOutputTokens = 0;
-      let activePhaseTraceId: string | null = null;
-      let implStageFailed = false;
-
-      // Parse tasks.md to get phases, then run each phase.
-      // RunTaskState is created ONCE and reused across all phases so that
-      // progress from earlier phases is preserved (promote-only semantics).
-      const phases = parseTasksFile(config.projectDir, implSpecDir);
-      const implConfig = { ...config, specDir: implSpecDir };
-      const runTaskState = new RunTaskState(phases);
-
-      // Emit initial task state so the UI can show the spec card immediately
-      emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
-
-      try {
-        for (const phase of phases) {
-          if (abortController?.signal.aborted) break;
-          if (phase.status === "complete") continue;
-
-          const agentRunId = crypto.randomUUID();
-          activePhaseTraceId = agentRunId;
-          runs.startAgentRun(config.projectDir, runId, {
-            agentRunId,
-            runId,
-            specDir: implSpecDir,
-            taskPhaseNumber: phase.number,
-            taskPhaseName: phase.name,
-            step: null,
-            cycleNumber,
-            featureSlug: path.basename(implSpecDir),
-            startedAt: new Date().toISOString(),
-            status: "running",
-          });
-
-          if (currentRunState) {
-            currentRunState.agentRunId = agentRunId;
-            currentRunState.taskPhaseNumber = phase.number;
-            currentRunState.taskPhaseName = phase.name;
-          }
-
-          emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
-
-          const phaseResult = await runPhase(implConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
-          runs.completeAgentRun(config.projectDir, runId, agentRunId, {
-            status: "completed",
-            costUsd: phaseResult.cost,
-            durationMs: phaseResult.durationMs,
-            inputTokens: phaseResult.inputTokens || null,
-            outputTokens: phaseResult.outputTokens || null,
-          });
-          activePhaseTraceId = null;
-          cycleCost += phaseResult.cost;
-          implStageCost += phaseResult.cost;
-          implStageInputTokens += phaseResult.inputTokens;
-          implStageOutputTokens += phaseResult.outputTokens;
-
-          // Reconcile task state from disk
-          const freshPhases = parseTasksFile(config.projectDir, implSpecDir);
-          runTaskState.reconcileFromDisk(freshPhases);
-          emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
-          emit({
-            type: "task_phase_completed",
-            taskPhase: { ...phase, status: "complete" },
-            cost: phaseResult.cost,
-            durationMs: phaseResult.durationMs,
-          });
-        }
-      } catch (implErr) {
-        implStageFailed = true;
-        // Mark any in-flight phase trace as failed so it doesn't dangle as "running"
-        if (activePhaseTraceId) {
-          try {
-            runs.completeAgentRun(config.projectDir, runId, activePhaseTraceId, {
-              status: "failed",
-              costUsd: 0,
-              durationMs: Date.now() - implStageStart,
-            });
-          } catch { /* best-effort */ }
-        }
-        throw implErr;
-      } finally {
-        // Always close the loop:implement stage trace, even on exception, so the
-        // UI never sees an orphaned "running" implement stage.
-        const implStageDurationMs = Date.now() - implStageStart;
-        const implAborted = abortController?.signal.aborted ?? false;
-        const implFinalStatus = implAborted ? "stopped" : implStageFailed ? "failed" : "completed";
-        runs.completeAgentRun(config.projectDir, runId, implStageTraceId, {
-          status: implFinalStatus,
-          costUsd: implStageCost,
-          durationMs: implStageDurationMs,
-          inputTokens: implStageInputTokens || null,
-          outputTokens: implStageOutputTokens || null,
-        });
-        emit({
-          type: "step_completed",
-          runId,
-          cycleNumber,
-          step: "implement",
-          agentRunId: implStageTraceId,
-          costUsd: implStageCost,
-          durationMs: implStageDurationMs,
-          ...(implAborted ? { stopped: true } : {}),
-        });
-      }
-
-      // The implement stage trace and stage_completed event were already emitted
-      // in the finally block above. Now decide whether to continue to verify/learnings.
-      const implAborted = abortController?.signal.aborted ?? false;
-
-      if (implAborted) throw new AbortError();
-
-      // Verify — structured output with fix-reverify loop
-      if (currentRunState) {
-        currentRunState.currentStep = "verify";
-      }
-      // Update FeatureArtifacts.status to "verifying"
-      if (activeProjectDir && implSpecDir) {
-        updateState(activeProjectDir, {
-          artifacts: { features: { [implSpecDir]: { status: "verifying" } } },
-        } as never).catch(() => {});
-      }
-      const verifyPrompt = buildVerifyPrompt(config, implSpecPath, fullPlanPath);
-      const verifyResult = await runStage(
-        config, verifyPrompt, emit, rlog, runId, cycleNumber, "verify", implSpecDir,
-        { type: "json_schema", schema: VERIFY_SCHEMA as unknown as Record<string, unknown> }
-      );
-      cycleCost += verifyResult.cost;
-
-      type VerifyOutput = {
-        passed: boolean;
-        buildSucceeded: boolean;
-        testsSucceeded: boolean;
-        failures: Array<{ criterion: string; description: string; severity: string }>;
-        summary: string;
-      };
-
-      let verification: VerifyOutput = (verifyResult.structuredOutput as VerifyOutput | null) ?? {
-        passed: false,
-        buildSucceeded: false,
-        testsSucceeded: false,
-        failures: [{ criterion: "structured_output", description: "Verify agent did not return structured output", severity: "blocking" }],
-        summary: "Verification could not be evaluated — structured output was null",
-      };
-
-      if (!verification.passed) {
-        const blockingFailures = verification.failures.filter((f) => f.severity === "blocking");
-        if (blockingFailures.length > 0) {
-          const maxRetries = config.maxVerifyRetries ?? 1;
-          for (let retryNum = 1; retryNum <= maxRetries; retryNum++) {
-            const currentBlocking = verification.failures.filter((f) => f.severity === "blocking");
-            rlog.run("WARN", `runLoop: verify found ${currentBlocking.length} blocking failure(s) — fix attempt ${retryNum}/${maxRetries}`);
-            emit({ type: "verify_failed", runId, cycleNumber, blockingCount: currentBlocking.length, summary: verification.summary });
-
-            if (abortController?.signal.aborted) throw new AbortError();
-
-            const fixPrompt = buildVerifyFixPrompt(config, implSpecPath, currentBlocking);
-            const fixResult = await runStage(config, fixPrompt, emit, rlog, runId, cycleNumber, "implement_fix", implSpecDir);
-            cycleCost += fixResult.cost;
-
-            if (abortController?.signal.aborted) throw new AbortError();
-
-            const reVerifyResult = await runStage(
-              config, verifyPrompt, emit, rlog, runId, cycleNumber, "verify", implSpecDir,
-              { type: "json_schema", schema: VERIFY_SCHEMA as unknown as Record<string, unknown> }
-            );
-            cycleCost += reVerifyResult.cost;
-
-            verification = (reVerifyResult.structuredOutput as VerifyOutput | null) ?? {
-              passed: false,
-              buildSucceeded: false,
-              testsSucceeded: false,
-              failures: [{ criterion: "structured_output", description: "Re-verify agent did not return structured output", severity: "blocking" }],
-              summary: "Re-verification could not be evaluated — structured output was null",
-            };
-
-            if (verification.passed) {
-              rlog.run("INFO", `runLoop: re-verify passed on attempt ${retryNum}`);
-              break;
-            }
-            if (retryNum === maxRetries) {
-              rlog.run("WARN", `runLoop: re-verify still failing after ${maxRetries} fix attempt(s) — proceeding to learnings`);
-            }
-          }
-        }
-      }
-
-      if (abortController?.signal.aborted) throw new AbortError();
-
-      // Learnings — structured output with dedup
-      if (currentRunState) {
-        currentRunState.currentStep = "learnings";
-      }
-      const learningsPrompt = buildLearningsPrompt(config, implSpecPath);
-      const learningsResult = await runStage(
-        config, learningsPrompt, emit, rlog, runId, cycleNumber, "learnings", implSpecDir,
-        { type: "json_schema", schema: LEARNINGS_SCHEMA as unknown as Record<string, unknown> }
-      );
-      cycleCost += learningsResult.cost;
-
-      const learnings = learningsResult.structuredOutput as {
-        insights: Array<{ category: string; insight: string; context: string }>;
-      } | null;
-
-      if (learnings?.insights?.length) {
-        appendLearnings(config.projectDir, learnings.insights, config.maxLearningsPerCategory);
-      } else if (!learnings) {
-        rlog.run("WARN", "runLoop: learnings structured output was null — skipping append");
-      }
+      cycleCost += ivlResult.cycleCost;
+      const verification = { passed: ivlResult.verifyPassed };
 
       // Success — reset failure counters and update manifest
       if (implSpecDir) {

@@ -54,15 +54,36 @@ The Wave-A `npm run check:size` audit (Verification §V.7) reports these files a
 - **Behaviour to preserve verbatim**: every event the runner emits today (each maps to a downstream `OrchestratorEvent`), the structured-output retry loop, the abort-signal propagation, the cost-tracking accumulator.
 - **Follow-up spec**: TBD — opens after this refactor merges.
 
+### ~~`src/core/stages/main-loop.ts`~~ — A4.5 landed (retired from allow-list)
+
+- **Pre-A4.5 size**: 824 LOC. **Post-A4.5 size**: 573 LOC.
+- **A4.5 commit**: extracted the cohesive Implement → Verify → Learnings stage block (~295 LOC) to `src/core/stages/cycle-stages.ts` as `runImplementVerifyLearnings`. Golden-trace **zero-diff** preserved across the move. main-loop.ts retains `runMainLoop` as a slimmer cycle-iterator (gap-analysis decision → specify/plan/tasks → delegate to cycle-stages → cycle finalize → termination).
+- **Allow-list status**: retired.
+
+### `src/renderer/hooks/useOrchestrator.ts` — scheduled deferral
+
+- **Current size**: 907 LOC
+- **Reason**: Phase 5 / Wave B explicit scope — splits into 5 domain-bounded hooks (`useLoopState`, `useLiveTrace`, `useUserQuestion`, `useRunSession`, `usePrerequisites`) plus a thin composer (~80 LOC). See tasks T078-T087.
+- **Wave**: Wave B (Phase 5).
+
+### `src/renderer/App.tsx` — scheduled deferral
+
+- **Current size**: 720 LOC
+- **Reason**: Phase 6 / Wave C-rest explicit scope — extracts `AppBreadcrumbs.tsx` (~140 LOC) and `AppRouter.tsx` (~150 LOC); App.tsx target is ~250 LOC. See tasks T088-T090.
+- **Wave**: Wave C-rest (Phase 6).
+
 ---
 
 ## Allow-list (machine-readable)
 
-`npm run check:size` MUST exempt exactly these two paths from its `>600 LOC` audit. Any drift between this list and the script is itself a refactor failure.
+`npm run check:size` exempts these paths from its `>600 LOC` audit. The first two are perpetual exceptions (deferred to dedicated future specs); the last three are SCHEDULED — each will be removed from the allow-list when its wave lands.
 
 ```text
-src/core/state.ts
-src/core/agent/ClaudeAgentRunner.ts
+src/core/state.ts                       # perpetual — 01X-state-reconciliation
+src/core/agent/ClaudeAgentRunner.ts     # perpetual — TBD SDK-adapter spec
+# main-loop.ts retired (824 → 573 LOC) — A4.5 landed.
+src/renderer/hooks/useOrchestrator.ts   # scheduled — Wave B (Phase 5)
+src/renderer/App.tsx                    # scheduled — Wave C-rest (Phase 6)
 ```
 
-Adding a third entry requires explicit user approval — it's a slippery slope. The refactor's stated goal is "any agent can open one file and modify it without learning the entire system"; every exception erodes that.
+The 2 remaining scheduled entries are added under the wave plan's existing decomposition schedule. Each is documented with its target wave; when that wave's PR merges, its entry retires from the allow-list.
