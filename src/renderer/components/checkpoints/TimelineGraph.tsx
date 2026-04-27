@@ -273,9 +273,9 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
             );
           })}
 
-          {/* Right-side label gutter — one row per commit, vertically aligned
-              with the dot row. Skipped for the starting-point anchor because
-              its row is best understood as "the run's origin". */}
+          {/* Per-dot labels — placed immediately to the right of each dot so
+              the SHA + step text tracks the dot's lane instead of all aligning
+              to a single right-side gutter. */}
           {layout.nodes
             .filter((n) => n.node.kind === "step-commit")
             .map((n) => {
@@ -284,7 +284,7 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
               return (
                 <g
                   key={`label-${n.id}`}
-                  transform={`translate(${layout.labelGutterX}, ${n.y})`}
+                  transform={`translate(${n.x + DOT_RADIUS + 8}, ${n.y})`}
                   style={{ pointerEvents: "none" }}
                 >
                   <text
@@ -313,7 +313,7 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
               return (
                 <g
                   key={`label-${n.id}`}
-                  transform={`translate(${layout.labelGutterX}, ${n.y})`}
+                  transform={`translate(${n.x + DOT_RADIUS + 8}, ${n.y})`}
                   style={{ pointerEvents: "none" }}
                 >
                   <text
