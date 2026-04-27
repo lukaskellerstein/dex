@@ -3,6 +3,23 @@ import type { RunConfig, OrchestratorEvent } from "../../core/types.js";
 import { run, stopRun, getRunState, submitUserAnswer } from "../../core/orchestrator.js";
 import { loadState } from "../../core/state.js";
 
+/**
+ * 011-A1 residual singleton note.
+ *
+ * `stopRun` and `submitUserAnswer` are invoked from IPC handlers that arrive
+ * on a *different* IPC channel than the one running `runLoop`. They need to
+ * reach into the active run's `OrchestrationContext`. Inside `core/orchestrator.ts`
+ * we keep one module-level `currentContext: OrchestrationContext | null` for
+ * exactly this reason — it points at the active run's ctx (set when run starts,
+ * nulled when it ends). `stopRun` calls `currentContext?.abort.abort()`;
+ * `submitUserAnswer` (currently in `core/userInput.ts`) resolves a pending
+ * promise via its own keyed map.
+ *
+ * Future work (A3 — clarification extraction) will migrate `submitUserAnswer`
+ * to read `currentContext.pendingQuestion.resolve` so the handle lives on ctx.
+ *
+ * See: specs/011-refactoring/contracts/orchestration-context.md
+ */
 export function registerOrchestratorHandlers(
   getWindow: () => BrowserWindow | null
 ): void {

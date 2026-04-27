@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "start": "electron dist/main/index.js",
     "build:start": "npm run build && npm start",
-    "test:core": "node --test --experimental-strip-types src/core/__tests__/"
+    "test:core": "node --test --experimental-strip-types src/core/__tests__/",
+    "check:size": "bash scripts/check-size.sh"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.45",

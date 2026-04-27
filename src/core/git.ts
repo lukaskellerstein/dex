@@ -29,46 +29,7 @@ export function getCommittedFileContent(projectDir: string, ref: string, filePat
   }
 }
 
-export function commitCheckpoint(
-  projectDir: string,
-  stage: string,
-  cycleNumber: number,
-  featureName: string | null,
-): string {
-  // Two-line structured message per 008 contract. Line 2 is machine-parseable.
-  const featureSlug = featureName ?? "-";
-  const message =
-    `dex: ${stage} completed [cycle:${cycleNumber}] [feature:${featureSlug}]\n` +
-    `[checkpoint:${stage}:${cycleNumber}]`;
-
-  // Stage tracked Dex files only. state.json is gitignored (008 P3); committing
-  // it would resurrect the old tree-rewrite-at-promote problem. feature-manifest.json
-  // stays tracked because teams rely on it for feature inventory.
-  try {
-    exec('git add .dex/feature-manifest.json', projectDir);
-  } catch {
-    // File may not exist yet (pre-manifest-extraction stages). That's fine.
-  }
-  try {
-    exec('git add .dex/learnings.md', projectDir);
-  } catch {
-    // May not exist yet. That's fine.
-  }
-
-  // --allow-empty ensures every stage gets its own distinct SHA, even when the
-  // stage produced no file changes (e.g., verify). Without this, adjacent
-  // stage checkpoints would coincide on the same commit.
-  //
-  // We pass the message via stdin with -F - to avoid shell-escaping issues
-  // with the embedded newline.
-  execSync(`git commit --allow-empty -F -`, {
-    cwd: projectDir,
-    input: message,
-    encoding: "utf-8",
-  });
-
-  return getHeadSha(projectDir);
-}
+// commitCheckpoint moved to src/core/checkpoints/commit.ts as part of 011-A0.
 
 export function createBranch(
   projectDir: string,

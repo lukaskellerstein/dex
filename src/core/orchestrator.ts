@@ -7,6 +7,13 @@ import { submitUserAnswer, waitForUserInput } from "./userInput.js";
 import { createAgentRunner } from "./agent/index.js";
 import { loadDexConfig } from "./dexConfig.js";
 import type { AgentRunner } from "./agent/AgentRunner.js";
+import {
+  createContext,
+  type OrchestrationContext,
+  type RunState,
+} from "./context.js";
+import { runPrerequisites as runPrerequisitesPhase } from "./stages/prerequisites.js";
+import { runClarificationPhase } from "./stages/clarification.js";
 
 // Keep submitUserAnswer accessible to IPC callers that import it from this
 // module (backwards compatibility — it used to be defined here).
@@ -24,7 +31,6 @@ import {
   createBranch,
   createPullRequest,
   createLoopPullRequest,
-  commitCheckpoint,
   getHeadSha,
 } from "./git.js";
 import {
@@ -34,6 +40,8 @@ import {
   promoteToCheckpoint,
   autoPromoteIfRecordMode,
   readRecordMode,
+  commitCheckpoint,
+  readPauseAfterStage,
 } from "./checkpoints.js";
 import {
   createInitialState,
@@ -116,22 +124,11 @@ class AbortError extends Error {
 
 // ── Module-level run state (survives renderer reload) ──
 
-interface RunState {
-  runId: string;
-  projectDir: string;
-  specDir: string;
-  mode: string;
-  model: string;
-  agentRunId: string;
-  taskPhaseNumber: number;
-  taskPhaseName: string;
-  // Loop-mode fields
-  currentCycle?: number;
-  currentStep?: StepType;
-  isClarifying?: boolean;
-  cyclesCompleted?: number;
-}
-
+// 011-A1: RunState moved to ./context.js (lives alongside OrchestrationContext).
+// The legacy aliases below are transitional — every site reads from them today;
+// A2-A8 will replace each site with a direct `ctx` parameter as phase functions
+// are extracted. The single source of truth at runtime is `currentContext`.
+let currentContext: OrchestrationContext | null = null;
 let currentRunState: RunState | null = null;
 
 /**
@@ -139,8 +136,8 @@ let currentRunState: RunState | null = null;
  * This is the authoritative source — DB rows can be stale from crashes.
  */
 export function getRunState(): RunState | null {
-  if (!abortController) return null;
-  return currentRunState;
+  if (!currentContext) return null;
+  return currentContext.state;
 }
 
 // ── User Input, pricing, step helpers moved to sibling modules ──
@@ -342,7 +339,9 @@ async function runPhase(
 
 // ── Stage Runner (lightweight query() wrapper for loop stages) ──
 
-async function runStage(
+// 011-A3: exported so extracted stage modules under src/core/stages/ can drive the agent.
+// The circular import is safe: both sides export functions only, resolved at call time.
+export async function runStage(
   config: RunConfig,
   prompt: string,
   emit: EmitFn,
@@ -508,14 +507,7 @@ async function runStage(
   return { result: resultText, structuredOutput, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
 }
 
-async function readPauseAfterStage(projectDir: string): Promise<boolean> {
-  try {
-    const s = await loadState(projectDir);
-    return Boolean(s?.ui?.pauseAfterStage);
-  } catch {
-    return false;
-  }
-}
+// readPauseAfterStage moved to src/core/checkpoints/commit.ts as part of 011-A0.
 
 function updatePhaseCheckpointInfo(
   projectDir: string,
@@ -757,6 +749,8 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       // non-fatal
     }
     emit({ type: "error", message: lockErr instanceof Error ? lockErr.message : String(lockErr) });
+    // 011-A1: ctx is not yet built at this point in the lock-failure path —
+    // only the raw aliases need clearing.
     abortController = null;
     activeProjectDir = null;
     currentRunner = null;
@@ -799,6 +793,22 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     taskPhaseName: "",
   };
 
+  // 011-A1: build the OrchestrationContext now that all dependencies are
+  // available. Future extracted phase functions (A2-A7) accept `ctx` and
+  // operate purely over its fields. The IPC layer reads `currentContext`
+  // for `stopRun` (see src/main/ipc/orchestrator.ts).
+  currentContext = createContext({
+    abort: abortController!,
+    runner: currentRunner!,
+    state: currentRunState,
+    projectDir: config.projectDir,
+    releaseLock: async () => {
+      if (releaseLock) releaseLock();
+    },
+    emit,
+    rlog,
+  });
+
   let taskPhasesCompleted = 0;
   let totalCost = 0;
   const runStart = Date.now();
@@ -821,6 +831,8 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     if (!(err instanceof AbortError)) throw err;
   } finally {
     const wasStopped = abortController?.signal.aborted ?? false;
+    // 011-A1: drop the OrchestrationContext alongside the legacy aliases.
+    currentContext = null;
     abortController = null;
     currentRunState = null;
     currentRunner = null;
@@ -885,347 +897,6 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
   }
 }
 
-// ── Prerequisites Check ──
-
-function isCommandOnPath(cmd: string): boolean {
-  try {
-    const whichCmd = process.platform === "win32" ? "where" : "which";
-    execSync(`${whichCmd} ${cmd}`, { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function getScriptType(): "sh" | "ps" {
-  return process.platform === "win32" ? "ps" : "sh";
-}
-
-async function runPrerequisites(
-  config: RunConfig,
-  emit: EmitFn,
-  runId: string,
-  rlog: RunLogger
-): Promise<void> {
-  rlog.run("INFO", "runPrerequisites: starting prerequisites checks");
-  emit({ type: "prerequisites_started", runId });
-
-  // Create a phase record so the stage appears in preCycleStages
-  const agentRunId = crypto.randomUUID();
-  runs.startAgentRun(config.projectDir, runId, {
-    agentRunId,
-    runId,
-    specDir: null,
-    taskPhaseNumber: 0,
-    taskPhaseName: "loop:prerequisites",
-    step: "prerequisites",
-    cycleNumber: 0,
-    featureSlug: null,
-    startedAt: new Date().toISOString(),
-    status: "running",
-  });
-
-  emit({
-    type: "step_started",
-    runId,
-    cycleNumber: 0,
-    step: "prerequisites",
-    agentRunId,
-  });
-
-  const startTime = Date.now();
-
-  const emitCheck = (check: PrerequisiteCheck) => {
-    emit({ type: "prerequisites_check", runId, check });
-  };
-
-  // Track final status of each check
-  const checkResults = new Map<PrerequisiteCheckName, "pass" | "fail" | "fixed">();
-
-  // ── Check 1: Claude CLI ──
-  emitCheck({ name: "claude_cli", status: "running" });
-  let claudeOk = isCommandOnPath("claude");
-  if (claudeOk) {
-    rlog.run("INFO", "runPrerequisites: claude CLI found");
-    emitCheck({ name: "claude_cli", status: "pass" });
-    checkResults.set("claude_cli", "pass");
-  } else {
-    rlog.run("WARN", "runPrerequisites: claude CLI not found");
-    emitCheck({ name: "claude_cli", status: "fail", message: "Claude Code CLI not found on PATH" });
-
-    let resolved = false;
-    while (!resolved) {
-      if (abortController?.signal.aborted) return;
-      const answers = await waitForUserInput(config.projectDir, emit, runId, [{
-        question: "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
-        header: "Missing: Claude CLI",
-        options: [
-          { label: "I've installed it — check again", description: "Re-run the check after you've installed Claude Code" },
-          { label: "Skip this check", description: "Proceed without verifying (not recommended)" },
-        ],
-        multiSelect: false,
-      }]);
-      const answer = Object.values(answers)[0];
-      if (answer === "Skip this check") {
-        emitCheck({ name: "claude_cli", status: "fixed", message: "Skipped by user" });
-        checkResults.set("claude_cli", "fixed");
-        resolved = true;
-      } else {
-        claudeOk = isCommandOnPath("claude");
-        if (claudeOk) {
-          emitCheck({ name: "claude_cli", status: "pass" });
-          checkResults.set("claude_cli", "pass");
-          resolved = true;
-        } else {
-          emitCheck({ name: "claude_cli", status: "fail", message: "Still not found — please check your PATH" });
-        }
-      }
-    }
-  }
-
-  // ── Check 2: Specify CLI ──
-  emitCheck({ name: "specify_cli", status: "running" });
-  let specifyOk = isCommandOnPath("specify");
-  if (specifyOk) {
-    rlog.run("INFO", "runPrerequisites: specify CLI found");
-    emitCheck({ name: "specify_cli", status: "pass" });
-    checkResults.set("specify_cli", "pass");
-  } else {
-    rlog.run("WARN", "runPrerequisites: specify CLI not found");
-    emitCheck({ name: "specify_cli", status: "fail", message: "Spec-Kit CLI not found on PATH" });
-
-    let resolved = false;
-    while (!resolved) {
-      if (abortController?.signal.aborted) return;
-      const answers = await waitForUserInput(config.projectDir, emit, runId, [{
-        question: "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
-        header: "Missing: Spec-Kit CLI",
-        options: [
-          { label: "I've installed it — check again", description: "Re-run the check after you've installed spec-kit" },
-          { label: "Skip this check", description: "Proceed without spec-kit (the loop will likely fail)" },
-        ],
-        multiSelect: false,
-      }]);
-      const answer = Object.values(answers)[0];
-      if (answer === "Skip this check") {
-        emitCheck({ name: "specify_cli", status: "fixed", message: "Skipped by user" });
-        checkResults.set("specify_cli", "fixed");
-        resolved = true;
-      } else {
-        specifyOk = isCommandOnPath("specify");
-        if (specifyOk) {
-          emitCheck({ name: "specify_cli", status: "pass" });
-          checkResults.set("specify_cli", "pass");
-          resolved = true;
-        } else {
-          emitCheck({ name: "specify_cli", status: "fail", message: "Still not found — please check your PATH" });
-        }
-      }
-    }
-  }
-
-  // ── Check 3: Git repository ──
-  emitCheck({ name: "git_init", status: "running" });
-  const gitDir = path.join(config.projectDir, ".git");
-  if (fs.existsSync(gitDir)) {
-    rlog.run("INFO", "runPrerequisites: git repo already exists");
-    emitCheck({ name: "git_init", status: "pass" });
-    checkResults.set("git_init", "pass");
-  } else {
-    rlog.run("INFO", "runPrerequisites: initializing git repo");
-    try {
-      execSync("git init", {
-        cwd: config.projectDir,
-        stdio: "pipe",
-        timeout: 15_000,
-      });
-      if (fs.existsSync(gitDir)) {
-        rlog.run("INFO", "runPrerequisites: git init succeeded");
-        emitCheck({ name: "git_init", status: "pass" });
-        checkResults.set("git_init", "pass");
-      } else {
-        rlog.run("WARN", "runPrerequisites: git init ran but .git/ not found");
-        emitCheck({ name: "git_init", status: "fail", message: "git init ran but .git/ directory was not created" });
-        checkResults.set("git_init", "fail");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      rlog.run("ERROR", "runPrerequisites: git init failed", { error: msg });
-      emitCheck({ name: "git_init", status: "fail", message: `git init failed: ${msg}` });
-      checkResults.set("git_init", "fail");
-    }
-  }
-
-  // ── Check 4: Spec-Kit initialized in project ──
-  emitCheck({ name: "speckit_init", status: "running" });
-  const integrationJson = path.join(config.projectDir, ".specify", "integration.json");
-  if (fs.existsSync(integrationJson)) {
-    rlog.run("INFO", "runPrerequisites: spec-kit already initialized");
-    emitCheck({ name: "speckit_init", status: "pass" });
-    checkResults.set("speckit_init", "pass");
-  } else if (specifyOk) {
-    // Auto-run specify init
-    rlog.run("INFO", "runPrerequisites: running specify init");
-    try {
-      const scriptType = getScriptType();
-      execSync(`specify init . --force --ai claude --script ${scriptType}`, {
-        cwd: config.projectDir,
-        stdio: "pipe",
-        timeout: 60_000,
-      });
-      if (fs.existsSync(integrationJson)) {
-        rlog.run("INFO", "runPrerequisites: specify init succeeded");
-        emitCheck({ name: "speckit_init", status: "pass" });
-        checkResults.set("speckit_init", "pass");
-      } else {
-        rlog.run("WARN", "runPrerequisites: specify init ran but integration.json not found");
-        emitCheck({ name: "speckit_init", status: "fail", message: "specify init ran but .specify/integration.json was not created" });
-        checkResults.set("speckit_init", "fail");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      rlog.run("ERROR", "runPrerequisites: specify init failed", { error: msg });
-      emitCheck({ name: "speckit_init", status: "fail", message: `specify init failed: ${msg}` });
-      checkResults.set("speckit_init", "fail");
-    }
-  } else {
-    rlog.run("WARN", "runPrerequisites: cannot init spec-kit — specify CLI not available");
-    emitCheck({ name: "speckit_init", status: "fail", message: "Cannot initialize — specify CLI not available" });
-    checkResults.set("speckit_init", "fail");
-  }
-
-  // ── Check 5: GitHub repository (optional) ──
-  // Runs after spec-kit init so the initial commit includes all generated files
-  emitCheck({ name: "github_repo", status: "running" });
-  let hasRemote = false;
-  try {
-    const remote = execSync("git remote get-url origin", {
-      cwd: config.projectDir,
-      stdio: "pipe",
-      timeout: 5_000,
-    }).toString().trim();
-    hasRemote = remote.length > 0;
-  } catch {
-    // No remote configured
-  }
-
-  if (hasRemote) {
-    rlog.run("INFO", "runPrerequisites: GitHub remote already configured");
-    emitCheck({ name: "github_repo", status: "pass" });
-    checkResults.set("github_repo", "pass");
-  } else {
-    const ghOk = isCommandOnPath("gh");
-    if (!ghOk) {
-      rlog.run("INFO", "runPrerequisites: gh CLI not found, skipping GitHub repo setup");
-      emitCheck({ name: "github_repo", status: "fixed", message: "GitHub CLI (gh) not installed — skipped" });
-      checkResults.set("github_repo", "fixed");
-    } else {
-      let ghAuthed = false;
-      try {
-        execSync("gh auth status", { cwd: config.projectDir, stdio: "pipe", timeout: 10_000 });
-        ghAuthed = true;
-      } catch {
-        // Not authenticated
-      }
-
-      if (!ghAuthed) {
-        rlog.run("INFO", "runPrerequisites: gh not authenticated, skipping GitHub repo setup");
-        emitCheck({ name: "github_repo", status: "fixed", message: "GitHub CLI not authenticated — run 'gh auth login' to enable" });
-        checkResults.set("github_repo", "fixed");
-      } else {
-        if (abortController?.signal.aborted) return;
-        const answers = await waitForUserInput(config.projectDir, emit, runId, [{
-          question: "Would you like to create a GitHub repository for this project?",
-          header: "GitHub Repository (optional)",
-          options: [
-            { label: "Yes — create a new repo", description: "Create a GitHub repository and push this project" },
-            { label: "No — skip", description: "Continue without a GitHub remote" },
-          ],
-          multiSelect: false,
-        }]);
-        const answer = Object.values(answers)[0];
-
-        if (answer === "No — skip") {
-          emitCheck({ name: "github_repo", status: "fixed", message: "Skipped by user" });
-          checkResults.set("github_repo", "fixed");
-        } else {
-          if (abortController?.signal.aborted) return;
-          const repoAnswers = await waitForUserInput(config.projectDir, emit, runId, [{
-            question: "Enter the name for your new GitHub repository:",
-            header: "Repository Name",
-            options: [
-              { label: path.basename(config.projectDir), description: "Use project folder name" },
-            ],
-            multiSelect: false,
-          }]);
-          const repoName = Object.values(repoAnswers)[0];
-
-          rlog.run("INFO", `runPrerequisites: creating GitHub repo '${repoName}'`);
-          try {
-            // Commit all files created during prerequisites (GOAL.md, .specify/, .claude/, etc.)
-            execSync("git add -A -- ':!.dex/' && git commit -m \"Initial project setup (prerequisites)\"", {
-              cwd: config.projectDir,
-              stdio: "pipe",
-              timeout: 10_000,
-            });
-            execSync(`gh repo create "${repoName}" --private --source . --push`, {
-              cwd: config.projectDir,
-              stdio: "pipe",
-              timeout: 30_000,
-            });
-            rlog.run("INFO", "runPrerequisites: GitHub repo created successfully");
-            emitCheck({ name: "github_repo", status: "pass" });
-            checkResults.set("github_repo", "pass");
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            rlog.run("ERROR", "runPrerequisites: gh repo create failed", { error: msg });
-            emitCheck({ name: "github_repo", status: "fail", message: `Failed to create repo: ${msg}` });
-            checkResults.set("github_repo", "fail");
-          }
-        }
-      }
-    }
-  }
-
-  // ── If any check failed, block until user acknowledges ──
-  const failedChecks = [...checkResults.entries()].filter(([, s]) => s === "fail");
-  if (failedChecks.length > 0) {
-    const failedNames = failedChecks.map(([name]) => name).join(", ");
-    rlog.run("WARN", `runPrerequisites: ${failedChecks.length} check(s) failed: ${failedNames}`);
-
-    await waitForUserInput(config.projectDir, emit, runId, [{
-      question: `${failedChecks.length} prerequisite check(s) failed: ${failedNames}. You can continue, but the loop may not work correctly.`,
-      header: "Prerequisites incomplete",
-      options: [
-        { label: "Continue anyway", description: "Proceed to clarification despite failed checks" },
-      ],
-      multiSelect: false,
-    }]);
-  }
-
-  const allPassed = failedChecks.length === 0;
-  const durationMs = Date.now() - startTime;
-  runs.completeAgentRun(config.projectDir, runId, agentRunId, {
-    status: "completed",
-    costUsd: 0,
-    durationMs,
-    inputTokens: 0,
-    outputTokens: 0,
-  });
-
-  emit({
-    type: "step_completed",
-    runId,
-    cycleNumber: 0,
-    step: "prerequisites",
-    agentRunId,
-    costUsd: 0,
-    durationMs,
-  });
-
-  emit({ type: "prerequisites_completed", runId });
-  rlog.run("INFO", "runPrerequisites: completed", { durationMs, allPassed });
-}
 
 // ── Loop Mode Runner ──
 
@@ -1341,7 +1012,10 @@ async function runLoop(
 
   // ── Phase 0: Prerequisites (skip on resume) ──
   if (!isResume) {
-    await runPrerequisites(config, emit, runId, rlog);
+    // 011-A2: extracted to src/core/stages/prerequisites.ts. ctx is the
+    // single-source-of-truth carrier — see context.ts.
+    if (!currentContext) throw new Error("runLoop: prerequisites needs currentContext but it's null");
+    await runPrerequisitesPhase(currentContext, runId);
     if (abortController?.signal.aborted) {
       emit({ type: "loop_terminated", runId, termination: { reason: "user_abort", cyclesCompleted: 0, totalCostUsd: 0, totalDurationMs: 0, featuresCompleted: [], featuresSkipped: [] } });
       return { taskPhasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
@@ -1402,114 +1076,20 @@ async function runLoop(
     emit({ type: "step_completed", runId, cycleNumber: cycleNum, step, agentRunId: traceId, costUsd: 0, durationMs: 0 });
   };
 
-  const existingSpecsAtStart = listSpecDirs(config.projectDir);
-  if (existingSpecsAtStart.length > 0 && fs.existsSync(clarifiedPath)) {
-    fullPlanPath = clarifiedPath;
-    rlog.run("INFO", `runLoop: specs exist (${existingSpecsAtStart.length}), skipping clarification, using ${clarifiedPath}`);
-    // Emit synthetic clarification events so the UI stepper advances past clarification
-    emit({ type: "clarification_started", runId });
-    emitSkippedStep("clarification_product");
-    emitSkippedStep("clarification_technical");
-    emitSkippedStep("clarification_synthesis");
-    emitSkippedStep("constitution");
-    emit({ type: "clarification_completed", runId, fullPlanPath: clarifiedPath });
-  } else {
-    emit({ type: "clarification_started", runId });
-    rlog.run("INFO", "runLoop: starting multi-domain clarification (Phase A)");
-
-    if (currentRunState) {
-      currentRunState.isClarifying = true;
-    }
-
-    // Step 1: Product domain clarification
-    const productDomainPath = path.join(config.projectDir, "GOAL_product_domain.md");
-    if (!fs.existsSync(productDomainPath)) {
-      rlog.run("INFO", "runLoop: starting product domain clarification");
-      const prompt = buildProductClarificationPrompt(goalPath);
-      const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_product");
-      cumulativeCost += result.cost;
-      if (abortController?.signal.aborted) throw new AbortError();
-      if (!fs.existsSync(productDomainPath)) {
-        throw new Error("Product clarification completed but GOAL_product_domain.md not found");
-      }
-    } else {
-      rlog.run("INFO", "runLoop: GOAL_product_domain.md exists, skipping product clarification");
-      emitSkippedStep("clarification_product");
-    }
-
-    // Step 2: Technical domain clarification
-    if (abortController?.signal.aborted) throw new AbortError();
-    const technicalDomainPath = path.join(config.projectDir, "GOAL_technical_domain.md");
-    if (!fs.existsSync(technicalDomainPath)) {
-      rlog.run("INFO", "runLoop: starting technical domain clarification");
-      const prompt = buildTechnicalClarificationPrompt(goalPath, productDomainPath);
-      const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_technical");
-      cumulativeCost += result.cost;
-      if (abortController?.signal.aborted) throw new AbortError();
-      if (!fs.existsSync(technicalDomainPath)) {
-        throw new Error("Technical clarification completed but GOAL_technical_domain.md not found");
-      }
-    } else {
-      rlog.run("INFO", "runLoop: GOAL_technical_domain.md exists, skipping technical clarification");
-      emitSkippedStep("clarification_technical");
-    }
-
-    // Step 3: Synthesis → GOAL_clarified.md + CLAUDE.md (with structured confirmation)
-    if (abortController?.signal.aborted) throw new AbortError();
-    if (!fs.existsSync(clarifiedPath)) {
-      rlog.run("INFO", "runLoop: starting clarification synthesis");
-      const prompt = buildClarificationSynthesisPrompt(goalPath, productDomainPath, technicalDomainPath);
-      const result = await runStage(
-        config, prompt, emit, rlog, runId, 0, "clarification_synthesis", undefined,
-        { type: "json_schema", schema: SYNTHESIS_SCHEMA as unknown as Record<string, unknown> }
-      );
-      cumulativeCost += result.cost;
-      if (abortController?.signal.aborted) throw new AbortError();
-
-      // Try structured output first, fall back to filesystem probing
-      const synthesisOutput = result.structuredOutput as { filesProduced?: string[]; goalClarifiedPath?: string } | null;
-      if (synthesisOutput?.goalClarifiedPath) {
-        const resolvedPath = path.isAbsolute(synthesisOutput.goalClarifiedPath)
-          ? synthesisOutput.goalClarifiedPath
-          : path.join(config.projectDir, synthesisOutput.goalClarifiedPath);
-        if (!fs.existsSync(resolvedPath)) {
-          rlog.run("WARN", `Synthesis structured output claimed ${synthesisOutput.goalClarifiedPath} but file not found — falling back to filesystem check`);
-        }
-      }
-
-      if (!fs.existsSync(clarifiedPath)) {
-        throw new Error("Synthesis completed but GOAL_clarified.md not found");
-      }
-    } else {
-      rlog.run("INFO", "runLoop: GOAL_clarified.md exists, skipping synthesis");
-      emitSkippedStep("clarification_synthesis");
-    }
-
-    fullPlanPath = clarifiedPath;
-
-    // Step 4: Constitution (final step of clarification)
-    // The file may exist as an unfilled template (with [PLACEHOLDER] tokens) from `specify init`.
-    // Only skip if it exists AND has been filled (no placeholder tokens remain).
-    if (abortController?.signal.aborted) throw new AbortError();
-    const constitutionPath = path.join(config.projectDir, ".specify", "memory", "constitution.md");
-    const constitutionNeedsGeneration = !fs.existsSync(constitutionPath)
-      || fs.readFileSync(constitutionPath, "utf-8").includes("[PROJECT_NAME]");
-    if (constitutionNeedsGeneration) {
-      rlog.run("INFO", "runLoop: generating constitution");
-      const prompt = buildConstitutionPrompt(config, fullPlanPath);
-      const result = await runStage(config, prompt, emit, rlog, runId, 0, "constitution");
-      cumulativeCost += result.cost;
-    } else {
-      rlog.run("INFO", "runLoop: constitution already filled, skipping");
-      emitSkippedStep("constitution");
-    }
-
-    emit({ type: "clarification_completed", runId, fullPlanPath });
-    rlog.run("INFO", `runLoop: clarification completed, fullPlanPath=${fullPlanPath}`);
-
-    if (currentRunState) {
-      currentRunState.isClarifying = false;
-    }
+  // ── Phase A: Multi-Domain Clarification (extracted to stages/clarification.ts in 011-A3) ──
+  if (!currentContext) throw new Error("runLoop: clarification needs currentContext but it's null");
+  {
+    const existingSpecsAtStart = listSpecDirs(config.projectDir);
+    const result = await runClarificationPhase(currentContext, {
+      config,
+      runId,
+      goalPath,
+      clarifiedPath,
+      existingSpecsAtStart,
+      seedCumulativeCost: cumulativeCost,
+    });
+    fullPlanPath = result.fullPlanPath;
+    cumulativeCost = result.cumulativeCost;
   }
 
   // ── Manifest Extraction (one-time after clarification) ──
@@ -2304,10 +1884,13 @@ async function runLoop(
 }
 
 export function stopRun(): void {
-  if (abortController) {
+  // 011-A1: read the abort handle from currentContext when available, falling
+  // back to the legacy alias for the brief window before/after a run lifecycle.
+  const abort = currentContext?.abort ?? abortController;
+  if (abort) {
     console.log("[stopRun] abort signal sent to orchestrator");
-    abortController.abort();
+    abort.abort();
   } else {
-    console.log("[stopRun] called but no active abortController");
+    console.log("[stopRun] called but no active context");
   }
 }
