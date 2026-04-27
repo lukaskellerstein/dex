@@ -1,4 +1,9 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+/**
+ * What: Renders the agent timeline — header (agent ID + clock + duration), stats bar, subagent list, the per-step timeline, and the running indicator.
+ * Not: Does not derive grouping/synthesis (logic in AgentStepList.logic.ts). Does not render individual step bodies — AgentStepItem owns that.
+ * Deps: AgentStepList.logic.ts (processSteps/groupToolCalls/buildTimelineRows), AgentStepItem, SubagentList, computeStats, StatsBar, CopyBadge.
+ */
+import { useRef, useEffect, useMemo } from "react";
 import { Copy, Bot, Clock } from "lucide-react";
 import type { AgentStep, SubagentInfo } from "../../../core/types.js";
 import { AgentStepItem } from "./AgentStepItem.js";
@@ -7,21 +12,16 @@ import { computeStats } from "../../utils/computeStats.js";
 import { StatsBar } from "../shared/StatsBar.js";
 import { CopyBadge } from "../shared/CopyBadge.js";
 import { formatDurationShort as formatDuration } from "../../utils/formatters.js";
-
-const LINE_LEFT = 20; // center of the vertical line
-const DOT_SIZE = 9;
-const CONTENT_LEFT = 42; // padding-left for step content
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function formatDelta(ms: number): string {
-  if (ms < 1000) return `+${ms}ms`;
-  if (ms < 60_000) return `+${(ms / 1000).toFixed(1)}s`;
-  return `+${(ms / 60_000).toFixed(1)}m`;
-}
+import {
+  LINE_LEFT,
+  DOT_SIZE,
+  CONTENT_LEFT,
+  formatTime,
+  formatDelta,
+  processSteps,
+  groupToolCalls,
+  buildTimelineRows,
+} from "./AgentStepList.logic.js";
 
 interface AgentStepListProps {
   steps: AgentStep[];
@@ -48,142 +48,35 @@ function CopyIdBadge({ value }: { value: string }) {
   );
 }
 
-interface GroupedStep {
-  step: AgentStep;
-  resultSteps: AgentStep[];
-}
-
-type TimelineRow =
-  | { kind: "single"; entry: GroupedStep; idx: number }
-  | { kind: "parallel-spawns"; entries: GroupedStep[]; startIdx: number };
-
-export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs, subagents, onSubagentClick, onSubagentBadgeClick, showSubagentSteps }: AgentStepListProps) {
+export function AgentStepList({
+  steps,
+  isRunning,
+  agentId,
+  startedAt,
+  durationMs,
+  subagents,
+  onSubagentClick,
+  onSubagentBadgeClick,
+  showSubagentSteps,
+}: AgentStepListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
 
-  // Build the display steps: strip all raw subagent_result steps (unreliable IDs
-  // in legacy data, and noise from session-init subagents) and inject synthetic
-  // completed steps from the SubagentInfo metadata which has correct data.
-  const processedSteps = useMemo(() => {
-    // Remove all subagent_result steps — we'll synthesize them from SubagentInfo.
-    // Also remove steps that belong to a subagent (tagged with belongsToSubagent
-    // metadata) — those should only appear in the subagent detail view.
-    const filtered = steps.filter((s) =>
-      s.type !== "subagent_result" && (showSubagentSteps || !s.metadata?.belongsToSubagent)
-    );
+  const processedSteps = useMemo(
+    () => processSteps(steps, subagents, isRunning, showSubagentSteps),
+    [steps, subagents, isRunning, showSubagentSteps],
+  );
 
-    if (!subagents || subagents.length === 0) return filtered;
+  const grouped = useMemo(() => groupToolCalls(processedSteps), [processedSteps]);
+  const timelineRows = useMemo(() => buildTimelineRows(grouped), [grouped]);
 
-    // Build a map of subagentId → spawn step index for positioning
-    const spawnIndices = new Map<string, number>();
-    filtered.forEach((s, i) => {
-      if (s.type === "subagent_spawn") {
-        const id = s.metadata?.subagentId as string;
-        if (id) spawnIndices.set(id, i);
-      }
-    });
-
-    // For each subagent that has a spawn, insert a synthetic completed step
-    // right before the next step that has a timestamp after the subagent's end time
-    const synthetics: AgentStep[] = [];
-    for (const sa of subagents) {
-      if (!spawnIndices.has(sa.subagentId)) continue;
-      const endTime = sa.completedAt ?? (isRunning ? null : sa.startedAt);
-      if (!endTime) continue;
-      synthetics.push({
-        id: `synth-result-${sa.subagentId}`,
-        sequenceIndex: 999990,
-        type: "subagent_result",
-        content: null,
-        metadata: {
-          subagentId: sa.subagentId,
-          subagentType: sa.subagentType,
-        },
-        durationMs: null,
-        tokenCount: null,
-        createdAt: endTime,
-      });
-    }
-
-    if (synthetics.length === 0) return filtered;
-
-    // Merge synthetics into the filtered steps by timestamp
-    const merged = [...filtered, ...synthetics];
-    merged.sort((a, b) => {
-      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return ta - tb;
-    });
-    return merged;
-  }, [steps, subagents, isRunning, showSubagentSteps]);
-
-  // Group steps: pair tool_result/tool_error with their originating tool_call
-  // using toolUseId from metadata. This handles parallel tool calls correctly
-  // where results may arrive in any order after multiple calls.
-  const grouped = useMemo<GroupedStep[]>(() => {
-    const result: GroupedStep[] = [];
-    const callsByToolUseId = new Map<string, GroupedStep>();
-
-    for (const step of processedSteps) {
-      if (step.type === "tool_result" || step.type === "tool_error" || step.type === "skill_result") {
-        const toolUseId = step.metadata?.toolUseId as string | undefined;
-        const matchingCall = toolUseId ? callsByToolUseId.get(toolUseId) : null;
-        if (matchingCall) {
-          matchingCall.resultSteps.push(step);
-          continue;
-        }
-      }
-
-      const grouped: GroupedStep = { step, resultSteps: [] };
-      result.push(grouped);
-
-      if (step.type === "tool_call" || step.type === "skill_invoke") {
-        const toolUseId = step.metadata?.toolUseId as string | undefined;
-        if (toolUseId) {
-          callsByToolUseId.set(toolUseId, grouped);
-        }
-      }
-    }
-    return result;
-  }, [processedSteps]);
-
-  // Group consecutive subagent_spawn steps (within 2s) into parallel rows
-  const timelineRows = useMemo<TimelineRow[]>(() => {
-    const rows: TimelineRow[] = [];
-    let i = 0;
-    while (i < grouped.length) {
-      const entry = grouped[i];
-      if (entry.step.type === "subagent_spawn" && entry.step.createdAt) {
-        const t0 = new Date(entry.step.createdAt).getTime();
-        const batch: GroupedStep[] = [entry];
-        let j = i + 1;
-        while (j < grouped.length) {
-          const next = grouped[j];
-          if (next.step.type !== "subagent_spawn" || !next.step.createdAt) break;
-          if (Math.abs(new Date(next.step.createdAt).getTime() - t0) > 2000) break;
-          batch.push(next);
-          j++;
-        }
-        if (batch.length > 1) {
-          rows.push({ kind: "parallel-spawns", entries: batch, startIdx: i });
-          i = j;
-          continue;
-        }
-      }
-      rows.push({ kind: "single", entry, idx: i });
-      i++;
-    }
-    return rows;
-  }, [grouped]);
-
-  // Auto-scroll to bottom when new steps arrive
+  // Auto-scroll to bottom when new steps arrive.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !isRunning || !autoScrollRef.current) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [grouped.length, isRunning]);
 
-  // Auto-scroll tracking
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -191,10 +84,7 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
     autoScrollRef.current = atBottom;
   };
 
-  const stats = useMemo(
-    () => computeStats(steps, { durationMs }),
-    [steps, durationMs]
-  );
+  const stats = useMemo(() => computeStats(steps, { durationMs }), [steps, durationMs]);
 
   return (
     <div
@@ -240,7 +130,14 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
               letterSpacing: "normal",
             }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--foreground-dim)" }}>
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                color: "var(--foreground-dim)",
+              }}
+            >
               <Clock size={10} />
               {formatTime(startedAt)}
             </span>
@@ -258,7 +155,11 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
 
       {/* Subagents bar */}
       {subagents && subagents.length > 0 && onSubagentBadgeClick && (
-        <SubagentList subagents={subagents} isParentRunning={isRunning} onSubagentClick={onSubagentBadgeClick} />
+        <SubagentList
+          subagents={subagents}
+          isParentRunning={isRunning}
+          onSubagentClick={onSubagentBadgeClick}
+        />
       )}
 
       {/* Timeline */}
@@ -271,9 +172,7 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
           padding: "12px 14px",
         }}
       >
-        {/* Content wrapper — line lives here so it spans full content height */}
         <div style={{ position: "relative" }}>
-          {/* Vertical line — spans the full height of content */}
           {grouped.length > 0 && (
             <div
               style={{
@@ -289,11 +188,13 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
             />
           )}
 
-          {/* Steps */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {timelineRows.map((row) => {
               if (row.kind === "single") {
-                const { entry: { step, resultSteps }, idx } = row;
+                const {
+                  entry: { step, resultSteps },
+                  idx,
+                } = row;
                 const prevStep = idx > 0 ? grouped[idx - 1].step : null;
                 const deltaMs =
                   prevStep && step.createdAt && prevStep.createdAt
@@ -310,7 +211,6 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                       position: "relative",
                     }}
                   >
-                    {/* Node dot */}
                     <div
                       style={{
                         position: "absolute",
@@ -336,7 +236,6 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                 );
               }
 
-              // Parallel spawns group
               const { entries, startIdx } = row;
               const firstStep = entries[0].step;
               const prevStep = startIdx > 0 ? grouped[startIdx - 1].step : null;
@@ -354,7 +253,6 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                     position: "relative",
                   }}
                 >
-                  {/* Node dot */}
                   <div
                     style={{
                       position: "absolute",
@@ -368,17 +266,18 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                       zIndex: 1,
                     }}
                   />
-                  {/* Timestamp row */}
                   {firstStep.createdAt && (
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginBottom: 8,
-                      fontSize: "0.7rem",
-                      fontFamily: "var(--font-mono)",
-                      color: "var(--foreground-dim)",
-                    }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 8,
+                        fontSize: "0.7rem",
+                        fontFamily: "var(--font-mono)",
+                        color: "var(--foreground-dim)",
+                      }}
+                    >
                       <Bot size={11} style={{ color: "hsl(263, 82%, 58%)" }} />
                       <span style={{ color: "var(--foreground-muted)", fontWeight: 500 }}>
                         {entries.length} parallel subagents
@@ -391,12 +290,13 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                       )}
                     </div>
                   )}
-                  {/* Grid of spawn cards */}
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-                    gap: 8,
-                  }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                      gap: 8,
+                    }}
+                  >
                     {entries.map(({ step, resultSteps }) => (
                       <AgentStepItem
                         key={step.id}
@@ -420,7 +320,6 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                 position: "relative",
               }}
             >
-              {/* Pulsing dot on timeline */}
               <div
                 style={{
                   position: "absolute",
@@ -434,7 +333,6 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
                   zIndex: 1,
                 }}
               />
-              {/* Shimmer bar with text — full width */}
               <div
                 style={{
                   display: "flex",
@@ -468,7 +366,6 @@ export function AgentStepList({ steps, isRunning, agentId, startedAt, durationMs
           )}
         </div>
 
-        {/* Empty state */}
         {grouped.length === 0 && !isRunning && (
           <div
             style={{

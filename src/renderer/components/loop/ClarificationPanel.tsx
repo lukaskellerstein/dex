@@ -1,19 +1,18 @@
 import { useState } from "react";
 import { MessageCircleQuestion, Send } from "lucide-react";
-import type { UserInputQuestion } from "../../../core/types.js";
+import { useUserQuestion } from "../../hooks/useUserQuestion.js";
 
-interface ClarificationPanelProps {
-  requestId: string;
-  questions: UserInputQuestion[];
-  onAnswer: (requestId: string, answers: Record<string, string>) => void;
-}
+export function ClarificationPanel() {
+  const { pendingQuestion, answerQuestion } = useUserQuestion();
 
-export function ClarificationPanel({ requestId, questions, onAnswer }: ClarificationPanelProps) {
   // Track selected option per question (keyed by question text)
   const [selections, setSelections] = useState<Record<string, string>>({});
   // Track free-text input per question (for "Other" option)
   const [freeText, setFreeText] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  if (!pendingQuestion) return null;
+  const { requestId, questions } = pendingQuestion;
 
   const allAnswered = questions.every((q) => {
     const sel = selections[q.question];
@@ -38,7 +37,7 @@ export function ClarificationPanel({ requestId, questions, onAnswer }: Clarifica
         : sel;
     }
 
-    onAnswer(requestId, answers);
+    answerQuestion(requestId, answers);
   };
 
   return (

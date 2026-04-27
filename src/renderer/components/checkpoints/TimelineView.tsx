@@ -6,6 +6,7 @@ import { STAGE_ORDER_RENDERER } from "./stageOrder";
 import type { TimelineCommit } from "../../../core/checkpoints.js";
 import type { ClaudeProfile } from "../../../core/agent-profile.js";
 import type { StepType } from "../../../core/types.js";
+import { checkpointService } from "../../services/checkpointService.js";
 
 interface Props {
   projectDir: string;
@@ -41,7 +42,7 @@ export function TimelineView({ projectDir }: Props) {
   const [tryNWaysAnchor, setTryNWaysAnchor] = useState<TryNWaysAnchor | null>(null);
 
   useEffect(() => {
-    window.dexAPI.checkpoints
+    checkpointService
       .checkIsRepo(projectDir)
       .then(setRepoReady)
       .catch(() => setRepoReady(false));
@@ -58,7 +59,7 @@ export function TimelineView({ projectDir }: Props) {
     async (commit: TimelineCommit) => {
       const tag = tagFor(commit.step, commit.cycleNumber);
       if (!commit.hasCheckpointTag) {
-        const r = await window.dexAPI.checkpoints.promote(projectDir, tag, commit.sha);
+        const r = await checkpointService.promote(projectDir, tag, commit.sha);
         if (!("ok" in r) || !r.ok) {
           console.warn("[timeline-view] auto-promote before try-n-ways failed", r);
           return;
@@ -92,7 +93,7 @@ export function TimelineView({ projectDir }: Props) {
           },
         };
       });
-      const r = await window.dexAPI.checkpoints.spawnVariants(projectDir, {
+      const r = await checkpointService.spawnVariants(projectDir, {
         fromCheckpoint: tryNWaysAnchor.tag,
         variantLetters: letters,
         step: tryNWaysAnchor.nextStage,

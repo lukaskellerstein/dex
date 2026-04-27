@@ -1,22 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bug, RotateCw } from "lucide-react";
+import { Bug } from "lucide-react";
 import { CopyBadge } from "./components/shared/CopyBadge.js";
-import { WelcomeScreen, type WelcomeNextView } from "./components/welcome/WelcomeScreen.js";
+import type { WelcomeNextView } from "./components/welcome/WelcomeScreen.js";
 import type { TaskPhase, RunConfig, SubagentInfo } from "../core/types.js";
-import { AgentStepList } from "./components/agent-trace/AgentStepList.js";
-import { SubagentDetailView } from "./components/agent-trace/SubagentDetailView.js";
 import { AppShell } from "./components/layout/AppShell.js";
 import { TopTabBar, type TopTab } from "./components/layout/TopTabBar.js";
 import { TimelineView } from "./components/checkpoints/TimelineView.js";
-import { ProjectOverview } from "./components/project-overview/ProjectOverview.js";
-import { PhaseView } from "./components/task-board/PhaseView.js";
-import { ProgressBar } from "./components/task-board/ProgressBar.js";
 import { LoopStartPanel } from "./components/loop/LoopStartPanel.js";
 import { LoopDashboard } from "./components/loop/LoopDashboard.js";
 import { ClarificationPanel } from "./components/loop/ClarificationPanel.js";
 import { useOrchestrator } from "./hooks/useOrchestrator.js";
 import { useProject } from "./hooks/useProject.js";
 import { CheckpointsEnvelope } from "./components/checkpoints/CheckpointsEnvelope.js";
+import { orchestratorService } from "./services/orchestratorService.js";
+import { checkpointService } from "./services/checkpointService.js";
+import { AppRouter, type View } from "./AppRouter.js";
 
 interface DebugContext {
   runId: string | null;
@@ -70,8 +68,6 @@ function DebugCopyBadge({ context }: { context: DebugContext }) {
   );
 }
 
-type View = "overview" | "tasks" | "trace" | "subagent-detail" | "loop-start" | "loop-dashboard";
-
 export default function App() {
   const project = useProject();
   const orchestrator = useOrchestrator();
@@ -81,8 +77,11 @@ export default function App() {
 
   // Derive selectedSubagent from live data so completedAt updates propagate
   const selectedSubagent = useMemo(
-    () => selectedSubagentId ? orchestrator.subagents.find((s) => s.subagentId === selectedSubagentId) ?? null : null,
-    [selectedSubagentId, orchestrator.subagents]
+    () =>
+      selectedSubagentId
+        ? (orchestrator.subagents.find((s) => s.subagentId === selectedSubagentId) ?? null)
+        : null,
+    [selectedSubagentId, orchestrator.subagents],
   );
   const [, setTick] = useState(0);
 
@@ -105,21 +104,15 @@ export default function App() {
     return () => clearInterval(id);
   }, [orchestrator.isRunning]);
 
-  const handleSubagentClick = useCallback(
-    (subagentId: string) => {
-      setSelectedSubagentId(subagentId);
-      setCurrentView("subagent-detail");
-    },
-    []
-  );
+  const handleSubagentClick = useCallback((subagentId: string) => {
+    setSelectedSubagentId(subagentId);
+    setCurrentView("subagent-detail");
+  }, []);
 
-  const handleSubagentBadgeClick = useCallback(
-    (sub: SubagentInfo) => {
-      setSelectedSubagentId(sub.subagentId);
-      setCurrentView("subagent-detail");
-    },
-    []
-  );
+  const handleSubagentBadgeClick = useCallback((sub: SubagentInfo) => {
+    setSelectedSubagentId(sub.subagentId);
+    setCurrentView("subagent-detail");
+  }, []);
 
   const handleBackFromSubagent = useCallback(() => {
     setSelectedSubagentId(null);
@@ -132,20 +125,36 @@ export default function App() {
       if (step.status === "running") {
         await orchestrator.switchToLive(project.projectDir, orchestrator.currentRunId);
       } else {
-        await orchestrator.loadStageTrace(project.projectDir, orchestrator.currentRunId, step.agentRunId, step.type, { costUsd: step.costUsd, durationMs: step.durationMs });
+        await orchestrator.loadStageTrace(
+          project.projectDir,
+          orchestrator.currentRunId,
+          step.agentRunId,
+          step.type,
+          { costUsd: step.costUsd, durationMs: step.durationMs },
+        );
       }
       setCurrentView("trace");
     },
-    [project.projectDir, orchestrator.currentRunId, orchestrator.switchToLive, orchestrator.loadStageTrace]
+    [
+      project.projectDir,
+      orchestrator.currentRunId,
+      orchestrator.switchToLive,
+      orchestrator.loadStageTrace,
+    ],
   );
 
   const handleImplPhaseClick = useCallback(
     async (phaseTraceId: string) => {
       if (!project.projectDir || !orchestrator.currentRunId) return;
-      await orchestrator.loadStageTrace(project.projectDir, orchestrator.currentRunId, phaseTraceId, "implement");
+      await orchestrator.loadStageTrace(
+        project.projectDir,
+        orchestrator.currentRunId,
+        phaseTraceId,
+        "implement",
+      );
       setCurrentView("trace");
     },
-    [project.projectDir, orchestrator.currentRunId, orchestrator.loadStageTrace]
+    [project.projectDir, orchestrator.currentRunId, orchestrator.loadStageTrace],
   );
 
   // Auto-refresh phases when a phase completes or tasks change mid-phase
@@ -196,6 +205,7 @@ export default function App() {
     descriptionFile?: string;
     maxLoopCycles?: number;
     maxBudgetUsd?: number;
+    autoClarification?: boolean;
     resume?: boolean;
   }) => {
     if (!project.projectDir) return;
@@ -212,13 +222,13 @@ export default function App() {
       ...rest,
       ...(resume ? { resume: true } : {}),
     };
-    window.dexAPI.startRun(config);
+    orchestratorService.startRun(config);
   };
 
-  const handleSelectSpec = (spec: string) => {
+  const handleSelectSpec = useCallback((spec: string) => {
     project.selectSpec(spec);
     setCurrentView("tasks");
-  };
+  }, [project.selectSpec]);
 
   const handleGoHome = useCallback(() => {
     if (orchestrator.isRunning) return; // don't allow while running
@@ -228,7 +238,8 @@ export default function App() {
 
   const handleDeselectSpec = () => {
     project.deselectSpec();
-    const hasLoopHistory = orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
+    const hasLoopHistory =
+      orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
     if (hasLoopHistory || orchestrator.mode === "loop") {
       setCurrentView("loop-dashboard");
     } else {
@@ -240,14 +251,15 @@ export default function App() {
     const projectDir = partial.projectDir ?? project.projectDir!;
 
     // If we have loop history (paused loop), resume in loop mode
-    const hasLoopHistory = orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
+    const hasLoopHistory =
+      orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
     if (hasLoopHistory || orchestrator.mode === "loop") {
       // 010 — sync state.json from HEAD's step-commit before resuming so the
       // orchestrator continues from wherever the user navigated to in the
       // Timeline, not from where state.json was last frozen by the previous
       // run. No-op when HEAD isn't on a step-commit.
       try {
-        await window.dexAPI.checkpoints.syncStateFromHead(projectDir);
+        await checkpointService.syncStateFromHead(projectDir);
       } catch (err) {
         console.warn("[app] syncStateFromHead before resume failed:", err);
       }
@@ -256,9 +268,7 @@ export default function App() {
     }
 
     // Default: run all unfinished specs in build mode
-    const firstUnfinished = project.specSummaries.find(
-      (s) => s.doneTasks < s.totalTasks
-    );
+    const firstUnfinished = project.specSummaries.find((s) => s.doneTasks < s.totalTasks);
     if (!firstUnfinished) return;
 
     const config: RunConfig = {
@@ -271,10 +281,8 @@ export default function App() {
       taskPhases: "all",
       runAllSpecs: true,
     };
-    window.dexAPI.startRun(config);
+    orchestratorService.startRun(config);
   };
-
-
 
   const handleViewPhaseTrace = useCallback(
     async (phase: TaskPhase) => {
@@ -290,13 +298,21 @@ export default function App() {
       const found = await orchestrator.loadPhaseTrace(
         project.projectDir,
         project.selectedSpec,
-        phase
+        phase,
       );
       if (found) {
         setCurrentView("trace");
       }
     },
-    [project.projectDir, project.selectedSpec, orchestrator.loadPhaseTrace, orchestrator.switchToLive, orchestrator.isRunning, orchestrator.currentPhase, orchestrator.currentRunId]
+    [
+      project.projectDir,
+      project.selectedSpec,
+      orchestrator.loadPhaseTrace,
+      orchestrator.switchToLive,
+      orchestrator.isRunning,
+      orchestrator.currentPhase,
+      orchestrator.currentRunId,
+    ],
   );
 
   // 008 checkpoint tracking for DEBUG badge
@@ -306,7 +322,7 @@ export default function App() {
     candidateSha: string | null;
   }>({ currentAttemptBranch: null, lastCheckpointTag: null, candidateSha: null });
   useEffect(() => {
-    const off = window.dexAPI.onOrchestratorEvent((raw) => {
+    const off = orchestratorService.subscribeEvents((raw) => {
       const e = raw as unknown as {
         type?: string;
         checkpointTag?: string;
@@ -329,330 +345,102 @@ export default function App() {
     return off;
   }, []);
 
-  const debugContext = useMemo<DebugContext>(() => ({
-    runId: orchestrator.currentRunId,
-    agentRunId: orchestrator.currentPhaseTraceId,
-    mode: orchestrator.mode,
-    cycle: orchestrator.currentCycle,
-    step: orchestrator.currentStage,
-    specDir: orchestrator.activeSpecDir,
-    phase: orchestrator.currentPhase
-      ? `${orchestrator.currentPhase.number} - ${orchestrator.currentPhase.name}`
-      : null,
-    projectDir: project.projectDir,
-    view: currentView,
-    isRunning: orchestrator.isRunning,
-    viewingHistorical: orchestrator.viewingHistorical,
-    currentAttemptBranch: checkpointDebug.currentAttemptBranch,
-    lastCheckpointTag: checkpointDebug.lastCheckpointTag,
-    candidateSha: checkpointDebug.candidateSha,
-  }), [
-    orchestrator.currentRunId, orchestrator.currentPhaseTraceId, orchestrator.mode,
-    orchestrator.currentCycle, orchestrator.currentStage, orchestrator.activeSpecDir,
-    orchestrator.currentPhase, project.projectDir, currentView,
-    orchestrator.isRunning, orchestrator.viewingHistorical,
-    checkpointDebug.currentAttemptBranch, checkpointDebug.lastCheckpointTag, checkpointDebug.candidateSha,
-  ]);
+  const debugContext = useMemo<DebugContext>(
+    () => ({
+      runId: orchestrator.currentRunId,
+      agentRunId: orchestrator.currentPhaseTraceId,
+      mode: orchestrator.mode,
+      cycle: orchestrator.currentCycle,
+      step: orchestrator.currentStage,
+      specDir: orchestrator.activeSpecDir,
+      phase: orchestrator.currentPhase
+        ? `${orchestrator.currentPhase.number} - ${orchestrator.currentPhase.name}`
+        : null,
+      projectDir: project.projectDir,
+      view: currentView,
+      isRunning: orchestrator.isRunning,
+      viewingHistorical: orchestrator.viewingHistorical,
+      currentAttemptBranch: checkpointDebug.currentAttemptBranch,
+      lastCheckpointTag: checkpointDebug.lastCheckpointTag,
+      candidateSha: checkpointDebug.candidateSha,
+    }),
+    [
+      orchestrator.currentRunId,
+      orchestrator.currentPhaseTraceId,
+      orchestrator.mode,
+      orchestrator.currentCycle,
+      orchestrator.currentStage,
+      orchestrator.activeSpecDir,
+      orchestrator.currentPhase,
+      project.projectDir,
+      currentView,
+      orchestrator.isRunning,
+      orchestrator.viewingHistorical,
+      checkpointDebug.currentAttemptBranch,
+      checkpointDebug.lastCheckpointTag,
+      checkpointDebug.candidateSha,
+    ],
+  );
 
-  let content;
+  const debugBadge = <DebugCopyBadge context={debugContext} />;
 
-  if (!project.projectDir) {
-    content = (
-      <WelcomeScreen
-        openProjectPath={project.openProjectPath}
-        createProject={project.createProject}
-        loadRunHistory={orchestrator.loadRunHistory}
-        onComplete={handleWelcomeComplete}
-      />
-    );
-  } else if (currentView === "subagent-detail" && selectedSubagent) {
-    content = (
-      <SubagentDetailView
-        subagent={selectedSubagent}
-        parentSteps={orchestrator.liveSteps}
-        allSubagents={orchestrator.subagents}
-        isRunning={orchestrator.isRunning}
-        onBack={handleBackFromSubagent}
-      />
-    );
-  } else if (currentView === "trace") {
-    const traceStartedAt = orchestrator.liveSteps[0]?.createdAt;
-    const isLiveTrace = orchestrator.isRunning && !orchestrator.viewingHistorical;
-    // Show current phase elapsed time when running live, not the run-level accumulation
-    const traceDurationMs = isLiveTrace && traceStartedAt
-      ? Date.now() - new Date(traceStartedAt).getTime()
-      : orchestrator.totalDuration > 0
-        ? orchestrator.totalDuration
-        : traceStartedAt
-          ? Date.now() - new Date(traceStartedAt).getTime()
-          : 0;
+  const content = (
+    <AppRouter
+      currentView={currentView}
+      setCurrentView={setCurrentView}
+      projectDir={project.projectDir}
+      selectedSpec={project.selectedSpec}
+      specSummaries={project.specSummaries}
+      phases={project.phases}
+      phaseStats={project.phaseStats}
+      openProjectPath={project.openProjectPath}
+      createProject={project.createProject}
+      liveSteps={orchestrator.liveSteps}
+      subagents={orchestrator.subagents}
+      currentPhase={orchestrator.currentPhase}
+      currentPhaseTraceId={orchestrator.currentPhaseTraceId}
+      currentRunId={orchestrator.currentRunId}
+      activeSpecDir={orchestrator.activeSpecDir}
+      activeTask={orchestrator.activeTask}
+      isRunning={orchestrator.isRunning}
+      viewingHistorical={orchestrator.viewingHistorical}
+      totalCost={orchestrator.totalCost}
+      totalDuration={orchestrator.totalDuration}
+      mode={orchestrator.mode}
+      currentCycle={orchestrator.currentCycle}
+      currentStage={orchestrator.currentStage}
+      isClarifying={orchestrator.isClarifying}
+      loopCycles={orchestrator.loopCycles}
+      preCycleStages={orchestrator.preCycleStages}
+      prerequisitesChecks={orchestrator.prerequisitesChecks}
+      isCheckingPrerequisites={orchestrator.isCheckingPrerequisites}
+      loopTermination={orchestrator.loopTermination}
+      latestAction={orchestrator.latestAction}
+      loadRunHistory={orchestrator.loadRunHistory}
+      selectedSubagent={selectedSubagent}
+      handleWelcomeComplete={handleWelcomeComplete}
+      handleStartLoop={handleStartLoop}
+      handleSelectSpec={handleSelectSpec}
+      handleSubagentClick={handleSubagentClick}
+      handleSubagentBadgeClick={handleSubagentBadgeClick}
+      handleBackFromSubagent={handleBackFromSubagent}
+      handleStageClick={handleStageClick}
+      handleImplPhaseClick={handleImplPhaseClick}
+      handleViewPhaseTrace={handleViewPhaseTrace}
+      debugBadge={debugBadge}
+    />
+  );
 
-    content = (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        {/* Breadcrumb: spec / phase */}
-        <div
-          style={{
-            position: "relative",
-            padding: "10px 14px",
-            borderBottom: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: "color-mix(in srgb, var(--primary) 4%, var(--background))",
-            fontSize: "0.82rem",
-          }}
-        >
-          {orchestrator.mode === "loop" && (() => {
-            // Resolve the spec name for the middle crumb from: selected spec →
-            // current cycle → last cycle with a specDir. Survives pause, which
-            // clears currentCycle via run_completed.
-            const currentCycleObj = orchestrator.currentCycle != null
-              ? orchestrator.loopCycles.find(c => c.cycleNumber === orchestrator.currentCycle)
-              : null;
-            const stripSpecs = (s: string) => s.replace(/^specs\//, "");
-            const fallbackCycle = [...orchestrator.loopCycles]
-              .reverse()
-              .find(c => !!c.specDir);
-            const specName = project.selectedSpec
-              ?? (currentCycleObj?.specDir ? stripSpecs(currentCycleObj.specDir) : null)
-              ?? (fallbackCycle?.specDir ? stripSpecs(fallbackCycle.specDir) : null);
-            const cycleNumber = orchestrator.currentCycle ?? fallbackCycle?.cycleNumber ?? null;
-            const midLabel = cycleNumber != null ? `Cycle ${cycleNumber}` : specName;
-            return (
-              <>
-                <span
-                  onClick={() => setCurrentView("loop-dashboard")}
-                  style={{
-                    color: "var(--foreground-muted)",
-                    cursor: "pointer",
-                    transition: "color 0.15s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
-                >
-                  Loop
-                </span>
-                <span style={{ color: "var(--foreground-dim)" }}>/</span>
-                {midLabel && (
-                  <>
-                    <span
-                      onClick={() => {
-                        if (specName) {
-                          handleSelectSpec(specName);
-                        } else {
-                          setCurrentView("loop-dashboard");
-                        }
-                      }}
-                      style={{
-                        color: "var(--foreground-muted)",
-                        cursor: "pointer",
-                        transition: "color 0.15s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
-                    >
-                      {midLabel}
-                    </span>
-                    <span style={{ color: "var(--foreground-dim)" }}>/</span>
-                  </>
-                )}
-              </>
-            );
-          })()}
-          {orchestrator.mode !== "loop" && project.selectedSpec && (
-            <>
-              <span
-                onClick={() => setCurrentView("tasks")}
-                style={{
-                  color: "var(--foreground-muted)",
-                  cursor: "pointer",
-                  transition: "color 0.15s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
-              >
-                {project.selectedSpec}
-              </span>
-              <span style={{ color: "var(--foreground-dim)" }}>/</span>
-            </>
-          )}
-          {orchestrator.currentPhase && (
-            <span style={{ fontWeight: 600, color: "var(--foreground)" }}>
-              {orchestrator.currentPhase.name.startsWith("loop:")
-                ? orchestrator.currentPhase.name.replace("loop:", "").replace("_", " ")
-                : `TaskPhase ${orchestrator.currentPhase.number}: ${orchestrator.currentPhase.name}`}
-            </span>
-          )}
-          {/* Center: loop indicators */}
-          {isLiveTrace && orchestrator.mode === "loop" && (
-            <span style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: "0.75rem",
-              color: "var(--foreground-muted)",
-            }}>
-              <RotateCw size={11} style={{ animation: "spin 2s linear infinite" }} />
-              {orchestrator.isClarifying ? (
-                <span style={{ color: "var(--primary)" }}>Clarifying...</span>
-              ) : (
-                <>
-                  {orchestrator.currentCycle != null && (
-                    <span>
-                      Cycle <span style={{ fontFamily: "var(--font-mono)", color: "var(--foreground)" }}>{orchestrator.currentCycle}</span>
-                    </span>
-                  )}
-                  {orchestrator.currentStage && (
-                    <span style={{
-                      padding: "1px 6px",
-                      borderRadius: "var(--radius)",
-                      background: "var(--primary-muted)",
-                      color: "var(--primary)",
-                      fontWeight: 500,
-                    }}>
-                      {orchestrator.currentStage.replace("_", " ")}
-                    </span>
-                  )}
-                </>
-              )}
-              {orchestrator.totalCost != null && orchestrator.totalCost > 0 && (
-                <span style={{ fontFamily: "var(--font-mono)" }}>
-                  ${orchestrator.totalCost.toFixed(2)}
-                </span>
-              )}
-            </span>
-          )}
-          {/* Right: debug context badge */}
-          <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-            <DebugCopyBadge context={debugContext} />
-          </span>
-        </div>
-        <AgentStepList
-          steps={orchestrator.liveSteps}
-          isRunning={isLiveTrace}
-          agentId={orchestrator.currentPhaseTraceId ?? undefined}
-          startedAt={traceStartedAt}
-          durationMs={traceDurationMs}
-          subagents={orchestrator.subagents}
-          onSubagentClick={handleSubagentClick}
-          onSubagentBadgeClick={handleSubagentBadgeClick}
-        />
-      </div>
-    );
-  } else if (currentView === "loop-dashboard" || (currentView === "trace" && orchestrator.mode === "loop" && orchestrator.isRunning && !orchestrator.currentStage && !orchestrator.isClarifying)) {
-    content = (
-      <LoopDashboard
-        cycles={orchestrator.loopCycles}
-        preCycleStages={orchestrator.preCycleStages}
-        prerequisitesChecks={orchestrator.prerequisitesChecks}
-        isCheckingPrerequisites={orchestrator.isCheckingPrerequisites}
-        currentCycle={orchestrator.currentCycle}
-        currentStage={orchestrator.currentStage}
-        isClarifying={orchestrator.isClarifying}
-        isRunning={orchestrator.isRunning}
-        totalCost={orchestrator.totalCost}
-        loopTermination={orchestrator.loopTermination}
-        specSummaries={project.specSummaries}
-        onStageClick={handleStageClick}
-        onImplPhaseClick={handleImplPhaseClick}
-        onSelectSpec={handleSelectSpec}
-        debugBadge={<DebugCopyBadge context={debugContext} />}
-        projectDir={project.projectDir}
-        latestAction={orchestrator.latestAction}
-      />
-    );
-  } else if (currentView === "loop-start") {
-    content = project.projectDir ? (
-      <LoopStartPanel
-        projectDir={project.projectDir}
-        isRunning={orchestrator.isRunning}
-        onStart={handleStartLoop}
-      />
-    ) : null;
-  } else if (currentView === "overview" || !project.selectedSpec) {
-    // If project has no specs, show LoopStartPanel so user can generate them
-    if (project.projectDir && project.specSummaries.length === 0) {
-      content = (
-        <LoopStartPanel
-          projectDir={project.projectDir}
-          isRunning={orchestrator.isRunning}
-          onStart={handleStartLoop}
-        />
-      );
-    } else {
-      content = (
-        <ProjectOverview
-          specSummaries={project.specSummaries}
-          onSelectSpec={handleSelectSpec}
-
-          isRunning={orchestrator.isRunning}
-          activeSpecDir={orchestrator.activeSpecDir}
-          activePhase={orchestrator.currentPhase}
-          activeTask={orchestrator.activeTask}
-        />
-      );
-    }
-  } else {
-    content = (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <div
-          style={{
-            flex: 1,
-            overflow: "auto",
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          {project.phases.length > 0 ? (
-            project.phases.map((phase) => (
-              <PhaseView
-                key={phase.number}
-                phase={phase}
-                isRunning={orchestrator.isRunning && !orchestrator.viewingHistorical && orchestrator.currentPhase?.number === phase.number && orchestrator.activeSpecDir === project.selectedSpec}
-                isSelected={!orchestrator.isRunning && orchestrator.currentPhase?.number === phase.number && orchestrator.activeSpecDir === project.selectedSpec}
-                traceStats={project.phaseStats.get(phase.number)}
-                onViewTrace={handleViewPhaseTrace}
-              />
-            ))
-          ) : (
-            <div
-              style={{
-                textAlign: "center",
-                paddingTop: 80,
-                color: "var(--foreground-dim)",
-              }}
-            >
-              No phases found in tasks.md
-            </div>
-          )}
-        </div>
-
-        {project.phases.length > 0 && (
-          <ProgressBar
-            phases={project.phases}
-            totalCost={orchestrator.totalCost}
-            totalDuration={orchestrator.totalDuration}
-          />
-        )}
-      </div>
-    );
-  }
-
-  const tabs = project.projectDir ? (
-    <TopTabBar active={topTab} onChange={setTopTab} />
-  ) : null;
+  const tabs = project.projectDir ? <TopTabBar active={topTab} onChange={setTopTab} /> : null;
 
   // 010 — when the user is on the Steps tab, force the Loop dashboard regardless
   // of whichever sub-view currentView points at. Spec / trace / subagent
   // detail views remain reachable from inside the dashboard via spec-card
   // clicks; they don't belong on the top-level "Steps" tab.
   const stepsTabContent =
-    project.projectDir && project.specSummaries.length === 0 && !orchestrator.isRunning ? (
+    project.projectDir &&
+    project.specSummaries.length === 0 &&
+    !orchestrator.isRunning ? (
       <LoopStartPanel
         projectDir={project.projectDir}
         isRunning={orchestrator.isRunning}
@@ -674,7 +462,7 @@ export default function App() {
         onStageClick={handleStageClick}
         onImplPhaseClick={handleImplPhaseClick}
         onSelectSpec={handleSelectSpec}
-        debugBadge={<DebugCopyBadge context={debugContext} />}
+        debugBadge={debugBadge}
         projectDir={project.projectDir}
         latestAction={orchestrator.latestAction}
       />
@@ -697,23 +485,21 @@ export default function App() {
         projectDir={project.projectDir}
         aggregate={project.aggregate}
         isRunning={orchestrator.isRunning}
-        isPausedLoop={!orchestrator.isRunning && (orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0) && !orchestrator.loopTermination}
+        isPausedLoop={
+          !orchestrator.isRunning &&
+          (orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0) &&
+          !orchestrator.loopTermination
+        }
         onOpenProject={handleOpenProject}
         onGoHome={handleGoHome}
         onRefreshProject={project.refreshProject}
         onDeselectSpec={handleDeselectSpec}
         onStart={handleStart}
-        onStop={() => window.dexAPI.stopRun()}
+        onStop={() => orchestratorService.stopRun()}
         tabs={tabs}
         content={shellContent}
       />
-      {orchestrator.pendingQuestion && (
-        <ClarificationPanel
-          requestId={orchestrator.pendingQuestion.requestId}
-          questions={orchestrator.pendingQuestion.questions}
-          onAnswer={orchestrator.answerQuestion}
-        />
-      )}
+      <ClarificationPanel />
       <CheckpointsEnvelope projectDir={project.projectDir ?? null} />
     </>
   );

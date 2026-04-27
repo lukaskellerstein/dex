@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Minus, Square, X, Copy } from "lucide-react";
+import { windowService } from "../../services/windowService.js";
 
 export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    window.dexAPI.isMaximized().then(setIsMaximized);
-    return window.dexAPI.onMaximizedChange(setIsMaximized);
+    windowService.isMaximized().then(setIsMaximized);
+    return windowService.onMaximizedChange(setIsMaximized);
   }, []);
 
   const btnStyle: React.CSSProperties = {
@@ -23,7 +24,7 @@ export function WindowControls() {
     <div style={{ display: "flex", WebkitAppRegion: "no-drag" } as React.CSSProperties}>
       <button
         style={btnStyle}
-        onClick={() => window.dexAPI.minimize()}
+        onClick={() => windowService.minimize()}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "var(--surface-hover)";
           e.currentTarget.style.color = "var(--foreground)";
@@ -38,7 +39,7 @@ export function WindowControls() {
       </button>
       <button
         style={btnStyle}
-        onClick={() => window.dexAPI.maximize()}
+        onClick={() => windowService.maximize()}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "var(--surface-hover)";
           e.currentTarget.style.color = "var(--foreground)";
@@ -53,7 +54,7 @@ export function WindowControls() {
       </button>
       <button
         style={btnStyle}
-        onClick={() => window.dexAPI.close()}
+        onClick={() => windowService.close()}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "hsl(0, 72%, 50%)";
           e.currentTarget.style.color = "#fff";

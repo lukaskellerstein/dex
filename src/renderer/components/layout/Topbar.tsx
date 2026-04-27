@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw, Play, Square, FolderOpen } from "lucide-react";
 import type { RunConfig } from "../../../core/types.js";
 import { RecBadge } from "../checkpoints/RecBadge.js";
+import { orchestratorService } from "../../services/orchestratorService.js";
 
 interface AggregateStats {
   totalSpecs: number;
@@ -47,7 +48,7 @@ export function Topbar({
       return;
     }
     const load = () =>
-      window.dexAPI
+      orchestratorService
         .getProjectState(projectDir)
         .then((s) => setRecordMode(Boolean(s?.ui?.recordMode)))
         .catch(() => setRecordMode(false));

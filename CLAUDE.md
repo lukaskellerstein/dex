@@ -1,6 +1,6 @@
 # Dex Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-25
+Auto-generated from all feature plans. Last updated: 2026-04-27
 
 ## Active Technologies
 - `better-sqlite3` (audit trail, unchanged), `.dex/state.json` (new — primary state), filesystem artifacts with SHA-256 integrity hashing (002-filesystem-state-management)
@@ -16,6 +16,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-25
 - TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45 (used only by `ClaudeAgentRunner`), `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0. **No new dependencies.** Mock uses `node:fs`, `node:path`, `node:crypto` only. (009-testing-checkpointing)
 - Project-local filesystem only — `<projectDir>/.dex/dex-config.json` (new, gitignored), `<projectDir>/.dex/mock-config.json` (new, gitignored), `fixtures/mock-run/` in the Dex repo (committed). No new per-run persistence; existing `.dex/state.json`, `.dex/feature-manifest.json`, `.dex/learnings.md`, `.dex/runs/<runId>.json`, and `~/.dex/logs/<project>/<runId>/…` continue unchanged. (009-testing-checkpointing)
 - TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape` + `d3-zoom` (already used by current `TimelineGraph`). **No new dependencies.** Filesystem work uses `node:fs`, `node:path`, `node:crypto`; git invocations reuse `safeExec()`/`gitExec()` from `src/core/checkpoints.ts`. (010-interactive-timeline)
+- TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape` + `d3-zoom`. **One dev-dep block added in Wave D**: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`. No other dependency change. (011-refactoring)
+- Unchanged — per-project `.dex/state.json`, `.dex/feature-manifest.json`, `.dex/learnings.md`, `.dex/runs/<runId>.json`; `~/.dex/logs/<project>/<runId>/` text log tree. Five new spec-folder artefacts under `docs/my-specs/011-refactoring/` (committed to git, shared via push). (011-refactoring)
 
 - TypeScript (strict mode), Node.js (Electron 30+) + `@anthropic-ai/claude-agent-sdk` ^0.1.0, `better-sqlite3` ^12.9.0, Electron ^30.0.0, React 18, GSAP, Lucide React (001-autonomous-loop)
 
@@ -35,9 +37,9 @@ npm test && npm run lint
 TypeScript (strict mode), Node.js (Electron 30+): Follow standard conventions
 
 ## Recent Changes
+- 011-refactoring: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape` + `d3-zoom`. **One dev-dep block added in Wave D**: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`. No other dependency change.
 - 010-interactive-timeline: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape` + `d3-zoom` (already used by current `TimelineGraph`). **No new dependencies.** Filesystem work uses `node:fs`, `node:path`, `node:crypto`; git invocations reuse `safeExec()`/`gitExec()` from `src/core/checkpoints.ts`.
 - 009-testing-checkpointing: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45 (used only by `ClaudeAgentRunner`), `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0. **No new dependencies.** Mock uses `node:fs`, `node:path`, `node:crypto` only.
-- 008-interactive-checkpoint: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime).
 
 
 <!-- MANUAL ADDITIONS START -->

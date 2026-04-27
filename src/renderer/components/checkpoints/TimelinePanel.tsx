@@ -4,6 +4,7 @@ import { GoBackConfirm } from "./GoBackConfirm";
 import { TimelineGraph } from "./TimelineGraph";
 import { CommitContextMenu } from "./CommitContextMenu";
 import type { TimelineCommit } from "../../../core/checkpoints.js";
+import { checkpointService } from "../../services/checkpointService.js";
 
 interface Props {
   projectDir: string;
@@ -57,7 +58,7 @@ export function TimelinePanel({
   const performJump = useCallback(
     async (targetSha: string, force?: "save" | "discard") => {
       setError(null);
-      const r = await window.dexAPI.checkpoints.jumpTo(
+      const r = await checkpointService.jumpTo(
         projectDir,
         targetSha,
         force ? { force } : undefined,
@@ -92,7 +93,7 @@ export function TimelinePanel({
     async (commit: TimelineCommit) => {
       setError(null);
       const tag = tagFor(commit.step, commit.cycleNumber);
-      const r = await window.dexAPI.checkpoints.promote(projectDir, tag, commit.sha);
+      const r = await checkpointService.promote(projectDir, tag, commit.sha);
       if (!("ok" in r) || !r.ok) {
         setError(`Keep failed: ${("error" in r && r.error) || "unknown"}`);
         return;
@@ -105,7 +106,7 @@ export function TimelinePanel({
   const handleUnkeep = useCallback(
     async (commit: TimelineCommit) => {
       setError(null);
-      const r = await window.dexAPI.checkpoints.unmark(projectDir, commit.sha);
+      const r = await checkpointService.unmark(projectDir, commit.sha);
       if (!("ok" in r) || !r.ok) {
         setError(`Unmark failed: ${("error" in r && r.error) || "unknown"}`);
         return;
@@ -125,7 +126,7 @@ export function TimelinePanel({
   const handleUnselect = useCallback(
     async (branchName: string) => {
       setError(null);
-      const r = await window.dexAPI.checkpoints.unselect(projectDir, branchName);
+      const r = await checkpointService.unselect(projectDir, branchName);
       if (!("ok" in r) || !r.ok) {
         setError(`Unselect failed: ${("error" in r && r.error) || "unknown"}`);
         return;

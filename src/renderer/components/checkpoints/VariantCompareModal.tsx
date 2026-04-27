@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckpointModal } from "./Modal";
 import { StageSummary } from "./StageSummary";
 import type { VariantGroupFile } from "../../../core/checkpoints.js";
+import { checkpointService } from "../../services/checkpointService.js";
 
 interface Props {
   projectDir: string;
@@ -44,7 +45,7 @@ export function VariantCompareModal({
       setDiffs(next);
       for (const v of group.variants) {
         try {
-          const r = await window.dexAPI.checkpoints.compareAttempts(
+          const r = await checkpointService.compareAttempts(
             projectDir,
             group.fromCheckpoint,
             v.branch,
