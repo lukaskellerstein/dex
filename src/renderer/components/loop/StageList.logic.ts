@@ -1,5 +1,5 @@
 /**
- * What: Pure helpers for StageList — stage visibility (per gap-analysis decision), stage-status derivation, and pause-pending resolution.
+ * What: Pure helpers for StageList — stage visibility (per gap-analysis decision), stage-status derivation, and resume-target resolution.
  * Not: Does not render. Does not own state. The component rewires the helpers into JSX.
  * Deps: StepType, UiLoopStage, ImplementSubPhase types only.
  */
@@ -42,8 +42,7 @@ export type StageStatus =
   | "completed"
   | "skipped"
   | "failed"
-  | "paused"
-  | "pause-pending";
+  | "paused";
 
 export function getStageVisibility(stageType: StepType, decision: string | null): "show" | "skip" {
   if (!decision) return "show";
@@ -64,47 +63,41 @@ export function deriveStageStatus(
   currentStage: StepType | null,
   isActiveCycle: boolean,
   decision: string | null,
-  hasVerifyOrLater: boolean,
+  _hasVerifyOrLater: boolean,
   implementPhases: ImplementSubPhase[],
   isRunning: boolean,
-  isPausedCycle: boolean,
-  /** 010: stage types whose step-commit is on the active path. Overlay for navigated state. */
+  _isPausedCycle: boolean,
+  /** 010: stage types whose step-commit is on the active path. Truth for committed history. */
   pathStages: ReadonlySet<StepType>,
-  /** 010: stage type reserved as the "next" pause-pending row when paused. */
+  /** Single resume-target stage when paused — surfaces as "paused". */
   pausePendingStage: StepType | null,
 ): StageStatus {
-  // For implement, derive from currentStage and implementPhases.
+  // Path commits are the source of truth: a step-commit means the stage finished.
+  if (pathStages.has(stageType)) return "completed";
+
+  if (getStageVisibility(stageType, decision) === "skip") return "skipped";
+
+  // The orchestrator can advance currentStage before publishing a UiLoopStage
+  // record (warmup window after Resume — step_started fires before the first
+  // event that materialises `actual`). Without this, the active stage briefly
+  // renders as plain "pending" right after the user clicks Resume.
+  if (isRunning && isActiveCycle && currentStage === stageType) return "running";
+
   if (stageType === "implement") {
     if (actual) {
-      if (actual.status === "stopped") return "paused";
-      // In a paused cycle, implement was the last real work — mark as paused.
-      if (actual.status === "completed" && isPausedCycle) return "paused";
       if (actual.status === "completed") return "completed";
+      if (actual.status === "stopped") return "paused";
       if (actual.status === "failed") return isRunning ? "failed" : "paused";
       return "running";
     }
     if (isActiveCycle && currentStage === "implement") return "running";
-    if (hasVerifyOrLater && !isPausedCycle) return "completed";
     if (implementPhases.length > 0) {
       const allDone = implementPhases.every((ip) => ip.status === "completed");
-      // Even if all sub-phases that ran are done, if verify never ran and the
-      // orchestrator isn't running, the implementation was interrupted.
-      if (allDone && !isRunning && !hasVerifyOrLater) return "paused";
-      if (isPausedCycle) return "paused";
-      if (allDone) return "completed";
+      if (allDone) return isRunning ? "completed" : "paused";
       return isRunning ? "running" : "paused";
     }
-    if (pathStages.has("implement")) return "completed";
-    if (pausePendingStage === "implement") return "pause-pending";
-    if (!isActiveCycle && decision) return "pending";
+    if (pausePendingStage === "implement") return "paused";
     return "pending";
-  }
-
-  // In a paused cycle, verify/learnings that ran as abort artifacts should show as skipped.
-  if (isPausedCycle && (stageType === "verify" || stageType === "learnings")) {
-    if (actual && actual.status === "completed" && actual.durationMs < 5000) {
-      return "skipped";
-    }
   }
 
   if (actual) {
@@ -114,26 +107,19 @@ export function deriveStageStatus(
     return "running";
   }
 
-  if (getStageVisibility(stageType, decision) === "skip") return "skipped";
-
-  // 010 — selectedPath overlay: orchestrator has no record but the active path's commits do.
-  if (pathStages.has(stageType)) return "completed";
-
-  // 010 — pause-pending: marks the next-unstarted stage when paused.
-  if (pausePendingStage === stageType) return "pause-pending";
+  if (pausePendingStage === stageType) return "paused";
 
   return "pending";
 }
 
 /**
- * Resolves which visible stage is the "next on resume" pause-pending row, or null
+ * Resolves which visible stage is the single "paused" resume target, or null
  * if this cycle isn't paused or warming up. Pure — no React.
  *
  * Fires in two cases:
- *  1. Paused cycle (live run inactive, cycle.status === "running"). In
- *     path-derived navigation `isActiveCycle` is always false because
- *     `currentCycle` is null, but the cycle is still semantically paused and
- *     the next-unstarted stage should surface as pause-pending.
+ *  1. Paused cycle (live run inactive, cycle.status === "running"). The first
+ *     visible stage with no commit on path and no orchestrator record is where
+ *     resume will pick up.
  *  2. Resume warmup (live run active, this is the active cycle, the
  *     orchestrator hasn't yet emitted `step_started` for any cycle stage —
  *     `currentStage` is null or sits outside the visible cycle stages, e.g.

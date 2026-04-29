@@ -14,6 +14,7 @@ import { useProject } from "./hooks/useProject.js";
 import { CheckpointsEnvelope } from "./components/checkpoints/CheckpointsEnvelope.js";
 import { orchestratorService } from "./services/orchestratorService.js";
 import { checkpointService } from "./services/checkpointService.js";
+import { useTimeline } from "./components/checkpoints/hooks/useTimeline.js";
 import { AppRouter, type View } from "./AppRouter.js";
 
 interface DebugContext {
@@ -24,14 +25,27 @@ interface DebugContext {
   step: string | null;
   specDir: string | null;
   phase: string | null;
+  phaseNumber: number | null;
+  phaseName: string | null;
   projectDir: string | null;
   view: string;
   isRunning: boolean;
   viewingHistorical: boolean;
+  branch: string | null;
   // 008 checkpoint fields
   currentAttemptBranch: string | null;
   lastCheckpointTag: string | null;
   candidateSha: string | null;
+}
+
+// Mirrors core/runs.ts `slugForTaskPhaseName` — duplicated here because core/runs
+// pulls in node:fs and can't be imported from the renderer.
+function phaseSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function projectName(projectDir: string): string {
+  return projectDir.split(/[\\/]/).filter(Boolean).pop() ?? projectDir;
 }
 
 function buildDebugPayload(ctx: DebugContext): string {
@@ -47,12 +61,25 @@ function buildDebugPayload(ctx: DebugContext): string {
   add("SpecDir:", ctx.specDir);
   add("TaskPhase:", ctx.phase);
   add("ProjectDir:", ctx.projectDir);
+  add("Branch:", ctx.branch);
   add("View:", ctx.view);
   add("IsRunning:", ctx.isRunning);
   add("ViewHistory:", ctx.viewingHistorical);
   add("CurrentAttemptBranch:", ctx.currentAttemptBranch);
   add("LastCheckpointTag:", ctx.lastCheckpointTag);
   add("CandidateSha:", ctx.candidateSha);
+  // Resolved log paths — primary keys for jumping straight from "weird UI" to "right log file"
+  if (ctx.runId && ctx.projectDir) {
+    const proj = projectName(ctx.projectDir);
+    const runDir = `~/.dex/logs/${proj}/${ctx.runId}/`;
+    add("RunDir:", runDir);
+    add("RunLog:", `${runDir}run.log`);
+    if (ctx.phaseNumber != null && ctx.phaseName) {
+      const slug = phaseSlug(ctx.phaseName);
+      add("PhaseLog:", `${runDir}phase-${ctx.phaseNumber}_${slug}/agent.log`);
+    }
+    add("RunRecord:", `${ctx.projectDir}/.dex/runs/${ctx.runId}.json`);
+  }
   add("Timestamp:", new Date().toISOString());
   return lines.join("\n");
 }
@@ -345,6 +372,10 @@ export default function App() {
     return off;
   }, []);
 
+  // Timeline snapshot only used here for the live git branch — cheap (cached in
+  // useTimeline, refreshed on orchestrator events).
+  const { snapshot: timelineSnapshot } = useTimeline(project.projectDir);
+
   const debugContext = useMemo<DebugContext>(
     () => ({
       runId: orchestrator.currentRunId,
@@ -356,10 +387,13 @@ export default function App() {
       phase: orchestrator.currentPhase
         ? `${orchestrator.currentPhase.number} - ${orchestrator.currentPhase.name}`
         : null,
+      phaseNumber: orchestrator.currentPhase?.number ?? null,
+      phaseName: orchestrator.currentPhase?.name ?? null,
       projectDir: project.projectDir,
       view: currentView,
       isRunning: orchestrator.isRunning,
       viewingHistorical: orchestrator.viewingHistorical,
+      branch: timelineSnapshot.currentBranch || null,
       currentAttemptBranch: checkpointDebug.currentAttemptBranch,
       lastCheckpointTag: checkpointDebug.lastCheckpointTag,
       candidateSha: checkpointDebug.candidateSha,
@@ -376,6 +410,7 @@ export default function App() {
       currentView,
       orchestrator.isRunning,
       orchestrator.viewingHistorical,
+      timelineSnapshot.currentBranch,
       checkpointDebug.currentAttemptBranch,
       checkpointDebug.lastCheckpointTag,
       checkpointDebug.candidateSha,

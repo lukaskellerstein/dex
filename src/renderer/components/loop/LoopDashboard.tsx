@@ -106,8 +106,13 @@ function mergeCycles(path: UiLoopCycle[], orch: UiLoopCycle[]): UiLoopCycle[] {
       byCycle.set(c.cycleNumber, c);
       continue;
     }
+    // Path says "completed" (learnings commit present) → cycle is done. The
+    // orchestrator's stale "running"/"stopped" from a prior interrupted run
+    // must not override that, otherwise fully-done cycles render as paused.
+    const status = existing.status === "completed" ? "completed" : c.status;
     byCycle.set(c.cycleNumber, {
       ...c,
+      status,
       stages: mergeStages(existing.stages, c.stages),
       implementPhases:
         c.implementPhases.length > 0 ? c.implementPhases : existing.implementPhases,
@@ -258,7 +263,7 @@ export function LoopDashboard({
   // During resume warmup the orchestrator hasn't emitted `loop_cycle_started`
   // yet, so its `currentCycle` is null. Fall back to the most recent path-
   // derived cycle so the StageList can mark the about-to-resume stage as
-  // pause-pending instead of leaving every row plain "pending".
+  // paused instead of leaving every row plain "pending".
   const effectiveCurrentCycle = useMemo(() => {
     if (!isRunning) return null;
     if (currentCycle != null) return currentCycle;

@@ -3,7 +3,7 @@
  * Not: Does not derive stage status (logic in StageList.logic.ts). Does not own state besides hover/now refresh.
  * Deps: StageList.logic.ts, MetaBadge, SpecCard, useNow, lucide-react icons.
  */
-import { CheckCircle, Circle, Loader, Minus, Pause, PauseCircle, ExternalLink } from "lucide-react";
+import { CheckCircle, Circle, Loader, Minus, Pause, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import type { StepType } from "../../../core/types.js";
 import type { UiLoopStage, ImplementSubPhase, LatestAction } from "../../hooks/useOrchestrator.js";
@@ -80,19 +80,6 @@ function StatusDot({ status }: { status: StageStatus }) {
           <Pause size={10} fill="currentColor" />
         </div>
       );
-    case "pause-pending":
-      return (
-        <div
-          style={{
-            ...base,
-            background: "transparent",
-            border: "2px dashed var(--status-warning, #f59e0b)",
-            color: "var(--status-warning, #f59e0b)",
-          }}
-        >
-          <PauseCircle size={11} strokeWidth={2} />
-        </div>
-      );
     case "failed":
       return (
         <div
@@ -145,7 +132,6 @@ function StageRow({
   const isCompleted = status === "completed";
   const isSkipped = status === "skipped";
   const isPaused = status === "paused";
-  const isPausePending = status === "pause-pending";
 
   // Tick once per second only while this row is showing a live indicator.
   const now = useNow(1000, isRunning && !!latestAction);
@@ -168,7 +154,7 @@ function StageRow({
               ? "color-mix(in srgb, var(--status-info) 8%, transparent)"
               : isRunning
                 ? "color-mix(in srgb, var(--status-info) 5%, transparent)"
-                : isPaused || isPausePending
+                : isPaused
                   ? "color-mix(in srgb, var(--status-warning, #f59e0b) 5%, transparent)"
                   : "transparent",
           transition: "background 0.15s",
@@ -189,7 +175,7 @@ function StageRow({
         <span
           style={{
             fontSize: "0.8rem",
-            fontWeight: isRunning || isPaused || isPausePending ? 600 : 400,
+            fontWeight: isRunning || isPaused ? 600 : 400,
             color:
               hovered && hasTrace
                 ? "var(--status-info)"
@@ -197,7 +183,7 @@ function StageRow({
                   ? "var(--foreground-dim)"
                   : isRunning
                     ? "var(--status-info)"
-                    : isPaused || isPausePending
+                    : isPaused
                       ? "var(--status-warning, #f59e0b)"
                       : isCompleted
                         ? "var(--foreground-muted)"
@@ -245,19 +231,6 @@ function StageRow({
             }}
           >
             paused
-          </span>
-        )}
-
-        {isPausePending && (
-          <span
-            style={{
-              fontSize: "0.68rem",
-              color: "var(--status-warning, #f59e0b)",
-              fontWeight: 500,
-              fontStyle: "italic",
-            }}
-          >
-            next on resume
           </span>
         )}
 

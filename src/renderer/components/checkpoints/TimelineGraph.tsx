@@ -425,7 +425,7 @@ export function TimelineGraph({
                   />
                 )}
                 {(n.colorState === "selected" || n.colorState === "selected+kept") && !n.isMerge && (
-                  <circle r={Math.max(2, effectiveDotR - 3)} fill="#ffffff" />
+                  <circle r={Math.max(2, effectiveDotR - 1.5)} fill="#ff0000" />
                 )}
               </g>
             );
