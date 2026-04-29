@@ -20,6 +20,7 @@ import {
   VERIFY_SCHEMA,
   LEARNINGS_SCHEMA,
 } from "../prompts.js";
+import { finalizeStageCheckpoint } from "./finalize.js";
 // Circular: orchestrator.ts hosts runStage / runPhase / RunTaskState / AbortError;
 // both sides export only functions/classes so ESM init is safe.
 import {
@@ -199,6 +200,23 @@ export async function runImplementVerifyLearnings(
       costUsd: implStageCost,
       durationMs: implStageDurationMs,
       ...(implAborted ? { stopped: true } : {}),
+    });
+  }
+
+  // Post-stage checkpoint for the implement stage. Mirrors runStage's call in
+  // run-stage.ts:108 — produces the `[checkpoint:implement:<cycle>]` commit
+  // that the Timeline canvas filters on. Skipped on abort/failure.
+  if (!implStageFailed && !abort.signal.aborted) {
+    await finalizeStageCheckpoint({
+      ctx,
+      runId,
+      agentRunId: implStageTraceId,
+      cycleNumber,
+      step: "implement",
+      specDir,
+      rlog,
+      stepModeOverride: Boolean(config.stepMode),
+      abortController: abort,
     });
   }
 

@@ -127,16 +127,34 @@ export function deriveStageStatus(
 
 /**
  * Resolves which visible stage is the "next on resume" pause-pending row, or null
- * if this cycle isn't paused. Pure — no React.
+ * if this cycle isn't paused or warming up. Pure — no React.
+ *
+ * Fires in two cases:
+ *  1. Paused cycle (live run inactive, cycle.status === "running"). In
+ *     path-derived navigation `isActiveCycle` is always false because
+ *     `currentCycle` is null, but the cycle is still semantically paused and
+ *     the next-unstarted stage should surface as pause-pending.
+ *  2. Resume warmup (live run active, this is the active cycle, the
+ *     orchestrator hasn't yet emitted `step_started` for any cycle stage —
+ *     `currentStage` is null or sits outside the visible cycle stages, e.g.
+ *     "prerequisites"). Without this, the dashboard shows the about-to-run
+ *     stage as plain "pending" right after Resume — no signal that the user's
+ *     click took effect.
  */
 export function resolvePausePendingStage(
   visibleStages: StepType[],
   stages: UiLoopStage[],
   pathStages: ReadonlySet<StepType>,
   isPausedCycle: boolean,
-  isActiveCycle: boolean,
+  isActiveCycle: boolean = false,
+  isRunning: boolean = false,
+  currentStage: StepType | null = null,
 ): StepType | null {
-  if (!isPausedCycle || !isActiveCycle) return null;
+  const inWarmup =
+    isRunning &&
+    isActiveCycle &&
+    (currentStage === null || !visibleStages.includes(currentStage));
+  if (!isPausedCycle && !inWarmup) return null;
   for (const st of visibleStages) {
     const hasActual = stages.some((s) => s.type === st);
     if (hasActual) continue;

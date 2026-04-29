@@ -54,6 +54,11 @@ export function TimelinePanel({
   const [dirty, setDirty] = useState<DirtyEnvelope | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [focusedBranch, setFocusedBranch] = useState<string | null>(null);
+
+  const handleBranchFocus = useCallback((branch: string) => {
+    setFocusedBranch((prev) => (prev === branch ? null : branch));
+  }, []);
 
   const performJump = useCallback(
     async (targetSha: string, force?: "save" | "discard") => {
@@ -185,6 +190,8 @@ export function TimelinePanel({
         }}
         headSha={headSha}
         onUnselect={handleUnselect}
+        focusedBranch={focusedBranch}
+        onBranchFocus={handleBranchFocus}
       />
       {menu && (
         <CommitContextMenu

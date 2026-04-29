@@ -4,8 +4,32 @@ import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
 
+/**
+ * Run a child-process command and return trimmed stdout. **stderr is
+ * captured** (`stdio: ["ignore", "pipe", "pipe"]`) so a failing git
+ * command surfaces as a proper Error carrying `cmd` + `stderr`, instead
+ * of leaking a bare `fatal: ...` line straight to the parent process's
+ * terminal where it appears in `electron.log` with no Dex context.
+ */
 function exec(cmd: string, cwd: string): string {
-  return execSync(cmd, { cwd, encoding: "utf-8" }).trim();
+  try {
+    return execSync(cmd, {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (err) {
+    const e = err as { status?: number | null; stderr?: Buffer | string; stdout?: Buffer | string };
+    const stderr = e?.stderr ? String(e.stderr).trim() : "";
+    const stdout = e?.stdout ? String(e.stdout).trim() : "";
+    const wrapped = new Error(
+      `exec failed (status=${e?.status ?? "n/a"}): ${cmd}\n${stderr || stdout || "(no output)"}`,
+    );
+    (wrapped as Error & { cmd: string; cwd: string; stderr: string }).cmd = cmd;
+    (wrapped as Error & { cmd: string; cwd: string; stderr: string }).cwd = cwd;
+    (wrapped as Error & { cmd: string; cwd: string; stderr: string }).stderr = stderr;
+    throw wrapped;
+  }
 }
 
 export function getCurrentBranch(projectDir: string): string {

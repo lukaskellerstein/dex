@@ -1,10 +1,10 @@
 /**
  * What: listTimeline — single read-side aggregator that builds the TimelineSnapshot consumed by the renderer's TimelineGraph (checkpoints + attempts + pending candidates + capture branches + commit graph + selectedPath).
  * Not: Does not modify git state; pure read. Does not own tag-naming (tags.ts) or jump semantics (jumpTo.ts). Mutating verbs live elsewhere.
- * Deps: _helpers (safeExec), tags.ts (parseCheckpointTag, labelFor, checkpointTagFor), ../types.js (StepType).
+ * Deps: _helpers (safeExec, RunLoggerLike), tags.ts (parseCheckpointTag, labelFor, checkpointTagFor), ../types.js (StepType).
  */
 
-import { safeExec } from "./_helpers.js";
+import { safeExec, type RunLoggerLike } from "./_helpers.js";
 import { checkpointTagFor, labelFor, parseCheckpointTag } from "./tags.js";
 import type { StepType } from "../types.js";
 
@@ -51,12 +51,28 @@ export interface StartingPoint {
  * One step-commit on the canvas — a commit whose subject matches
  * `[checkpoint:<step>:<cycle>]`. Mid-stage WIP commits are filtered out
  * upstream and never appear here.
+ *
+ * `branch` is the *canonical* home assigned by walking the first-parent
+ * chain of each branch (in priority order: main → dex/* → attempt-* →
+ * selected-*). The first branch whose first-parent walk reaches a SHA
+ * "owns" it. This matches git semantics: merges trace history along
+ * --first-parent, and the trunk gets to claim its own history.
+ *
+ * `containingBranches` lists every visible branch that contains the SHA
+ * (informational — used for tooltips, not rendering). The layout draws
+ * ONE dot per commit in its canonical lane only.
+ *
+ * `mergedParentShas` is non-empty when this commit is a merge — its second
+ * (and beyond) parents. The layout draws a merge-back edge from each merged
+ * parent's canonical-lane back to this commit.
  */
 export interface TimelineCommit {
   sha: string;
   shortSha: string;
   branch: string;
+  containingBranches: string[];
   parentSha: string | null;
+  mergedParentShas: string[];
   step: StepType;
   cycleNumber: number;
   subject: string;
@@ -64,10 +80,28 @@ export interface TimelineCommit {
   hasCheckpointTag: boolean;
 }
 
+/**
+ * Canonical branch ownership priority — lower wins. Used to ORDER the
+ * first-parent walks, so main's history is claimed first, then dex/*, then
+ * attempt-*, then selected-*. Each commit ends up canonical to the highest-
+ * priority branch whose first-parent chain visits it.
+ *
+ * Unknown user branches (e.g. `feature/foo`) are treated as feature-branch-like.
+ */
+function canonicalPriority(branch: string): number {
+  if (branch === "main" || branch === "master") return 0;
+  if (branch.startsWith("dex/")) return 1;
+  if (branch.startsWith("attempt-")) return 2;
+  if (branch.startsWith("selected-")) return 3;
+  return 1;
+}
+
 export interface TimelineSnapshot {
   checkpoints: CheckpointInfo[];
   attempts: AttemptInfo[];
   currentAttempt: AttemptInfo | null;
+  /** Branch name HEAD is currently on (`git rev-parse --abbrev-ref HEAD`); empty string if detached or unavailable. */
+  currentBranch: string;
   pending: PendingCandidate[];
   captureBranches: string[];
   startingPoint: StartingPoint | null;
@@ -79,25 +113,30 @@ export interface TimelineSnapshot {
 
 // ── Aggregator ───────────────────────────────────────────
 
-export function listTimeline(projectDir: string): TimelineSnapshot {
+export function listTimeline(projectDir: string, rlog?: RunLoggerLike): TimelineSnapshot {
   const checkpoints: CheckpointInfo[] = [];
   const attempts: AttemptInfo[] = [];
   const pending: PendingCandidate[] = [];
   const captureBranches: string[] = [];
   let currentAttempt: AttemptInfo | null = null;
 
+  // Local closure threads `rlog` to every safeExec so silent git failures get
+  // recorded in `electron.log` with the failed command + stderr instead of
+  // disappearing without a trace.
+  const sx = (cmd: string): string => safeExec(cmd, projectDir, rlog);
+
   // Current branch + HEAD SHA
-  const currentBranch = safeExec(`git rev-parse --abbrev-ref HEAD`, projectDir);
+  const currentBranch = sx(`git rev-parse --abbrev-ref HEAD`);
 
   // Checkpoints — tags
-  const tagsRaw = safeExec(`git tag --list 'checkpoint/*'`, projectDir);
+  const tagsRaw = sx(`git tag --list 'checkpoint/*'`);
   for (const tag of tagsRaw.split("\n").filter(Boolean)) {
     // Skip checkpoint/done-* tags — they aren't stage checkpoints
     if (tag.startsWith("checkpoint/done-")) {
       // Treat done tags as pseudo-checkpoint entries with sentinel values
-      const sha = safeExec(`git rev-list -n 1 ${tag}`, projectDir);
-      const message = safeExec(`git log -1 --format=%B ${tag}`, projectDir);
-      const when = safeExec(`git log -1 --format=%cI ${tag}`, projectDir);
+      const sha = sx(`git rev-list -n 1 ${tag}`);
+      const message = sx(`git log -1 --format=%B ${tag}`);
+      const when = sx(`git log -1 --format=%cI ${tag}`);
       checkpoints.push({
         tag,
         label: "run completed",
@@ -112,7 +151,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
     }
     const parsed = parseCheckpointTag(tag);
     if (!parsed) continue;
-    const sha = safeExec(`git rev-list -n 1 ${tag}`, projectDir);
+    const sha = sx(`git rev-list -n 1 ${tag}`);
     if (!sha) {
       checkpoints.push({
         tag,
@@ -127,8 +166,8 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
       });
       continue;
     }
-    const message = safeExec(`git log -1 --format=%B ${tag}`, projectDir);
-    const when = safeExec(`git log -1 --format=%cI ${tag}`, projectDir);
+    const message = sx(`git log -1 --format=%B ${tag}`);
+    const when = sx(`git log -1 --format=%cI ${tag}`);
     const featureMatch = message.match(/\[feature:([\w-]+)\]/);
     const featureSlug = featureMatch && featureMatch[1] !== "-" ? featureMatch[1] : null;
     checkpoints.push({
@@ -144,30 +183,26 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
   }
 
   // Attempts — attempt-* branches
-  const branchesRaw = safeExec(`git branch --list 'attempt-*' --format='%(refname:short)'`, projectDir);
+  const branchesRaw = sx(`git branch --list 'attempt-*' --format='%(refname:short)'`);
   for (const branch of branchesRaw.split("\n").filter(Boolean)) {
-    const sha = safeExec(`git rev-parse ${branch}`, projectDir);
-    const when = safeExec(`git log -1 --format=%cI ${branch}`, projectDir);
+    const sha = sx(`git rev-parse ${branch}`);
+    const when = sx(`git log -1 --format=%cI ${branch}`);
     const variantMatch = branch.match(/-(?<letter>[a-e])$/);
     const variantGroup = variantMatch ? (variantMatch.groups?.letter ?? null) : null;
 
-    // Find nearest ancestor checkpoint
-    let baseCheckpoint: string | null = null;
-    try {
-      const nearest = safeExec(`git describe --tags --match 'checkpoint/*' --abbrev=0 ${sha}`, projectDir);
-      baseCheckpoint = nearest || null;
-    } catch {
-      baseCheckpoint = null;
-    }
+    // Find nearest ancestor checkpoint. `git describe` legitimately fails
+    // when no checkpoint tag is reachable from `sha` — that's a normal
+    // "no tag yet" outcome, not a diagnosable error, so call `safeExec`
+    // bare (no rlog) to keep the log clean. Same posture for the count
+    // probe below. The previous try/catch wrappers were dead code —
+    // safeExec never throws.
+    const nearest = safeExec(`git describe --tags --match 'checkpoint/*' --abbrev=0 ${sha}`, projectDir);
+    const baseCheckpoint: string | null = nearest || null;
 
     let stepsAhead = 0;
     if (baseCheckpoint) {
-      try {
-        const count = safeExec(`git rev-list --count ${baseCheckpoint}..${branch}`, projectDir);
-        stepsAhead = parseInt(count, 10) || 0;
-      } catch {
-        stepsAhead = 0;
-      }
+      const count = safeExec(`git rev-list --count ${baseCheckpoint}..${branch}`, projectDir);
+      stepsAhead = parseInt(count, 10) || 0;
     }
 
     const info: AttemptInfo = {
@@ -184,7 +219,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
   }
 
   // Capture branches
-  const captureRaw = safeExec(`git branch --list 'capture/*' --format='%(refname:short)'`, projectDir);
+  const captureRaw = sx(`git branch --list 'capture/*' --format='%(refname:short)'`);
   for (const b of captureRaw.split("\n").filter(Boolean)) {
     captureBranches.push(b);
   }
@@ -193,10 +228,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
   // HEAD that have no matching tag. Scoped to HEAD (not --all) so orphan commits
   // on stale dex/* or attempt-* branches from previous runs don't leak through.
   const existingTags = new Set(checkpoints.map((c) => c.tag));
-  const candidateLog = safeExec(
-    `git log HEAD --grep='^\\[checkpoint:' --format='%H%x09%s%x09%cI'`,
-    projectDir
-  );
+  const candidateLog = sx(`git log HEAD --grep='^\\[checkpoint:' --format='%H%x09%s%x09%cI'`);
   for (const line of candidateLog.split("\n").filter(Boolean)) {
     const [sha, subject] = line.split("\t");
     // Subject format: "dex: <step> completed [cycle:N] [feature:x]"
@@ -213,16 +245,18 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
   // on the canvas regardless of which branch HEAD is currently on. Falls back
   // to currentBranch + HEAD only when no main/master exists.
   let startingPoint: StartingPoint | null = null;
-  const headSha = safeExec(`git rev-parse HEAD`, projectDir);
+  const headSha = sx(`git rev-parse HEAD`);
   for (const trunk of ["main", "master"]) {
+    // Probe both — at most one exists. Bare safeExec (no rlog) so the
+    // expected miss doesn't pollute the log on every refresh.
     const trunkSha = safeExec(`git rev-parse --verify ${trunk}`, projectDir);
     if (trunkSha) {
       startingPoint = {
         branch: trunk,
         sha: trunkSha,
         shortSha: trunkSha.slice(0, 7),
-        subject: safeExec(`git log -1 --format=%s ${trunk}`, projectDir),
-        timestamp: safeExec(`git log -1 --format=%cI ${trunk}`, projectDir),
+        subject: sx(`git log -1 --format=%s ${trunk}`),
+        timestamp: sx(`git log -1 --format=%cI ${trunk}`),
       };
       break;
     }
@@ -232,8 +266,8 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
       branch: currentBranch,
       sha: headSha,
       shortSha: headSha.slice(0, 7),
-      subject: safeExec(`git log -1 --format=%s HEAD`, projectDir),
-      timestamp: safeExec(`git log -1 --format=%cI HEAD`, projectDir),
+      subject: sx(`git log -1 --format=%s HEAD`),
+      timestamp: sx(`git log -1 --format=%cI HEAD`),
     };
   }
 
@@ -242,16 +276,11 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
   // currentBranch, attempt-* branches, and the latest `dex/*` run branch.
   // Stale dex/* runs from prior sessions, fixture/*, capture/*, and unrelated
   // user branches are filtered out so the canvas stays legible.
-  const commits: TimelineCommit[] = [];
-  const seenCommitShas = new Set<string>();
   const checkpointShaSet = new Set(checkpoints.map((c) => c.sha).filter((s) => Boolean(s)));
 
   // for-each-ref's --format does not expand `%x09`. Use a delimiter git refnames
   // cannot legally contain ('|' is forbidden by git's check-ref-format).
-  const allBranchesRaw = safeExec(
-    `git for-each-ref --format='%(refname:short)|%(committerdate:iso-strict)' refs/heads/`,
-    projectDir,
-  );
+  const allBranchesRaw = sx(`git for-each-ref --format='%(refname:short)|%(committerdate:iso-strict)' refs/heads/`);
   const allBranches: Array<{ name: string; tipTime: string }> = [];
   for (const line of allBranchesRaw.split("\n").filter(Boolean)) {
     const [name, tipTime] = line.split("|");
@@ -282,45 +311,113 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
     if (b.name.startsWith("dex/")) visibleBranches.add(b.name);
   }
 
-  // Iterate filtered branches in stable order: trunk first (so anchor + main
-  // commits land in the leftmost lane), then by tip time descending.
-  const filtered = allBranches
-    .filter((b) => visibleBranches.has(b.name))
-    .sort((a, b) => {
-      const score = (n: string) =>
-        n === "main" || n === "master" ? 0 : n === currentBranch ? 1 : 2;
-      const sa = score(a.name);
-      const sb = score(b.name);
-      if (sa !== sb) return sa - sb;
-      return b.tipTime.localeCompare(a.tipTime);
-    });
+  // Filter to session-relevant branches.
+  const filtered = allBranches.filter((b) => visibleBranches.has(b.name));
 
+  type CommitData = {
+    sha: string;
+    parentSha: string | null;
+    mergedParentShas: string[];
+    step: StepType;
+    cycleNumber: number;
+    subject: string;
+    timestamp: string;
+  };
+
+  // ── Pass 1: Full reachability scan ─────────────────────
+  // For each visible branch, walk every reachable commit (not just
+  // first-parent). Records:
+  //   • commitData[sha]   — parents, step, cycle, subject, timestamp
+  //   • containing[sha]   — every visible branch that reaches this SHA
+  //
+  // We need the full reachable set (not just first-parent) so that
+  // `containingBranches` and merge detection see EVERY branch that
+  // contains a given commit, not only the trunk.
+  const containing = new Map<string, Set<string>>();
+  const commitData = new Map<string, CommitData>();
   for (const { name: branch } of filtered) {
-    const logRaw = safeExec(
-      `git log ${branch} --reverse --format='%H%x09%P%x09%s%x09%cI'`,
-      projectDir,
-    );
+    const logRaw = sx(`git log ${branch} --format='%H%x09%P%x09%s%x09%cI'`);
     for (const line of logRaw.split("\n").filter(Boolean)) {
       const parts = line.split("\t");
       if (parts.length < 4) continue;
       const [sha, parents, subject, timestamp] = parts;
       const m = subject.match(/^dex: (\w+) completed \[cycle:(\d+)\]/);
       if (!m) continue;
-      if (seenCommitShas.has(sha)) continue;
-      seenCommitShas.add(sha);
-      const firstParent = parents.split(" ").filter(Boolean)[0] ?? null;
-      commits.push({
-        sha,
-        shortSha: sha.slice(0, 7),
-        branch,
-        parentSha: firstParent,
-        step: m[1] as StepType,
-        cycleNumber: Number(m[2]),
-        subject,
-        timestamp,
-        hasCheckpointTag: checkpointShaSet.has(sha),
-      });
+      let set = containing.get(sha);
+      if (!set) {
+        set = new Set<string>();
+        containing.set(sha, set);
+      }
+      set.add(branch);
+      if (!commitData.has(sha)) {
+        const parentList = parents.split(" ").filter(Boolean);
+        commitData.set(sha, {
+          sha,
+          parentSha: parentList[0] ?? null,
+          mergedParentShas: parentList.slice(1),
+          step: m[1] as StepType,
+          cycleNumber: Number(m[2]),
+          subject,
+          timestamp,
+        });
+      }
     }
+  }
+
+  // ── Pass 2: Canonical branch assignment via first-parent walks ─
+  // Walk each branch in priority order (main → dex/* → attempt-* →
+  // selected-*) along its --first-parent chain. The first branch whose
+  // walk reaches a SHA claims it as canonical. This matches git's own
+  // notion of branch ownership: --first-parent on main shows the trunk's
+  // history (including merge commits), and feature branches inherit
+  // commits unique to them.
+  //
+  // Net effect: main owns its setup commits and merge commits;
+  // dex/* owns its run-specific commits; attempt-* / selected-* own only
+  // commits unique to them (typically zero — they're labels on existing
+  // commits).
+  const priorityOrdered = [...filtered].sort((a, b) => {
+    const pa = canonicalPriority(a.name);
+    const pb = canonicalPriority(b.name);
+    if (pa !== pb) return pa - pb;
+    return a.name.localeCompare(b.name);
+  });
+  const canonicalOf = new Map<string, string>();
+  for (const { name: branch } of priorityOrdered) {
+    const walkRaw = sx(`git log --first-parent ${branch} --format='%H'`);
+    for (const sha of walkRaw.split("\n").filter(Boolean)) {
+      if (!commitData.has(sha)) continue; // not a step-commit
+      if (canonicalOf.has(sha)) continue; // already claimed
+      canonicalOf.set(sha, branch);
+    }
+  }
+
+  // Build commits[]. `containingBranches` is informational; the layout
+  // uses only `branch` (canonical) to place the dot.
+  const commits: TimelineCommit[] = [];
+  for (const [sha, branchSet] of containing) {
+    const data = commitData.get(sha)!;
+    const canonical = canonicalOf.get(sha);
+    if (!canonical) continue; // unreachable from any visible branch
+    const containingBranches = [...branchSet].sort((a, b) => {
+      const pa = canonicalPriority(a);
+      const pb = canonicalPriority(b);
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b);
+    });
+    commits.push({
+      sha,
+      shortSha: sha.slice(0, 7),
+      branch: canonical,
+      containingBranches,
+      parentSha: data.parentSha,
+      mergedParentShas: data.mergedParentShas,
+      step: data.step,
+      cycleNumber: data.cycleNumber,
+      subject: data.subject,
+      timestamp: data.timestamp,
+      hasCheckpointTag: checkpointShaSet.has(sha),
+    });
   }
   commits.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
@@ -328,10 +425,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
   // oldest-first. Uses --first-parent to collapse merges.
   const selectedPath: string[] = [];
   if (headSha) {
-    const pathLogRaw = safeExec(
-      `git log --first-parent ${headSha} --format='%H%x09%s'`,
-      projectDir,
-    );
+    const pathLogRaw = sx(`git log --first-parent ${headSha} --format='%H%x09%s'`);
     const acc: string[] = [];
     for (const line of pathLogRaw.split("\n").filter(Boolean)) {
       const [sha, subject] = line.split("\t");
@@ -352,6 +446,7 @@ export function listTimeline(projectDir: string): TimelineSnapshot {
     checkpoints,
     attempts,
     currentAttempt,
+    currentBranch,
     pending,
     captureBranches,
     startingPoint,

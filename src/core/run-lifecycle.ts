@@ -94,7 +94,19 @@ export async function initRun(
     runId,
   });
 
-  if (!config.resume) {
+  // Create the run record on fresh start, OR recreate it on resume if the
+  // file is missing (e.g. .dex/runs/<runId>.json was manually deleted while
+  // state.json kept the runId). Without this, the first call into
+  // runs.updateRun on resume throws "run not found" and the orchestrator
+  // hangs silently after the clarification skip path — events have already
+  // fired in the renderer (so isRunning=true), but no further progress is
+  // possible. Recreating with the same runId preserves audit-trail continuity
+  // for the renderer.
+  const runRecordExists = config.resume ? runs.readRun(config.projectDir, runId) !== null : false;
+  if (!config.resume || !runRecordExists) {
+    if (config.resume) {
+      rlog.run("WARN", `run: resume runId=${runId} has no run record on disk — recreating`);
+    }
     runs.startRun(config.projectDir, {
       runId,
       mode: config.mode,

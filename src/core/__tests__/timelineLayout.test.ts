@@ -13,11 +13,15 @@ const STEP_COMMIT = (
   cycleNumber: number,
   timestamp: string,
   hasCheckpointTag = false,
+  containingBranches?: string[],
+  mergedParentShas: string[] = [],
 ): TimelineCommit => ({
   sha,
   shortSha: sha.slice(0, 7),
   branch,
+  containingBranches: containingBranches ?? [branch],
   parentSha,
+  mergedParentShas,
   step: step as TimelineCommit["step"],
   cycleNumber,
   subject: `dex: ${step} completed [cycle:${cycleNumber}]`,
@@ -29,6 +33,7 @@ const EMPTY_SNAP: TimelineSnapshot = {
   checkpoints: [],
   attempts: [],
   currentAttempt: null,
+  currentBranch: "",
   pending: [],
   captureBranches: [],
   startingPoint: null,
@@ -36,7 +41,7 @@ const EMPTY_SNAP: TimelineSnapshot = {
   selectedPath: [],
 };
 
-const OPTS = { laneWidth: 72, rowHeight: 32 };
+const OPTS = { laneWidth: 100, rowHeight: 30 };
 
 // ── Tests ───────────────────────────────────────────────
 
@@ -49,144 +54,215 @@ test("layoutTimeline: empty snapshot → no nodes, no edges, sensible bounds", (
   assert.ok(out.height >= 200);
 });
 
-test("layoutTimeline: starting-point only → anchor node, no edges, one column", () => {
-  const snap: TimelineSnapshot = {
-    ...EMPTY_SNAP,
-    startingPoint: {
-      branch: "main",
-      sha: "0".repeat(40),
-      shortSha: "0000000",
-      subject: "init",
-      timestamp: "2026-04-25T10:00:00Z",
-    },
-  };
+test("layoutTimeline: linear single-branch run — within-column edges between consecutive commits", () => {
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
+  const c = STEP_COMMIT("c".repeat(40), "main", b.sha, "implement", 1, "2026-04-25T10:03:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, b, c] };
   const out = layoutTimeline(snap, OPTS);
-  assert.equal(out.nodes.length, 1);
-  assert.equal(out.nodes[0].node.kind, "start");
+  assert.equal(out.nodes.length, 3);
   assert.equal(out.columns.length, 1);
   assert.equal(out.columns[0].branch, "main");
-  assert.equal(out.columns[0].isAnchor, true);
-  assert.equal(out.edges.length, 0);
-});
-
-test("layoutTimeline: linear single-column run produces within-column edges", () => {
-  const a = STEP_COMMIT("a".repeat(40), "dex/run", null, "plan", 1, "2026-04-25T10:01:00Z");
-  const b = STEP_COMMIT("b".repeat(40), "dex/run", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
-  const c = STEP_COMMIT("c".repeat(40), "dex/run", b.sha, "implement", 1, "2026-04-25T10:03:00Z");
-  const snap: TimelineSnapshot = {
-    ...EMPTY_SNAP,
-    startingPoint: {
-      branch: "main",
-      sha: "9".repeat(40),
-      shortSha: "9999999",
-      subject: "init",
-      timestamp: "2026-04-25T10:00:00Z",
-    },
-    commits: [a, b, c],
-    selectedPath: [a.sha, b.sha, c.sha],
-  };
-  const out = layoutTimeline(snap, OPTS);
-  // 3 step-commits + 1 anchor.
-  assert.equal(out.nodes.length, 4);
-  // Two columns: main (lane 0 — gitk convention even when anchor-only) +
-  // dex/run (lane 1 — actual chain).
-  assert.equal(out.columns.length, 2);
-  assert.equal(out.columns[0].branch, "main");
-  assert.equal(out.columns[1].branch, "dex/run");
-  // dex/run carries 2 within-column edges (a→b, b→c). The first commit on
-  // dex/run sprouts off the trunk lane (main) at its row — a "trunk-sprout"
-  // edge with an explicit fromPoint on main's lane.
+  // Two within-column edges (a→b, b→c).
   const within = out.edges.filter((e) => e.kind === "within-column");
   assert.equal(within.length, 2);
-  const sprout = out.edges.filter((e) => e.kind === "trunk-sprout" && e.toId === a.sha);
-  assert.equal(sprout.length, 1);
-  assert.ok(sprout[0].fromPoint, "trunk-sprout edge must carry an explicit fromPoint");
+  assert.equal(within[0].fromId, a.sha);
+  assert.equal(within[0].toId, b.sha);
 });
 
-test("layoutTimeline: branch-off — attempt column connects to its parent step-commit on the run column", () => {
-  // Run branch:  plan → tasks
-  // Attempt forked from `plan`: produces another `tasks` step-commit on attempt-x.
-  const planSha = "a".repeat(40);
-  const tasksSha = "b".repeat(40);
-  const attemptTasksSha = "c".repeat(40);
+test("layoutTimeline: feature branch fork — single fork edge with elbow at child column, parent row", () => {
+  // main: a, b. feature/x forks from a. feature/x has commits c, d.
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:04:00Z");
+  const c = STEP_COMMIT("c".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
+  const d = STEP_COMMIT("d".repeat(40), "feature/x", c.sha, "plan", 1, "2026-04-25T10:03:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, b, c, d] };
+  const out = layoutTimeline(snap, OPTS);
 
-  const plan = STEP_COMMIT(planSha, "dex/run", null, "plan", 1, "2026-04-25T10:01:00Z");
-  const tasks = STEP_COMMIT(tasksSha, "dex/run", planSha, "tasks", 1, "2026-04-25T10:02:00Z");
-  const attemptTasks = STEP_COMMIT(
-    attemptTasksSha,
-    "attempt-x",
-    planSha,
-    "tasks",
-    1,
-    "2026-04-25T10:03:00Z",
+  // Each commit lives in EXACTLY ONE lane.
+  assert.equal(out.nodes.length, 4);
+  // main is lane 0; feature/x is lane 1.
+  const mainCol = out.columns.find((c) => c.branch === "main")!;
+  const featCol = out.columns.find((c) => c.branch === "feature/x")!;
+  assert.equal(mainCol.columnIndex, 0);
+  assert.equal(featCol.columnIndex, 1);
+
+  // Exactly one fork edge: a (parent) → c (first commit on feature/x).
+  const forks = out.edges.filter((e) => e.kind === "fork");
+  assert.equal(forks.length, 1);
+  assert.equal(forks[0].fromId, a.sha);
+  assert.equal(forks[0].toId, c.sha);
+  assert.ok(forks[0].elbow, "fork edge must carry elbow point");
+  // Elbow at child column X, parent's row Y.
+  const aNode = out.nodes.find((n) => n.id === a.sha)!;
+  assert.equal(forks[0].elbow!.x, featCol.x);
+  assert.equal(forks[0].elbow!.y, aNode.y);
+});
+
+test("layoutTimeline: two branches forking from same commit get separate lanes", () => {
+  // main: a. feature/x forks from a, then feature/y also forks from a.
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const x1 = STEP_COMMIT("x".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
+  const y1 = STEP_COMMIT("y".repeat(40), "feature/y", a.sha, "specify", 1, "2026-04-25T10:03:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, x1, y1] };
+  const out = layoutTimeline(snap, OPTS);
+
+  const featX = out.columns.find((c) => c.branch === "feature/x")!;
+  const featY = out.columns.find((c) => c.branch === "feature/y")!;
+  assert.ok(featX);
+  assert.ok(featY);
+  assert.notEqual(featX.columnIndex, featY.columnIndex, "parallel branches must not share a lane");
+  // Two fork edges, both from a.
+  const forks = out.edges.filter((e) => e.kind === "fork");
+  assert.equal(forks.length, 2);
+  assert.ok(forks.every((f) => f.fromId === a.sha));
+});
+
+test("layoutTimeline: chronological allocation — later branches always sit to the right (no recycling)", () => {
+  // feature/x: forks at a, ends at x1 (rows 1→2). feature/y forks at b (row 3),
+  // after feature/x has ended. Even though feature/x's lane is "free", feature/y
+  // must not recycle into it — the user expects newer activity to appear on the
+  // right edge of the canvas.
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const x1 = STEP_COMMIT("x".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:03:00Z");
+  const y1 = STEP_COMMIT("y".repeat(40), "feature/y", b.sha, "specify", 1, "2026-04-25T10:04:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, x1, b, y1] };
+  const out = layoutTimeline(snap, OPTS);
+
+  const featX = out.columns.find((c) => c.branch === "feature/x")!;
+  const featYNode = out.nodes.find((n) => n.id === y1.sha)!;
+  assert.ok(
+    featYNode.columnIndex > featX.columnIndex,
+    "feature/y (later forkRow) must sit strictly to the right of feature/x",
   );
-  const snap: TimelineSnapshot = {
-    ...EMPTY_SNAP,
-    commits: [plan, tasks, attemptTasks],
-    selectedPath: [],
-  };
-  const out = layoutTimeline(snap, OPTS);
-  // No anchor (no startingPoint), 3 commits, 2 columns.
-  assert.equal(out.nodes.length, 3);
-  assert.equal(out.columns.length, 2);
-  // Branch-off edge: plan (on dex/run) → attemptTasks (on attempt-x).
-  const branchOffs = out.edges.filter((e) => e.kind === "branch-off");
-  assert.equal(branchOffs.length, 1);
-  assert.equal(branchOffs[0].fromId, planSha);
-  assert.equal(branchOffs[0].toId, attemptTasksSha);
 });
 
-test("layoutTimeline: variant fan-out — one parent commit, three branch-off edges to separate columns", () => {
-  const parent = STEP_COMMIT("p".repeat(40), "dex/run", null, "tasks", 1, "2026-04-25T10:01:00Z");
-  const variantA = STEP_COMMIT("a".repeat(40), "attempt-x-a", parent.sha, "plan", 2, "2026-04-25T10:02:00Z");
-  const variantB = STEP_COMMIT("b".repeat(40), "attempt-x-b", parent.sha, "plan", 2, "2026-04-25T10:02:01Z");
-  const variantC = STEP_COMMIT("c".repeat(40), "attempt-x-c", parent.sha, "plan", 2, "2026-04-25T10:02:02Z");
-  const snap: TimelineSnapshot = {
-    ...EMPTY_SNAP,
-    commits: [parent, variantA, variantB, variantC],
-  };
+test("layoutTimeline: branch titles — every lane's tenant is top-pinned at the header row", () => {
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const x1 = STEP_COMMIT("x".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:03:00Z");
+  const y1 = STEP_COMMIT("y".repeat(40), "feature/y", b.sha, "specify", 1, "2026-04-25T10:04:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, x1, b, y1] };
   const out = layoutTimeline(snap, OPTS);
-  assert.equal(out.columns.length, 4);
-  const branchOffs = out.edges.filter((e) => e.kind === "branch-off");
-  assert.equal(branchOffs.length, 3);
-  for (const e of branchOffs) {
-    assert.equal(e.fromId, parent.sha);
+
+  // Without recycling each branch owns its lane outright, so every badge
+  // sits at the top header row.
+  for (const branch of ["main", "feature/x", "feature/y"]) {
+    const t = out.branchTitles.find((x) => x.branch === branch)!;
+    assert.ok(t, `${branch} must have a title`);
+    assert.equal(t.isTopHeader, true, `${branch} title must be top-pinned`);
+    assert.equal(t.rowIndex, 0, `${branch} title row must be 0`);
   }
 });
 
+test("layoutTimeline: selected-* lane flagged isSelectedLane", () => {
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const sel = STEP_COMMIT(
+    "s".repeat(40), "selected-x", a.sha, "specify", 1, "2026-04-25T10:02:00Z",
+  );
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, sel] };
+  const out = layoutTimeline(snap, OPTS);
+  const t = out.branchTitles.find((b) => b.branch === "selected-x");
+  assert.ok(t);
+  assert.equal(t!.isSelectedLane, true);
+});
+
+test("layoutTimeline: a third branch forking last gets the rightmost lane", () => {
+  // Validates the chronological rule across three branches forking from the
+  // same trunk row at increasing fork rows. Whichever forks last must land
+  // on the highest lane index.
+  const m = STEP_COMMIT("m".repeat(40), "main", null, "plan", 1, "2026-04-25T10:00:00Z");
+  const a1 = STEP_COMMIT("a1".padEnd(40, "0"), "dex/featA", m.sha, "specify", 1, "2026-04-25T10:01:00Z");
+  const a2 = STEP_COMMIT("a2".padEnd(40, "0"), "dex/featA", a1.sha, "verify", 1, "2026-04-25T10:02:00Z");
+  const b1 = STEP_COMMIT("b1".padEnd(40, "0"), "dex/featB", a2.sha, "specify", 1, "2026-04-25T10:03:00Z");
+  const c1 = STEP_COMMIT("c1".padEnd(40, "0"), "dex/featC", b1.sha, "specify", 1, "2026-04-25T10:04:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [m, a1, a2, b1, c1] };
+  const out = layoutTimeline(snap, OPTS);
+
+  const colA = out.columns.find((c) => c.branch === "dex/featA")!;
+  const colB = out.columns.find((c) => c.branch === "dex/featB")!;
+  const colC = out.columns.find((c) => c.branch === "dex/featC")!;
+  assert.ok(colA && colB && colC, "all three branches must have columns");
+  assert.ok(colA.columnIndex < colB.columnIndex, "featB must be right of featA");
+  assert.ok(colB.columnIndex < colC.columnIndex, "featC must be right of featB");
+});
+
+test("layoutTimeline: dotted column markers — one per non-trunk lane, full canvas height", () => {
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const x1 = STEP_COMMIT("x".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
+  const y1 = STEP_COMMIT("y".repeat(40), "feature/y", a.sha, "specify", 1, "2026-04-25T10:03:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, x1, y1] };
+  const out = layoutTimeline(snap, OPTS);
+  // Two non-trunk lanes → two dotted markers.
+  assert.equal(out.dottedMarkers.length, 2);
+  // Markers span most of the canvas height.
+  for (const m of out.dottedMarkers) {
+    assert.ok(m.y2 > m.y1);
+    assert.ok(m.y2 - m.y1 > out.rowHeight * 2);
+  }
+});
+
+test("layoutTimeline: lane segments — one per branch with ≥2 commits, colored by branch", () => {
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
+  const x1 = STEP_COMMIT("x1".padEnd(40, "x"), "feature/x", a.sha, "specify", 1, "2026-04-25T10:03:00Z");
+  const x2 = STEP_COMMIT("x2".padEnd(40, "x"), "feature/x", x1.sha, "plan", 1, "2026-04-25T10:04:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, b, x1, x2] };
+  const out = layoutTimeline(snap, OPTS);
+  const mainSeg = out.laneSegments.find((s) => s.branch === "main")!;
+  const xSeg = out.laneSegments.find((s) => s.branch === "feature/x")!;
+  assert.ok(mainSeg);
+  assert.ok(xSeg);
+  // segments span first→last commit of their branch.
+  assert.ok(mainSeg.y2 > mainSeg.y1);
+  assert.ok(xSeg.y2 > xSeg.y1);
+});
+
+test("layoutTimeline: merge commit on main — hollow flag + merge edge from merged tip", () => {
+  // main: a, then merge commit m (with parent a + parent x1 from feature/x).
+  // feature/x: x1.
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const x1 = STEP_COMMIT("x".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
+  const m = STEP_COMMIT(
+    "m".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:03:00Z",
+    false, undefined, [x1.sha],
+  );
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, x1, m] };
+  const out = layoutTimeline(snap, OPTS);
+
+  // Merge commit m flagged isMerge.
+  const mNode = out.nodes.find((n) => n.id === m.sha)!;
+  assert.equal(mNode.isMerge, true);
+
+  // One merge edge from x1 → m, with elbow at x1's X and m's Y.
+  const merges = out.edges.filter((e) => e.kind === "merge");
+  assert.equal(merges.length, 1);
+  assert.equal(merges[0].fromId, x1.sha);
+  assert.equal(merges[0].toId, m.sha);
+  assert.ok(merges[0].elbow);
+  const x1Node = out.nodes.find((n) => n.id === x1.sha)!;
+  assert.equal(merges[0].elbow!.x, x1Node.x);
+  assert.equal(merges[0].elbow!.y, mNode.y);
+});
+
 test("layoutTimeline: color states — selected (blue), kept (red), both, default", () => {
-  const a = STEP_COMMIT("a".repeat(40), "dex/run", null, "plan", 1, "2026-04-25T10:01:00Z");
-  const b = STEP_COMMIT("b".repeat(40), "dex/run", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
-  const c = STEP_COMMIT("c".repeat(40), "dex/run", b.sha, "implement", 1, "2026-04-25T10:03:00Z");
-  const d = STEP_COMMIT("d".repeat(40), "dex/run", c.sha, "verify", 1, "2026-04-25T10:04:00Z");
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
+  const c = STEP_COMMIT("c".repeat(40), "main", b.sha, "implement", 1, "2026-04-25T10:03:00Z");
+  const d = STEP_COMMIT("d".repeat(40), "main", c.sha, "verify", 1, "2026-04-25T10:04:00Z");
 
   const snap: TimelineSnapshot = {
     ...EMPTY_SNAP,
     checkpoints: [
-      // b is kept; c is kept and on path
-      {
-        tag: "checkpoint/cycle-1-after-tasks",
-        label: "tasks",
-        sha: b.sha,
-        step: "tasks",
-        cycleNumber: 1,
-        featureSlug: null,
-        commitMessage: "",
-        timestamp: "2026-04-25T10:02:00Z",
-      },
-      {
-        tag: "checkpoint/cycle-1-after-implement",
-        label: "implement",
-        sha: c.sha,
-        step: "implement",
-        cycleNumber: 1,
-        featureSlug: null,
-        commitMessage: "",
-        timestamp: "2026-04-25T10:03:00Z",
-      },
+      { tag: "checkpoint/cycle-1-after-tasks", label: "tasks", sha: b.sha,
+        step: "tasks", cycleNumber: 1, featureSlug: null, commitMessage: "",
+        timestamp: "2026-04-25T10:02:00Z" },
+      { tag: "checkpoint/cycle-1-after-implement", label: "implement", sha: c.sha,
+        step: "implement", cycleNumber: 1, featureSlug: null, commitMessage: "",
+        timestamp: "2026-04-25T10:03:00Z" },
     ],
     commits: [a, b, c, d],
-    // a and c on selected path; d not on path; b not on path.
     selectedPath: [a.sha, c.sha],
   };
   const out = layoutTimeline(snap, OPTS);
@@ -197,41 +273,14 @@ test("layoutTimeline: color states — selected (blue), kept (red), both, defaul
   assert.equal(byId.get(d.sha)!.colorState, "default");
 });
 
-test("layoutTimeline: trunk ordering — main always lane 0 (gitk convention)", () => {
-  // main has only the starting-point anchor (zero step-commits). Gitk-style
-  // canvases always render main as the leftmost lane regardless — side
-  // branches sprout to its right.
-  const a = STEP_COMMIT("a".repeat(40), "dex/run", null, "plan", 1, "2026-04-25T10:01:00Z");
-  const snap: TimelineSnapshot = {
-    ...EMPTY_SNAP,
-    startingPoint: {
-      branch: "main",
-      sha: "9".repeat(40),
-      shortSha: "9999999",
-      subject: "init",
-      timestamp: "2026-04-25T10:00:00Z",
-    },
-    commits: [a],
-    selectedPath: [a.sha],
-  };
+test("layoutTimeline: cycle bands — one band per contiguous cycleNumber run", () => {
+  const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
+  const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
+  const c = STEP_COMMIT("c".repeat(40), "main", b.sha, "specify", 2, "2026-04-25T10:03:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, b, c] };
   const out = layoutTimeline(snap, OPTS);
-  assert.equal(out.columns[0].branch, "main");
-  assert.equal(out.columns[0].isAnchor, true);
-  assert.equal(out.columns[1].branch, "dex/run");
-});
-
-test("layoutTimeline: bounding box scales with columns and rows", () => {
-  const commits: TimelineCommit[] = [];
-  let prev: string | null = null;
-  for (let i = 0; i < 5; i++) {
-    const sha = String.fromCharCode(97 + i).repeat(40);
-    commits.push(STEP_COMMIT(sha, "dex/run", prev, "plan", 1, `2026-04-25T10:0${i}:00Z`));
-    prev = sha;
-  }
-  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits };
-  const tight = layoutTimeline(snap, { laneWidth: 50, rowHeight: 28 });
-  const loose = layoutTimeline(snap, { laneWidth: 100, rowHeight: 60 });
-  // Loose layout should occupy more space than tight.
-  assert.ok(loose.width >= tight.width);
-  assert.ok(loose.height >= tight.height);
+  // 2 contiguous bands: cycle 1 (a, b), cycle 2 (c).
+  assert.equal(out.cycleBands.length, 2);
+  assert.equal(out.cycleBands[0].cycleNumber, 1);
+  assert.equal(out.cycleBands[1].cycleNumber, 2);
 });

@@ -486,7 +486,25 @@ export async function runMainLoop(
         cycleFailed = true;
         // ── Stage failure handling (T040) ──
         const msg = err instanceof Error ? err.message : String(err);
-        rlog.run("ERROR", `runLoop: cycle ${cycleNumber} failed: ${msg}`);
+        // Log everything we know about *why* this cycle blew up. Without
+        // these breadcrumbs, a failure like "parseTasksFile threw because
+        // currentSpecDir was stale" is invisible — main-loop just bumps
+        // cyclesCompleted and the next cycle picks a different feature,
+        // making it look like cycle 1 was silently skipped.
+        rlog.run("ERROR", `runLoop: cycle ${cycleNumber} failed: ${msg}`, {
+          cycleNumber,
+          cyclesCompleted,
+          decision: decision.type,
+          decisionDetail: decision.type === "RESUME_FEATURE" || decision.type === "REPLAN_FEATURE" || decision.type === "RESUME_AT_STEP"
+            ? { specDir: decision.specDir, ...(decision.type === "RESUME_AT_STEP" ? { resumeAtStep: decision.resumeAtStep } : {}) }
+            : decision.type === "NEXT_FEATURE"
+              ? { name: decision.name, featureId: decision.featureId }
+              : null,
+          specDir,
+          currentStep: currentRunState?.currentStep ?? null,
+          stack: err instanceof Error ? err.stack : undefined,
+          errorName: err instanceof Error ? err.name : undefined,
+        });
 
         if (specDir) {
           const record = getOrCreateFailureRecord(specDir);

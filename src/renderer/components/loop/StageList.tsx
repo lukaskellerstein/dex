@@ -359,6 +359,8 @@ export function StageList({
     path,
     isPausedCycle,
     isActiveCycle,
+    isRunning,
+    currentStage,
   );
 
   return (

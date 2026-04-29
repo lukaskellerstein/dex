@@ -77,7 +77,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
         groupId?: string;
       };
       switch (e.type) {
-        case "stage_candidate":
+        case "step_candidate":
           if (
             e.checkpointTag &&
             e.candidateSha &&
@@ -165,7 +165,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
     // have its identifier here, we go back to the fresh candidate (no tag
     // moved) — the user's next Start picks up from this checkpoint anyway.
     // Real "Try again" flow lands in a future slice that threads the parent
-    // tag through the stage_candidate event.
+    // tag through the step_candidate event.
     setCandidate(null);
   }, [projectDir, candidate]);
 
@@ -177,7 +177,7 @@ export function CheckpointsEnvelope({ projectDir }: Props) {
       // Promote the picked variant's candidate to the checkpoint that was
       // being fanned out. The group's `step` + fromCheckpoint tell us which.
       // fromCheckpoint is the parent; the new canonical tag is determined by
-      // the stage_candidate event that fired at variant completion. We use
+      // the step_candidate event that fired at variant completion. We use
       // the checkpointTag computed from step + cycleNumber of fromCheckpoint + 1
       // — but since we don't have cycle context here, we pick the variant's
       // candidate's matching checkpoint tag via the orchestrator's emission.

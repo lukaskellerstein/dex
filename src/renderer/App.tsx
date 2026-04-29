@@ -329,7 +329,7 @@ export default function App() {
         candidateSha?: string;
         attemptBranch?: string;
       };
-      if (e.type === "stage_candidate") {
+      if (e.type === "step_candidate") {
         setCheckpointDebug((prev) => ({
           currentAttemptBranch: e.attemptBranch ?? prev.currentAttemptBranch,
           lastCheckpointTag: e.checkpointTag ?? prev.lastCheckpointTag,

@@ -1,29 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { select as d3Select } from "d3-selection";
 import { zoom as d3Zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
-import { linkVertical } from "d3-shape";
 import {
   layoutTimeline,
   type LaidOutNode,
-  type LaidOutEdge,
   type LayoutOutput,
 } from "../timelineLayout";
 import type { TimelineSnapshot } from "../../../../core/checkpoints.js";
 
 const LAYOUT_OPTIONS = {
-  laneWidth: 170,
+  laneWidth: 100,
   rowHeight: 30,
-  headerHeight: 40,
-  gutterGap: 36,
+  headerHeight: 30,
+  gutterGap: 28,
 };
 
 /**
- * Owns the imperative d3 state behind TimelineGraph: svg ref, layout memos,
- * pan/zoom transform, hover state, and d3-shape link generator.
- *
- * Extracted from TimelineGraph so the d3 lifecycle is unit-testable without
- * mounting the full SVG tree, and so future timeline visualizations can reuse
- * the same pan/zoom + layout pipeline.
+ * Owns the d3 state behind TimelineGraph: svg ref, layout memo, pan/zoom
+ * transform, hover state. Right-angle fork/merge paths are constructed
+ * inline in the renderer (no d3-shape needed); pan/zoom handles the rest.
  */
 export function useD3Timeline(snapshot: TimelineSnapshot) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -55,30 +50,10 @@ export function useD3Timeline(snapshot: TimelineSnapshot) {
     [layout.nodes],
   );
 
-  const linkGen = useMemo(
-    () =>
-      linkVertical<LaidOutEdge, { x: number; y: number }>()
-        .source((e) => {
-          // Edges with an explicit fromPoint (e.g. "trunk-sprout") originate
-          // from a phantom point on the trunk lane, not from a real node.
-          if (e.fromPoint) return e.fromPoint;
-          const n = nodeById.get(e.fromId);
-          return n ? { x: n.x, y: n.y } : { x: 0, y: 0 };
-        })
-        .target((e) => {
-          const n = nodeById.get(e.toId);
-          return n ? { x: n.x, y: n.y } : { x: 0, y: 0 };
-        })
-        .x((p) => p.x)
-        .y((p) => p.y),
-    [nodeById],
-  );
-
   return {
     svgRef,
     layout,
     nodeById,
-    linkGen,
     transform,
     hovered,
     setHovered,

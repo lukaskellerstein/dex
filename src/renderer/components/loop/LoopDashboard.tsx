@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { GitBranch } from "lucide-react";
 import type { StepType, LoopTermination, PrerequisiteCheck } from "../../../core/types.js";
 import type { UiLoopCycle, UiLoopStage, LatestAction } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
@@ -81,6 +82,38 @@ function derivePhaseStatus(
   if (phaseIdx < activeIdx) return "done";
   if (phaseIdx === activeIdx) return "active";
   return "pending";
+}
+
+// Merge a path-derived stage list with the orchestrator's. Same-typed stages
+// from the orchestrator win (live status, agentRunId, real cost/duration).
+function mergeStages(path: UiLoopStage[], orch: UiLoopStage[]): UiLoopStage[] {
+  const byType = new Map<StepType, UiLoopStage>();
+  for (const s of path) byType.set(s.type, s);
+  for (const s of orch) byType.set(s.type, s);
+  return [...byType.values()];
+}
+
+// Merge cycle arrays by cycleNumber. For overlapping cycles, the orchestrator
+// supplies the live "shell" (status, featureName, decision) while the
+// path-derived view backfills committed stages the orchestrator hasn't
+// re-emitted in the current run (e.g. cycles already done before Resume).
+function mergeCycles(path: UiLoopCycle[], orch: UiLoopCycle[]): UiLoopCycle[] {
+  const byCycle = new Map<number, UiLoopCycle>();
+  for (const c of path) byCycle.set(c.cycleNumber, c);
+  for (const c of orch) {
+    const existing = byCycle.get(c.cycleNumber);
+    if (!existing) {
+      byCycle.set(c.cycleNumber, c);
+      continue;
+    }
+    byCycle.set(c.cycleNumber, {
+      ...c,
+      stages: mergeStages(existing.stages, c.stages),
+      implementPhases:
+        c.implementPhases.length > 0 ? c.implementPhases : existing.implementPhases,
+    });
+  }
+  return [...byCycle.values()].sort((a, b) => a.cycleNumber - b.cycleNumber);
 }
 
 // ── Main Dashboard ──
@@ -200,26 +233,52 @@ export function LoopDashboard({
     return { preCycle, cycles: derivedCycles };
   }, [snapshot.selectedPath, snapshot.commits]);
 
-  // Use path-derived view whenever HEAD has step-commit history. The
-  // orchestrator's currentStage / isRunning belong to the LAST run it
-  // loaded, not whichever branch HEAD is on now — surfacing them while
-  // navigating leaks "Tasks running..." into the row of a navigation that
-  // isn't actually running anything.
-  // Path-derived view is for timeline navigation when no run is active. During
-  // a live run, the orchestrator IS the source of truth — its cycles include
-  // the in-flight stage with status="running" (which path-derivation can't see
-  // because uncommitted stages have no commit), and currentStage/currentCycle
-  // point at where the agent is right now. Falling back to path-derived during
-  // a live run drops the running-stage indicator from the StageList and forces
-  // currentStage/currentCycle to null.
-  const usePathDerived = snapshot.selectedPath.length > 0 && !isRunning;
-  const effectiveCycles = usePathDerived ? pathDerived.cycles : cycles;
-  const effectivePreCycleStages = usePathDerived ? pathDerived.preCycle : preCycleStages;
-  const effectiveCurrentStage = usePathDerived ? null : currentStage;
-  const effectiveCurrentCycle = usePathDerived ? null : currentCycle;
+  // Path + orchestrator views are merged when HEAD has step-commit history.
+  // Path-derived covers stages already on HEAD's first-parent chain (committed
+  // history); the orchestrator covers the in-flight stage of the active run
+  // (status="running", per-stage agentRunIds, implementPhases). Merging both
+  // — instead of switching between them — keeps the resumed run's prior
+  // cycles visible across the gap between `run_started` (which clears
+  // loopCycles) and the orchestrator's first `loop_cycle_started` for the
+  // resumed cycle. Without the merge the dashboard briefly snaps to "no
+  // cycles → Clarification phase" right after Resume. Orchestrator wins
+  // per-stage where both have data so live status/agentRunIds aren't shadowed.
+  const hasPath = snapshot.selectedPath.length > 0;
+  const effectiveCycles = useMemo(
+    () => (hasPath ? mergeCycles(pathDerived.cycles, cycles) : cycles),
+    [hasPath, pathDerived.cycles, cycles],
+  );
+  const effectivePreCycleStages = useMemo(
+    () => (hasPath ? mergeStages(pathDerived.preCycle, preCycleStages) : preCycleStages),
+    [hasPath, pathDerived.preCycle, preCycleStages],
+  );
+  // Orchestrator's "current" pointers belong to its loaded run only — they
+  // are meaningful when isRunning, otherwise they leak into navigated state.
+  const effectiveCurrentStage = isRunning ? currentStage : null;
+  // During resume warmup the orchestrator hasn't emitted `loop_cycle_started`
+  // yet, so its `currentCycle` is null. Fall back to the most recent path-
+  // derived cycle so the StageList can mark the about-to-resume stage as
+  // pause-pending instead of leaving every row plain "pending".
+  const effectiveCurrentCycle = useMemo(() => {
+    if (!isRunning) return null;
+    if (currentCycle != null) return currentCycle;
+    if (hasPath && pathDerived.cycles.length > 0) {
+      return pathDerived.cycles[pathDerived.cycles.length - 1].cycleNumber;
+    }
+    return null;
+  }, [isRunning, currentCycle, hasPath, pathDerived.cycles]);
   const effectiveIsRunning = isRunning;
-  const effectiveIsClarifying = usePathDerived ? false : isClarifying;
-  const effectiveIsCheckingPrerequisites = usePathDerived ? false : isCheckingPrerequisites;
+  // Suppress `isClarifying` / `isCheckingPrerequisites` when path-derived data
+  // shows the run is already past those phases. On resume from a navigated
+  // mid-cycle commit, the orchestrator emits a brief `clarification_started`
+  // (skip path in stages/clarification.ts:61) which would otherwise drag the
+  // ProcessStepper back to the Clarification node despite Cycle 1+ commits
+  // sitting on the active path. Same posture for prerequisites.
+  const pathHasCycleWork = pathDerived.cycles.length > 0;
+  const pathHasClarification = pathDerived.preCycle.length > 0;
+  const effectiveIsClarifying = isRunning && !pathHasCycleWork ? isClarifying : false;
+  const effectiveIsCheckingPrerequisites =
+    isRunning && !pathHasCycleWork && !pathHasClarification ? isCheckingPrerequisites : false;
 
   const pathStagesByCycle = useMemo(() => {
     const m = new Map<number, Set<StepType>>();
@@ -229,12 +288,25 @@ export function LoopDashboard({
     return m;
   }, [effectiveCycles]);
 
+  // Termination state belongs to the run that produced it. When the user
+  // navigates to a historical commit (hasPath && !isRunning), it only still
+  // applies if the current path actually reaches that run's terminated tip —
+  // i.e. the path-derived view contains at least as many completed cycles as
+  // the termination claims. Otherwise the Steps tab would falsely advertise
+  // "All Features Implemented" while HEAD sits mid-cycle on a fork.
+  const effectiveLoopTermination = useMemo(() => {
+    if (!loopTermination) return null;
+    if (!hasPath || isRunning) return loopTermination;
+    const completed = pathDerived.cycles.filter((c) => c.status === "completed").length;
+    return completed >= loopTermination.cyclesCompleted ? loopTermination : null;
+  }, [hasPath, isRunning, loopTermination, pathDerived.cycles]);
+
   const activePhase = deriveActivePhase(
     effectiveIsCheckingPrerequisites,
     effectiveIsClarifying,
     effectivePreCycleStages,
     effectiveCycles,
-    loopTermination,
+    effectiveLoopTermination,
     effectiveIsRunning,
   );
   const [selectedPhase, setSelectedPhase] = useState<MacroPhase>(activePhase);
@@ -247,7 +319,7 @@ export function LoopDashboard({
   const clarificationStatus = derivePhaseStatus("clarification", activePhase);
   const loopStatus = derivePhaseStatus("loop", activePhase);
   const completionStatus = derivePhaseStatus("completion", activePhase);
-  const finalCompletionStatus: PhaseStatus = loopTermination?.reason === "gaps_complete" ? "done" : completionStatus;
+  const finalCompletionStatus: PhaseStatus = effectiveLoopTermination?.reason === "gaps_complete" ? "done" : completionStatus;
 
   const handleSelect = useCallback((phase: MacroPhase) => {
     setSelectedPhase(phase);
@@ -255,6 +327,26 @@ export function LoopDashboard({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {snapshot.currentBranch && (
+        <div
+          data-testid="steps-current-branch"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "6px 14px",
+            background: "var(--surface)",
+            borderBottom: "1px solid var(--border)",
+            color: "var(--foreground-muted)",
+            fontSize: "0.78rem",
+            fontFamily: "var(--font-mono, monospace)",
+          }}
+          title="Current git branch"
+        >
+          <GitBranch size={12} />
+          <span>{snapshot.currentBranch}</span>
+        </div>
+      )}
       <ProcessStepper
         activePhase={activePhase}
         selectedPhase={selectedPhase}
@@ -301,11 +393,11 @@ export function LoopDashboard({
           />
         )}
 
-        {selectedPhase === "completion" && loopTermination && (
-          <CompletionPhase termination={loopTermination} />
+        {selectedPhase === "completion" && effectiveLoopTermination && (
+          <CompletionPhase termination={effectiveLoopTermination} />
         )}
 
-        {selectedPhase === "completion" && !loopTermination && (
+        {selectedPhase === "completion" && !effectiveLoopTermination && (
           <div style={{ textAlign: "center", paddingTop: 60, color: "var(--foreground-dim)", fontSize: "0.82rem" }}>
             Loop has not completed yet
           </div>

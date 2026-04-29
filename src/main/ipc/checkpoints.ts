@@ -28,14 +28,49 @@ import { createIpcLogger } from "./logger.js";
 
 const ipcLogger = createIpcLogger("checkpoints-ipc");
 
+/**
+ * Run a git command and return its trimmed stdout. **stderr is captured**
+ * (`stdio: ["ignore", "pipe", "pipe"]`) so failures bubble up as proper
+ * Errors instead of leaking `fatal: ...` lines straight to the parent
+ * process's terminal — same posture as `gitExec` in `_helpers.ts`.
+ */
 function gitExec(cmd: string, projectDir: string): string {
-  return execSync(cmd, { cwd: projectDir, encoding: "utf-8" }).trim();
+  try {
+    return execSync(cmd, {
+      cwd: projectDir,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (err) {
+    const e = err as { status?: number | null; stderr?: Buffer | string; stdout?: Buffer | string };
+    const stderr = e?.stderr ? String(e.stderr).trim() : "";
+    const stdout = e?.stdout ? String(e.stdout).trim() : "";
+    const wrapped = new Error(
+      `gitExec failed (status=${e?.status ?? "n/a"}): ${cmd}\n${stderr || stdout || "(no output)"}`,
+    );
+    (wrapped as Error & { cmd: string; cwd: string; stderr: string }).cmd = cmd;
+    (wrapped as Error & { cmd: string; cwd: string; stderr: string }).cwd = projectDir;
+    (wrapped as Error & { cmd: string; cwd: string; stderr: string }).stderr = stderr;
+    throw wrapped;
+  }
 }
 
+/**
+ * Same as `gitExec` but swallows failures (returns ""). Logs the failed
+ * command + stderr through `ipcLogger` so the swallowed error still
+ * appears in `electron.log` with full context.
+ */
 function gitExecSilent(cmd: string, projectDir: string): string {
   try {
-    return execSync(cmd, { cwd: projectDir, encoding: "utf-8" }).trim();
-  } catch {
+    return gitExec(cmd, projectDir);
+  } catch (err) {
+    const e = err as { cmd?: string; stderr?: string };
+    ipcLogger.run("WARN", "gitExecSilent swallowed failure", {
+      cmd: e.cmd ?? cmd,
+      cwd: projectDir,
+      stderr: e.stderr,
+      message: err instanceof Error ? err.message : String(err),
+    });
     return "";
   }
 }
@@ -45,13 +80,18 @@ export function registerCheckpointsHandlers(): void {
 
   ipcMain.handle("checkpoints:listTimeline", (_e, projectDir: string) => {
     try {
-      return listTimeline(projectDir);
+      return listTimeline(projectDir, ipcLogger);
     } catch (err) {
-      console.warn("[checkpoints-ipc] listTimeline failed", err);
+      ipcLogger.run("ERROR", "listTimeline threw", {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        cwd: projectDir,
+      });
       return {
         checkpoints: [],
         attempts: [],
         currentAttempt: null,
+        currentBranch: "",
         pending: [],
         captureBranches: [],
         startingPoint: null,

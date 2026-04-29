@@ -1,5 +1,5 @@
 import { useRef, type MouseEvent } from "react";
-import { type LaidOutNode, type ColorState } from "./timelineLayout";
+import { type LaidOutNode, type LaidOutEdge, type ColorState } from "./timelineLayout";
 import type { TimelineSnapshot, TimelineCommit } from "../../../core/checkpoints.js";
 import { useD3Timeline } from "./hooks/useD3Timeline.js";
 
@@ -7,41 +7,97 @@ interface Props {
   snapshot: TimelineSnapshot;
   /** Left-click on a step-commit. Caller invokes checkpointService.jumpTo. */
   onJumpTo: (sha: string) => void;
-  /** Right-click on a step-commit. Caller opens CommitContextMenu (US3). */
+  /** Right-click on a step-commit. Caller opens CommitContextMenu. */
   onContextMenu?: (commit: TimelineCommit, position: { x: number; y: number }) => void;
-  /** SHA of the commit corresponding to current HEAD; rendered with a slight emphasis. */
+  /** SHA corresponding to current HEAD; rendered with subtle emphasis. */
   headSha?: string | null;
-  /** Click the ✕ on a selected-* lane's pill. Caller calls checkpoints:unselect. */
+  /** Click the ✕ on a `selected-*` lane's badge. Caller calls checkpoints:unselect. */
   onUnselect?: (branchName: string) => void;
+  /** Branch currently in "focus" mode — others dim to gray. */
+  focusedBranch?: string | null;
+  /** Click on a header badge → toggle focus for that branch. */
+  onBranchFocus?: (branch: string) => void;
 }
 
-const DOT_RADIUS = 7;
+const DOT_RADIUS = 6;
+const CORNER_R = 10;
 const COLOR_KEPT_RING = "#ef4444";
+const FOCUS_HIGHLIGHT = "var(--foreground, #cdd6f4)";
+const FOCUS_DIMMED = "var(--foreground-dim, #6c7086)";
+const MARKER_COLOR = "#4a4d63";
+const SURFACE_COLOR = "var(--surface, #0e1120)";
 
-/**
- * Mermaid-style: every dot is solid-filled with its lane color. The
- * "selected" highlight is a thicker stroke + a subtle inner ring rather than
- * a different fill, so the lane palette stays consistent across the canvas.
- */
-function fillFor(node: LaidOutNode): string {
-  return node.laneColor;
+const BAND_TINTS: [string, string] = [
+  "rgba(255, 255, 255, 0.025)",
+  "rgba(255, 255, 255, 0.060)",
+];
+
+function displayColor(originalColor: string, branch: string, focused: string | null): string {
+  if (focused === null) return originalColor;
+  if (focused === branch) return FOCUS_HIGHLIGHT;
+  return FOCUS_DIMMED;
+}
+
+function displayOpacity(branch: string, focused: string | null, base: number): number {
+  if (focused === null) return base;
+  if (focused === branch) return base;
+  return Math.min(base, 0.35);
 }
 
 function ringFor(state: ColorState): string | null {
   return state === "kept" || state === "selected+kept" ? COLOR_KEPT_RING : null;
 }
 
-function shortBranch(name: string): string {
-  // Show the full branch name. The canvas overflows horizontally and the
-  // wrapper scrolls (`overflow: auto`) when there are many branches.
-  return name;
+/** Compact header-badge text. Last 3 chars of branch name; main/master kept verbatim. */
+function badgeText(branch: string): string {
+  if (branch === "main" || branch === "master") return branch;
+  if (branch.length <= 3) return branch;
+  return branch.slice(-3);
 }
 
-/** React-owned SVG, d3-zoom for pan/zoom, d3-shape for path geometry. */
-export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUnselect }: Props) {
+/**
+ * Right-angle path with one rounded corner. The `elbow` is the corner.
+ *   • Fork: source on parent lane at parent row → corner at (childX, parentY) → drop to childY.
+ *     Path: M sx,sy  H elbowX-r  Q elbowX,elbowY  elbowX,elbowY+r  V destY
+ *   • Merge: source on merged lane at merged row → corner at (mergedX, mergeY) → glide left to mergeX.
+ *     Path: M sx,sy  V elbowY-r  Q elbowX,elbowY  elbowX-r,elbowY  H destX
+ * The function inspects elbow.y vs source.y to decide which leg comes first.
+ */
+function rightAnglePath(
+  sx: number, sy: number,
+  ex: number, ey: number,
+  dx: number, dy: number,
+  r = CORNER_R,
+): string {
+  const horizontalFirst = ey === sy;
+  if (horizontalFirst) {
+    const goingRight = ex > sx;
+    const beforeCornerX = ex - (goingRight ? r : -r);
+    const goingDown = dy > ey;
+    const afterCornerY = ey + (goingDown ? r : -r);
+    return `M ${sx} ${sy} H ${beforeCornerX} Q ${ex} ${ey} ${ex} ${afterCornerY} V ${dy}`;
+  } else {
+    const goingDown = ey > sy;
+    const beforeCornerY = ey - (goingDown ? r : -r);
+    const goingLeft = dx < ex;
+    const afterCornerX = ex + (goingLeft ? -r : r);
+    return `M ${sx} ${sy} V ${beforeCornerY} Q ${ex} ${ey} ${afterCornerX} ${ey} H ${dx}`;
+  }
+}
+
+export function TimelineGraph({
+  snapshot,
+  onJumpTo,
+  onContextMenu,
+  headSha,
+  onUnselect,
+  focusedBranch,
+  onBranchFocus,
+}: Props) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const { svgRef, layout, nodeById, linkGen, transform, hovered, setHovered } =
+  const { svgRef, layout, nodeById, transform, hovered, setHovered } =
     useD3Timeline(snapshot);
+  const focused = focusedBranch ?? null;
 
   if (layout.nodes.length === 0) {
     return (
@@ -79,6 +135,53 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
     onContextMenu(n.node.data, { x: ev.clientX, y: ev.clientY });
   };
 
+  const renderEdge = (e: LaidOutEdge) => {
+    const to = nodeById.get(e.toId);
+    // For fork/merge, an explicit `toPoint` substitutes for a missing dest
+    // node (e.g. a synthetic `selected-*` lane anchor). `within-column` edges
+    // always require a real dest node.
+    if (!to && (e.kind === "within-column" || !e.toPoint)) return null;
+    const branchForColor = e.branch ?? to?.branch ?? "";
+    const stroke = displayColor(e.laneColor, branchForColor, focused);
+    const opacity = displayOpacity(branchForColor, focused, 0.9);
+
+    if (e.kind === "within-column") {
+      const from = nodeById.get(e.fromId);
+      if (!from || !to) return null;
+      return (
+        <line
+          key={`${e.fromId}-${e.toId}`}
+          x1={from.x}
+          y1={from.y}
+          x2={to.x}
+          y2={to.y}
+          stroke={stroke}
+          strokeWidth={3}
+          opacity={opacity}
+        />
+      );
+    }
+    // fork or merge: right-angle path with rounded corner. Source is the
+    // fromPoint when set (e.g. trunk anchor for forks-from-non-step), else
+    // the lookup node's position. Same posture for the destination via
+    // toPoint (synthetic empty-commit selected-* lanes anchor at their badge).
+    const from = e.fromPoint ?? nodeById.get(e.fromId);
+    const dest = to ?? e.toPoint;
+    if (!from || !dest || !e.elbow) return null;
+    const d = rightAnglePath(from.x, from.y, e.elbow.x, e.elbow.y, dest.x, dest.y);
+    return (
+      <path
+        key={`${e.fromId}-${e.toId}`}
+        d={d}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={3}
+        strokeLinecap="round"
+        opacity={opacity}
+      />
+    );
+  };
+
   return (
     <div
       ref={wrapperRef}
@@ -89,10 +192,6 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
         borderRadius: "var(--radius)",
         background: "var(--surface)",
         overflow: "auto",
-        // Take all the available height from the parent so the wrapper
-        // bounds itself to the viewport — both scrollbars stay inside the
-        // visible area instead of the horizontal one living at the bottom
-        // of a 1000+px-tall SVG.
         flex: 1,
         minHeight: 0,
       }}
@@ -106,57 +205,144 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
         style={{ display: "block", cursor: "grab" }}
       >
         <g transform={transform.toString()}>
-          {/* Branch column headers — horizontal pills above each lane. */}
-          {layout.columns.map((col) => {
-            const label = shortBranch(col.branch);
-            const isSelected = col.branch.startsWith("selected-");
-            const padX = 8;
-            const charW = 6.4;
-            const xBtnW = isSelected && onUnselect ? 18 : 0;
-            const w = Math.max(label.length * charW + padX * 2 + xBtnW, 36);
+          {/* Cycle bands — horizontal background stripes per cycle. */}
+          {layout.cycleBands.map((band, i) => {
+            const bandWidth = Math.max(layout.width, 480);
             return (
-              <g key={`col-${col.branch}`} transform={`translate(${col.x - w / 2}, 8)`}>
+              <g key={`band-${i}-${band.cycleNumber}`} style={{ pointerEvents: "none" }}>
+                <rect x={0} y={band.y} width={bandWidth} height={band.height} fill={BAND_TINTS[band.tintIndex]} />
+                {band.height >= 18 && (
+                  <text
+                    x={bandWidth - 8}
+                    y={band.y + 12}
+                    fontSize={9.5}
+                    fontFamily="var(--font-ui, sans-serif)"
+                    fontWeight={600}
+                    letterSpacing={0.6}
+                    fill="var(--foreground-dim, #6c7086)"
+                    textAnchor="end"
+                    style={{ textTransform: "uppercase" }}
+                  >
+                    {band.label}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Dotted column markers — full canvas height, neutral color. */}
+          {layout.dottedMarkers.map((m, i) => (
+            <line
+              key={`marker-${i}`}
+              x1={m.x}
+              y1={m.y1}
+              x2={m.x}
+              y2={m.y2}
+              stroke={MARKER_COLOR}
+              strokeWidth={1}
+              strokeDasharray="2 6"
+              opacity={0.5}
+            />
+          ))}
+
+          {/* Lane segments — solid colored line per branch's [firstRow, lastRow]. */}
+          {layout.laneSegments.map((seg, i) => {
+            const stroke = displayColor(seg.color, seg.branch, focused);
+            const opacity = displayOpacity(seg.branch, focused, 0.85);
+            return (
+              <line
+                key={`seg-${i}-${seg.branch}`}
+                x1={seg.x}
+                y1={seg.y1}
+                x2={seg.x}
+                y2={seg.y2}
+                stroke={stroke}
+                strokeWidth={3}
+                opacity={opacity}
+              />
+            );
+          })}
+
+          {/* Edges — within-column (vertical), fork (right-angle), merge (right-angle). */}
+          {layout.edges.map(renderEdge)}
+
+          {/* Branch badges. Top-pinned (row 0) for first tenant of each lane;
+              mid-canvas (at fork row) for recycled lane tenants. */}
+          {layout.branchTitles.map((title) => {
+            const col = layout.columns.find((c) => c.columnIndex !== undefined && layout.nodes.some((n) => n.branch === title.branch && n.columnIndex === c.columnIndex)) ??
+              layout.columns.find((c) => c.branch === title.branch);
+            if (!col) return null;
+            const text = badgeText(title.branch);
+            const isFocused = focused === title.branch;
+            const fill = displayColor(title.laneColor, title.branch, focused);
+            const opacity = displayOpacity(title.branch, focused, 1);
+            const charW = 7.5;
+            // Unselect ✕ lives only on the head badge so duplicate tail badges
+            // don't produce duplicate testids or click targets.
+            const showUnselect = title.isSelectedLane && !!onUnselect && !title.isTail;
+            const xBtnW = showUnselect ? 16 : 0;
+            const padInner = 6;
+            const labelW = Math.max(text.length * charW, 28) + padInner * 2 + xBtnW;
+            const badgeH = 20;
+            const badgeX = col.x - labelW / 2;
+            const badgeY = title.y + (layout.rowHeight - badgeH) / 2;
+            const textX = badgeX + (labelW - xBtnW) / 2;
+            return (
+              <g
+                key={`title-${title.branch}-${title.rowIndex}`}
+                data-testid={`branch-badge-${title.branch}${title.isTail ? "-tail" : ""}`}
+                opacity={opacity}
+              >
+                <title>{title.branch}</title>
                 <rect
-                  x={0}
-                  y={0}
-                  width={w}
-                  height={18}
+                  x={badgeX}
+                  y={badgeY}
+                  width={labelW}
+                  height={badgeH}
                   rx={4}
-                  ry={4}
-                  fill={col.laneColor}
-                  fillOpacity={0.18}
-                  stroke={col.laneColor}
-                  strokeWidth={1}
+                  fill={fill}
+                  style={{ cursor: onBranchFocus ? "pointer" : "default" }}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onBranchFocus?.(title.branch);
+                  }}
                 />
                 <text
-                  x={(w - xBtnW) / 2}
-                  y={13}
-                  fontSize={10.5}
+                  x={textX}
+                  y={badgeY + badgeH / 2 + 4}
+                  fontSize={11}
                   fontFamily="var(--font-mono, monospace)"
-                  fill={col.laneColor}
+                  fill="#ffffff"
                   textAnchor="middle"
+                  fontWeight={isFocused ? 700 : 600}
                   style={{ pointerEvents: "none" }}
                 >
-                  {label}
+                  {text}
                 </text>
-                {isSelected && onUnselect && (
+                {showUnselect && (
                   <g
-                    data-testid={`unselect-${col.branch}`}
-                    transform={`translate(${w - xBtnW + 2}, 0)`}
+                    data-testid={`unselect-${title.branch}`}
                     style={{ cursor: "pointer" }}
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      onUnselect(col.branch);
+                      onUnselect?.(title.branch);
                     }}
                   >
-                    <rect x={0} y={0} width={xBtnW - 2} height={18} fill="transparent" />
+                    <rect
+                      x={badgeX + labelW - xBtnW}
+                      y={badgeY}
+                      width={xBtnW}
+                      height={badgeH}
+                      fill="transparent"
+                    />
                     <text
-                      x={(xBtnW - 2) / 2}
-                      y={13}
-                      fontSize={13}
-                      fill={col.laneColor}
+                      x={badgeX + labelW - xBtnW / 2}
+                      y={badgeY + badgeH / 2 + 4}
+                      fontSize={12}
+                      fill="#ffffff"
                       textAnchor="middle"
-                      style={{ pointerEvents: "none", fontWeight: 700 }}
+                      fontWeight={700}
+                      style={{ pointerEvents: "none" }}
                     >
                       ×
                     </text>
@@ -166,116 +352,86 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
             );
           })}
 
-          {/* Trunk line — main's continuous backbone, drawn behind everything
-              so branch-off arcs visually emerge from it. */}
-          {layout.trunkLine && (
-            <line
-              x1={layout.trunkLine.x}
-              y1={layout.trunkLine.y1}
-              x2={layout.trunkLine.x}
-              y2={layout.trunkLine.y2}
-              stroke={layout.trunkLine.color}
-              strokeWidth={2}
-              opacity={0.55}
-              strokeDasharray="2 4"
-            />
-          )}
-
-          {/* Edges — straight vertical for within-lane (mermaid-style track),
-              curved for cross-lane branch-offs and trunk-sprouts. */}
-          {layout.edges.map((e) => {
-            const to = nodeById.get(e.toId);
-            if (!to) return null;
-            // Trunk-sprout (origin = phantom point on main lane at target row)
-            // → always curved.
-            if (e.fromPoint) {
-              return (
-                <path
-                  key={`${e.fromId}-${e.toId}`}
-                  d={linkGen(e) ?? ""}
-                  fill="none"
-                  stroke={e.laneColor}
-                  strokeWidth={1.75}
-                  opacity={0.9}
-                />
-              );
-            }
-            const from = nodeById.get(e.fromId);
-            if (!from) return null;
-            // Same column → straight vertical line.
-            if (from.columnIndex === to.columnIndex) {
-              return (
-                <line
-                  key={`${e.fromId}-${e.toId}`}
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={e.laneColor}
-                  strokeWidth={2}
-                  opacity={0.9}
-                />
-              );
-            }
-            // Different column → curved arc.
-            return (
-              <path
-                key={`${e.fromId}-${e.toId}`}
-                d={linkGen(e) ?? ""}
-                fill="none"
-                stroke={e.laneColor}
-                strokeWidth={1.75}
-                opacity={0.85}
-              />
-            );
-          })}
-
           {/* Dots */}
           {layout.nodes.map((n) => {
             const isHovered = hovered?.id === n.id;
             const isHead = n.node.kind === "step-commit" && headSha === n.node.data.sha;
             const ring = ringFor(n.colorState);
+            const dotColor = displayColor(n.laneColor, n.branch, focused);
+            const dotOpacity = displayOpacity(n.branch, focused, 1);
+            const shortSha = n.node.kind === "step-commit"
+              ? (n.node.data as TimelineCommit).shortSha
+              : "";
+            const testid = n.node.kind === "start"
+              ? "timeline-anchor"
+              : `timeline-node-${shortSha}`;
+            const headOffset = isHead ? 2 : 0;
+            const effectiveDotR = DOT_RADIUS + headOffset + (isHovered ? 1 : 0);
             return (
               <g
                 key={n.id}
-                data-testid={
-                  n.node.kind === "start"
-                    ? "timeline-anchor"
-                    : `timeline-node-${(n.node.data as TimelineCommit).shortSha}`
-                }
+                data-testid={testid}
                 transform={`translate(${n.x}, ${n.y})`}
                 style={{ cursor: "pointer" }}
                 onMouseEnter={() => setHovered(n)}
                 onMouseLeave={() => setHovered(null)}
                 onClick={() => handleClick(n)}
                 onContextMenu={(ev) => handleContextMenu(n, ev)}
+                opacity={dotOpacity}
               >
+                {isHead && (
+                  // Outer halo — frames the HEAD/selected commit so it
+                  // reads as "you are here" against the rest of the lane.
+                  <>
+                    <circle
+                      r={effectiveDotR + 6}
+                      fill="transparent"
+                      stroke="var(--foreground, #fff)"
+                      strokeWidth={1.25}
+                      opacity={0.35}
+                    />
+                    <circle
+                      r={effectiveDotR + 3}
+                      fill="transparent"
+                      stroke="var(--foreground, #fff)"
+                      strokeWidth={1.5}
+                      opacity={0.7}
+                    />
+                  </>
+                )}
                 {ring && (
                   <circle
-                    r={DOT_RADIUS + 3}
+                    r={effectiveDotR + (isHead ? 9 : 3)}
                     fill="transparent"
                     stroke={ring}
                     strokeWidth={2}
                   />
                 )}
-                <circle
-                  r={DOT_RADIUS + (isHovered ? 1 : 0)}
-                  fill={fillFor(n)}
-                  stroke={isHead ? "var(--foreground, #fff)" : "transparent"}
-                  strokeWidth={isHead ? 2 : 0}
-                />
-                {/* Inner highlight for "on selected path" — a small white core
-                    inside the lane-colored dot, like mermaid's HEAD marker. */}
-                {(n.colorState === "selected" || n.colorState === "selected+kept") && (
-                  <circle r={DOT_RADIUS - 3} fill="var(--surface, #0e1120)" />
+                {n.isMerge ? (
+                  // Merge commit — hollow circle with the lane's stroke color
+                  // so the merge structure pops against solid commits.
+                  <circle
+                    r={effectiveDotR}
+                    fill={SURFACE_COLOR}
+                    stroke={dotColor}
+                    strokeWidth={isHead ? 4 : 3}
+                  />
+                ) : (
+                  <circle
+                    r={effectiveDotR}
+                    fill={dotColor}
+                    stroke={isHead ? "var(--foreground, #fff)" : "transparent"}
+                    strokeWidth={isHead ? 2.5 : 0}
+                  />
+                )}
+                {(n.colorState === "selected" || n.colorState === "selected+kept") && !n.isMerge && (
+                  <circle r={Math.max(2, effectiveDotR - 3)} fill="#ffffff" />
                 )}
               </g>
             );
           })}
 
-          {/* Per-dot labels — placed immediately to the right of each dot so
-              the SHA + step text tracks the dot's lane instead of all aligning
-              to a single right-side gutter. */}
+          {/* Per-dot labels — to the right of each dot. */}
           {layout.nodes
             .filter((n) => n.node.kind === "step-commit")
             .map((n) => {
@@ -284,8 +440,9 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
               return (
                 <g
                   key={`label-${n.id}`}
-                  transform={`translate(${n.x + DOT_RADIUS + 8}, ${n.y})`}
+                  transform={`translate(${layout.labelGutterX}, ${n.y})`}
                   style={{ pointerEvents: "none" }}
+                  opacity={displayOpacity(n.branch, focused, 1)}
                 >
                   <text
                     fontSize={11}
@@ -299,32 +456,6 @@ export function TimelineGraph({ snapshot, onJumpTo, onContextMenu, headSha, onUn
                       {"  "}
                       {c.step}
                       {c.cycleNumber > 0 ? ` · cycle ${c.cycleNumber}` : ""}
-                    </tspan>
-                  </text>
-                </g>
-              );
-            })}
-          {/* Anchor label — show "starting-point" hint at the anchor row. */}
-          {layout.nodes
-            .filter((n) => n.node.kind === "start")
-            .map((n) => {
-              const sp = n.node.data;
-              if (n.node.kind !== "start") return null;
-              return (
-                <g
-                  key={`label-${n.id}`}
-                  transform={`translate(${n.x + DOT_RADIUS + 8}, ${n.y})`}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <text
-                    fontSize={11}
-                    fontFamily="var(--font-mono, monospace)"
-                    fill="var(--foreground-dim, #64748b)"
-                    y={4}
-                  >
-                    {sp.shortSha}
-                    <tspan fontFamily="var(--font, sans-serif)">
-                      {"  "}starting-point · {shortBranch(sp.branch)}
                     </tspan>
                   </text>
                 </g>
