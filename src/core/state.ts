@@ -404,6 +404,7 @@ export const STEP_ORDER: StepType[] = [
   "implement_fix",
   "verify",
   "learnings",
+  "completion",
 ];
 
 function stepOrdinal(step: StepType | null): number {

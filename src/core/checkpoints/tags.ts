@@ -50,6 +50,7 @@ const PRETTY_LABELS: Record<StepType, string> = {
   implement_fix: "fixes applied",
   verify: "verification done",
   learnings: "learnings captured",
+  completion: "run completed",
   commit: "checkpoint saved",
 };
 

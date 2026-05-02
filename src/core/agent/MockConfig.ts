@@ -130,6 +130,7 @@ export const PHASE_OF_STEP: Record<StepType, "prerequisites" | "clarification" |
   implement_fix:            "dex_loop",
   verify:                   "dex_loop",
   learnings:                "dex_loop",
+  completion:               "completion",
   commit:                   "dex_loop",
 };
 

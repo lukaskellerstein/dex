@@ -89,6 +89,7 @@ export type StepType =
   | "implement_fix"
   | "verify"
   | "learnings"
+  | "completion"
   | "commit";
 
 export type GapAnalysisDecision =

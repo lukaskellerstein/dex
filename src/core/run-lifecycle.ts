@@ -25,6 +25,7 @@ import {
   updateState,
   acquireStateLock,
 } from "./state.js";
+import { commitCheckpoint } from "./checkpoints.js";
 
 // ── Mutable bridge state (single source of truth for the live run) ──────────
 
@@ -226,6 +227,29 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
       }
     } catch {
       // non-fatal — state write failure shouldn't crash cleanup
+    }
+  }
+
+  // Final completion checkpoint. The terminal write to .dex/runs/<runId>.json
+  // happens in runs.completeRun() above — without this commit the working tree
+  // stays dirty after a successful run, so any subsequent jumpTo() trips the
+  // dirty-tree guard and pops the "Uncommitted changes" modal. Only emitted
+  // for clean completion; stopped/aborted runs intentionally leave the tree
+  // dirty so the user can inspect.
+  if (!wasStopped && runtimeState.activeProjectDir) {
+    try {
+      const finalState = await loadState(config.projectDir);
+      const cycle = finalState?.cyclesCompleted ?? 0;
+      const specDir = finalState?.currentSpecDir ?? null;
+      const sha = commitCheckpoint(config.projectDir, "completion", cycle, specDir);
+      await updateState(config.projectDir, {
+        lastCommit: { sha, timestamp: new Date().toISOString() },
+      });
+      rlog.run("INFO", `run: completion checkpoint committed`, { sha, cycle });
+    } catch (e) {
+      rlog.run("WARN", "run: completion checkpoint commit failed", {
+        error: (e as Error).message,
+      });
     }
   }
 

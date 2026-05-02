@@ -21,4 +21,5 @@ export const STAGE_ORDER_RENDERER: StepType[] = [
   "implement_fix",
   "verify",
   "learnings",
+  "completion",
 ];

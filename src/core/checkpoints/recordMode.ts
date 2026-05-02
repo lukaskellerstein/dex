@@ -112,7 +112,10 @@ export async function syncStateFromHead(
   const patch: Parameters<typeof updateState>[1] = {
     lastCompletedStep: step,
     currentCycleNumber: cycleNumber,
-    cyclesCompleted: step === "learnings" ? cycleNumber : Math.max(0, cycleNumber - 1),
+    cyclesCompleted:
+      step === "learnings" || step === "completion"
+        ? cycleNumber
+        : Math.max(0, cycleNumber - 1),
     // Pause the run so the orchestrator's resume flow takes the resume path.
     status: "paused",
     pausedAt: new Date().toISOString(),
