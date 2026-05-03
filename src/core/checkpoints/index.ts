@@ -10,21 +10,13 @@ export {
   CHECKPOINT_MESSAGE_PREFIX,
   PATHS_BY_STEP,
   checkpointTagFor,
-  checkpointDoneTag,
-  captureBranchName,
-  attemptBranchName,
   selectedBranchName,
   labelFor,
   isParallelizable,
   parseCheckpointTag,
 } from "./tags.js";
 
-export {
-  promoteToCheckpoint,
-  readRecordMode,
-  autoPromoteIfRecordMode,
-  syncStateFromHead,
-} from "./recordMode.js";
+export { syncStateFromHead } from "./syncState.js";
 
 export {
   jumpTo,
@@ -35,7 +27,6 @@ export {
 export {
   listTimeline,
   type CheckpointInfo,
-  type AttemptInfo,
   type PendingCandidate,
   type StartingPoint,
   type TimelineCommit,
@@ -51,19 +42,11 @@ export {
 
 import {
   checkpointTagFor,
-  checkpointDoneTag,
-  captureBranchName,
-  attemptBranchName,
   labelFor,
   isParallelizable,
   parseCheckpointTag,
 } from "./tags.js";
-import {
-  promoteToCheckpoint,
-  readRecordMode,
-  autoPromoteIfRecordMode,
-  syncStateFromHead,
-} from "./recordMode.js";
+import { syncStateFromHead } from "./syncState.js";
 import {
   jumpTo,
   unselect,
@@ -76,7 +59,6 @@ import { commitCheckpoint, readPauseAfterStage } from "./commit.js";
  *
  *   import { checkpoints } from "../checkpoints.js"
  *   checkpoints.commit(projectDir, stage, cycleNumber, feature)
- *   checkpoints.promote(projectDir, tag, sha)
  *   checkpoints.jumpTo(projectDir, sha)
  *
  * The flat exports above remain for call sites that haven't migrated.
@@ -88,17 +70,11 @@ export const checkpoints = {
 
   // Naming + classification
   tagFor: checkpointTagFor,
-  doneTag: checkpointDoneTag,
-  captureBranchName,
-  attemptBranchName,
   labelFor,
   isParallelizable,
   parseTag: parseCheckpointTag,
 
-  // Promotion + record mode
-  promote: promoteToCheckpoint,
-  readRecordMode,
-  autoPromoteIfRecordMode,
+  // State sync
   syncStateFromHead,
 
   // Jump-to + cleanup

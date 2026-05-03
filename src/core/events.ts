@@ -97,12 +97,6 @@ export type OrchestratorEvent =
       attemptBranch: string;
     }
   | {
-      type: "checkpoint_promoted";
-      runId: string;
-      checkpointTag: string;
-      sha: string;
-    }
-  | {
       type: "paused";
       runId: string;
       reason: "user_abort" | "step_mode" | "budget" | "failure";

@@ -7,11 +7,8 @@ const POLL_INTERVAL_MS = 30_000;
 
 const EMPTY: TimelineSnapshot = {
   checkpoints: [],
-  attempts: [],
-  currentAttempt: null,
   currentBranch: "",
   pending: [],
-  captureBranches: [],
   startingPoint: null,
   commits: [],
   selectedPath: [],
@@ -66,8 +63,7 @@ export function useTimeline(projectDir: string | null): {
         type === "run_started" ||
         type === "step_started" ||
         type === "step_completed" ||
-        type === "step_candidate" ||
-        type === "checkpoint_promoted"
+        type === "step_candidate"
       ) {
         refresh();
       }

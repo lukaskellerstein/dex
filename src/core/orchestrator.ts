@@ -1,7 +1,7 @@
 /**
- * What: Coordinator surface — public `run()` dispatcher routing to runBuild / runLoop, the loop-mode body (createContext → prerequisites → clarification → manifest extraction → mainLoop → record-mode tagging), the named exports the IPC layer + extracted stage modules consume (getRunState, getActiveContext, listSpecDirs, isSpecComplete, runStage, runPhase, runBuild, RunTaskState, buildPrompt, AbortError, submitUserAnswer), and stopRun.
+ * What: Coordinator surface — public `run()` dispatcher routing to runBuild / runLoop, the loop-mode body (createContext → prerequisites → clarification → manifest extraction → mainLoop), the named exports the IPC layer + extracted stage modules consume (getRunState, getActiveContext, listSpecDirs, isSpecComplete, runStage, runPhase, runBuild, RunTaskState, buildPrompt, AbortError, submitUserAnswer), and stopRun.
  * Not: Does not own setup / teardown — those live in run-lifecycle.ts (initRun, finalizeRun, runtimeState bag). Does not own per-stage execution — runStage and runPhase are re-exports from stages/. Does not own the autonomous loop itself — runMainLoop in stages/main-loop.ts.
- * Deps: run-lifecycle (initRun, finalizeRun, runtimeState), stages/{run-stage, run-phase, build, main-loop, prerequisites, clarification, manifest-extraction}, state.* (resume reconciliation), checkpoints (record-mode termination), git.getHeadSha.
+ * Deps: run-lifecycle (initRun, finalizeRun, runtimeState), stages/{run-stage, run-phase, build, main-loop, prerequisites, clarification, manifest-extraction}, state.* (resume reconciliation).
  */
 
 import { execSync } from "node:child_process";
@@ -15,13 +15,7 @@ import { runClarificationPhase } from "./stages/clarification.js";
 import { runMainLoop } from "./stages/main-loop.js";
 import type { EmitFn, RunConfig } from "./types.js";
 import { parseTasksFile } from "./parser.js";
-import { getCurrentBranch, createBranch, getHeadSha } from "./git.js";
-import {
-  checkpointDoneTag,
-  captureBranchName,
-  promoteToCheckpoint,
-  readRecordMode,
-} from "./checkpoints.js";
+import { getCurrentBranch, createBranch } from "./git.js";
 import { runBuild } from "./stages/build.js";
 import { runStage } from "./stages/run-stage.js";
 import { RunTaskState, runPhase, buildPrompt } from "./stages/run-phase.js";
@@ -275,28 +269,6 @@ async function runLoop(
   });
   cyclesCompleted = mainLoopResult.cyclesCompleted;
   cumulativeCost = mainLoopResult.cumulativeCost;
-  const terminationReason = mainLoopResult.termination.reason;
-
-  // ── 008 Record-mode termination — tag checkpoint/done-<slice> + capture/ anchor. ──
-  if (runtimeState.activeProjectDir && terminationReason !== "user_abort") {
-    const recordMode = process.env.DEX_RECORD_MODE === "1" || (await readRecordMode(runtimeState.activeProjectDir));
-    if (recordMode) {
-      try {
-        const finalSha = getHeadSha(runtimeState.activeProjectDir);
-        const doneTag = checkpointDoneTag(runId);
-        const promoteResult = promoteToCheckpoint(runtimeState.activeProjectDir, doneTag, finalSha, rlog);
-        if (promoteResult.ok) {
-          emit({ type: "checkpoint_promoted", runId, checkpointTag: doneTag, sha: finalSha });
-        }
-        execSync(
-          `git branch -f ${captureBranchName(runId)} HEAD`,
-          { cwd: runtimeState.activeProjectDir, encoding: "utf-8" },
-        );
-      } catch (err) {
-        rlog.run("WARN", `record-mode termination tagging failed: ${String(err)}`);
-      }
-    }
-  }
 
   return { taskPhasesCompleted: cyclesCompleted, totalCost: cumulativeCost, baseBranch, branchName };
 }

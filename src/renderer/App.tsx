@@ -33,6 +33,8 @@ interface DebugContext {
   viewingHistorical: boolean;
   branch: string | null;
   // 008 checkpoint fields
+  // TODO(post-013): rename to currentRunBranch — value is the current run branch
+  // (dex/* or selected-*), never attempt-*. Deferred per 013-cleanup-2.
   currentAttemptBranch: string | null;
   lastCheckpointTag: string | null;
   candidateSha: string | null;
@@ -361,11 +363,6 @@ export default function App() {
           currentAttemptBranch: e.attemptBranch ?? prev.currentAttemptBranch,
           lastCheckpointTag: e.checkpointTag ?? prev.lastCheckpointTag,
           candidateSha: e.candidateSha ?? prev.candidateSha,
-        }));
-      } else if (e.type === "checkpoint_promoted") {
-        setCheckpointDebug((prev) => ({
-          ...prev,
-          lastCheckpointTag: e.checkpointTag ?? prev.lastCheckpointTag,
         }));
       }
     });

@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Usage: prune-example-branches.sh [--dry-run]
 #
-# Deletes local dex/* branches whose tip commit is older than 7 days AND
-# attempt-* branches older than 30 days (008 retention window). Never
-# touches main, fixture/*, lukas/*, checkpoint/* (tags immune anyway), or
-# capture/*. The currently-checked-out branch is git-enforced skipped.
+# Deletes local dex/* branches whose tip commit is older than 7 days. Never
+# touches main, fixture/*, lukas/*, checkpoint/* (tags immune anyway). The
+# currently-checked-out branch is git-enforced skipped.
+#
+# Note (post-013-cleanup-2): the running app no longer produces attempt-*
+# or capture/* branches. Fixture-only attempt-* branches minted by
+# scripts/reset-example-to.sh linger until manually deleted — that's fine
+# for a test fixture.
 set -euo pipefail
 
 TARGET=/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
 DEX_THRESHOLD=$(( $(date +%s) - 7 * 24 * 60 * 60 ))
-ATTEMPT_THRESHOLD=$(( $(date +%s) - 30 * 24 * 60 * 60 ))
 DRY_RUN=false
 
 if [ "${1:-}" = "--dry-run" ]; then
@@ -35,7 +38,7 @@ prune() {
 }
 
 prune "refs/heads/dex/" "$DEX_THRESHOLD" "dex/*"
-prune "refs/heads/attempt-" "$ATTEMPT_THRESHOLD" "attempt-*"
 
-# main, fixture/*, lukas/*, capture/* are not in any of the globs above —
-# they are implicitly preserved.
+# main, fixture/*, lukas/*, attempt-* (fixture-only post-013), and any
+# pre-existing capture/* refs are not in any of the globs above — they
+# are implicitly preserved.

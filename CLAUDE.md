@@ -1,6 +1,6 @@
 # Dex Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-29
+Auto-generated from all feature plans. Last updated: 2026-05-02
 
 ## Active Technologies
 - `better-sqlite3` (audit trail, unchanged), `.dex/state.json` (new — primary state), filesystem artifacts with SHA-256 integrity hashing (002-filesystem-state-management)
@@ -20,6 +20,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-29
 - Unchanged — per-project `.dex/state.json`, `.dex/feature-manifest.json`, `.dex/learnings.md`, `.dex/runs/<runId>.json`; `~/.dex/logs/<project>/<runId>/` text log tree. Five new spec-folder artefacts under `docs/my-specs/011-refactoring/` (committed to git, shared via push). (011-refactoring)
 - TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` (already present from 011 Wave D). **No new dependencies.** (012-cleanup)
 - Filesystem only — `<projectDir>/.dex/state.json`, `<projectDir>/.dex/feature-manifest.json`, `<projectDir>/.dex/learnings.md`, `<projectDir>/.dex/runs/<runId>.json`, `~/.dex/logs/<project>/<runId>/...`. No schema change. (012-cleanup)
+- TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged. `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` (already present). **No dependencies added or removed by this spec.** (013-cleanup-2)
+- Per-project filesystem only — `<projectDir>/.dex/state.json`, `<projectDir>/.dex/feature-manifest.json`, `<projectDir>/.dex/learnings.md`, `<projectDir>/.dex/runs/<runId>.json`. Per-run logs at `~/.dex/logs/<project>/<runId>/`. No schema change. (013-cleanup-2)
 
 - TypeScript (strict mode), Node.js (Electron 30+) + `@anthropic-ai/claude-agent-sdk` ^0.1.0, `better-sqlite3` ^12.9.0, Electron ^30.0.0, React 18, GSAP, Lucide React (001-autonomous-loop)
 
@@ -39,9 +41,9 @@ npm test && npm run lint
 TypeScript (strict mode), Node.js (Electron 30+): Follow standard conventions
 
 ## Recent Changes
+- 013-cleanup-2: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged. `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` (already present). **No dependencies added or removed by this spec.**
 - 012-cleanup: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` (already present from 011 Wave D). **No new dependencies.**
 - 011-refactoring: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape` + `d3-zoom`. **One dev-dep block added in Wave D**: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`. No other dependency change.
-- 010-interactive-timeline: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged — `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape` + `d3-zoom` (already used by current `TimelineGraph`). **No new dependencies.** Filesystem work uses `node:fs`, `node:path`, `node:crypto`; git invocations reuse `safeExec()`/`gitExec()` from `src/core/checkpoints.ts`.
 
 
 <!-- MANUAL ADDITIONS START -->
@@ -75,9 +77,9 @@ Per-project (inside each opened project):
 
 History layer (committed to git, shared via push):
 
-- `checkpoint/<name>` tags — named save points (one per completed stage)
-- `attempt-<ts>[-<letter>]` branches — Go back / Try again / variant scratch branches (auto-pruned after 30 days)
-- `capture/<date>-<slice>` branches — Record-mode canonical anchors
+- `checkpoint/<name>` tags — named save points (created out-of-band by `scripts/promote-checkpoint.sh` and any future user-driven "Keep this" verb; the running app no longer auto-creates them per 013-cleanup-2)
+- `dex/<date>-<id>` branches — one per autonomous loop run
+- `selected-<ts>` branches — transient navigation forks created by Timeline click-to-jump (auto-pruned when empty relative to the next jump target)
 
 All files in `<projectDir>/.dex/` are committable except those marked `gitignored`. Teams who want private traces add `.dex/runs/` to `.gitignore` themselves. Diagnostics paths are documented in full in `.claude/rules/06-testing.md` section 4f.
 

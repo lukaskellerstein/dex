@@ -1,6 +1,6 @@
 /**
- * What: Naming + classification for checkpoint tags, attempt/capture/selected branches, and step parallelism.
- * Not: Does not touch git or filesystem; pure functions only. Promotion lives in recordMode.ts; jumps live in jumpTo.ts.
+ * What: Naming + classification for checkpoint tags, selected branches, and step parallelism.
+ * Not: Does not touch git or filesystem; pure functions only. Jumps live in jumpTo.ts.
  * Deps: ../types.js (StepType).
  */
 
@@ -20,7 +20,7 @@ const PARALLELIZABLE_STEPS: StepType[] = [
 
 /**
  * Files that materially change in each step — used for path-filtered diffs
- * when comparing two attempts ("show me what changed at the spec level vs.
+ * when comparing two checkpoints ("show me what changed at the spec level vs.
  * everywhere"). Steps absent from this map fall through to a `--stat` diff.
  */
 export const PATHS_BY_STEP: Partial<Record<StepType, string[]>> = {
@@ -66,24 +66,10 @@ export function checkpointTagFor(step: StepType, cycleNumber: number): string {
   return `checkpoint/cycle-${cycleNumber}-after-${slug(step)}`;
 }
 
-export function checkpointDoneTag(runId: string): string {
-  return `checkpoint/done-${runId.slice(0, 6)}`;
-}
-
-export function captureBranchName(runId: string, date: Date = new Date()): string {
-  return `capture/${date.toISOString().slice(0, 10)}-${runId.slice(0, 6)}`;
-}
-
-export function attemptBranchName(date: Date = new Date(), variant?: string): string {
-  const stamp = date.toISOString().replaceAll(/[:.-]/g, "").slice(0, 15);
-  return variant ? `attempt-${stamp}-${variant}` : `attempt-${stamp}`;
-}
-
 /**
  * 010 — name for a transient navigation fork created by click-to-jump.
- * Distinct from `attempt-<ts>` (008's "Try Again" / "Go back" intent) and
- * `attempt-<ts>-{a,b,c}` (variant slots). The auto-prune logic in jumpTo.ts
- * specifically targets this prefix so navigation forks don't accumulate.
+ * The auto-prune logic in jumpTo.ts specifically targets this prefix so
+ * navigation forks don't accumulate.
  */
 export function selectedBranchName(date: Date = new Date()): string {
   const stamp = date.toISOString().replaceAll(/[:.-]/g, "").slice(0, 15);

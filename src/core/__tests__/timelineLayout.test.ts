@@ -31,11 +31,8 @@ const STEP_COMMIT = (
 
 const EMPTY_SNAP: TimelineSnapshot = {
   checkpoints: [],
-  attempts: [],
-  currentAttempt: null,
   currentBranch: "",
   pending: [],
-  captureBranches: [],
   startingPoint: null,
   commits: [],
   selectedPath: [],

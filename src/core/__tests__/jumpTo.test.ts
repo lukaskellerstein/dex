@@ -215,70 +215,141 @@ test("jumpTo: empty selected-<ts> branch is auto-pruned when navigating away", (
   }
 });
 
-test("jumpTo: 008 attempt-<ts> branch is NEVER auto-pruned (only selected-* navigation forks are)", () => {
+test("jumpTo: dirty + force save → exactly one new commit on current branch, no new branch, then jumps", () => {
   const dir = mkTmpRepo();
   try {
     const sha1 = head(dir);
     const sha2 = commit(dir, "two.md", "two");
-    // Manually create an attempt-<ts> branch as if 008 "Try Again" did it.
-    execSync(`git checkout -q -B attempt-20260101T000000 ${sha1}`, { cwd: dir });
-    // Navigate via jumpTo to sha2. The attempt-* branch must survive even
-    // though it has no new commits beyond the new branch.
-    const r = jumpTo(dir, sha2);
-    assert.equal(r.ok, true);
-    const branches = execSync("git branch --list 'attempt-*'", {
-      cwd: dir,
-      encoding: "utf-8",
-    });
-    assert.match(branches, /attempt-20260101T000000/, "008 attempt-* must survive jumpTo");
-  } finally {
-    rmTmp(dir);
-  }
-});
+    // Move HEAD back to sha1 on main so jumping to sha2 is meaningful and the
+    // autosave will land on main.
+    execSync(`git checkout -q main`, { cwd: dir });
+    execSync(`git reset --hard ${sha1}`, { cwd: dir });
+    // sha2 still exists in the reflog but main no longer points to it. Tag it
+    // so it stays reachable for the jump.
+    execSync(`git tag t-sha2 ${sha2}`, { cwd: dir });
 
-test("jumpTo: attempt-<ts>-saved is NEVER auto-pruned (autosave is meaningful)", () => {
-  const dir = mkTmpRepo();
-  try {
-    const sha1 = head(dir);
-    const sha2 = commit(dir, "two.md", "two");
-    execSync(`git checkout -q ${sha1}`, { cwd: dir });
-    fs.writeFileSync(path.join(dir, "README.md"), "# dirty\n");
-    // Save dirty change → creates attempt-<ts>-saved holding the autosave.
-    const r1 = jumpTo(dir, sha2, { force: "save" });
-    assert.equal(r1.ok, true);
-    const savedBefore = execSync("git branch --list 'attempt-*-saved'", {
-      cwd: dir,
-      encoding: "utf-8",
-    });
-    assert.ok(savedBefore.length > 0);
+    const branchesBefore = execSync("git branch --list", { cwd: dir, encoding: "utf-8" }).trim();
+    const commitCountBefore = Number(
+      execSync("git rev-list --count main", { cwd: dir, encoding: "utf-8" }).trim(),
+    );
 
-    // Now navigate again — the -saved branch must survive.
-    const r2 = jumpTo(dir, sha1);
-    assert.equal(r2.ok, true);
-    const savedAfter = execSync("git branch --list 'attempt-*-saved'", {
-      cwd: dir,
-      encoding: "utf-8",
-    });
-    assert.equal(savedAfter, savedBefore, "-saved branch must survive subsequent jumps");
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("jumpTo: dirty + force save → preserves dirty change on a saved branch and proceeds", () => {
-  const dir = mkTmpRepo();
-  try {
-    const sha1 = head(dir);
-    const sha2 = commit(dir, "two.md", "two");
-    execSync(`git checkout -q ${sha1}`, { cwd: dir });
     fs.writeFileSync(path.join(dir, "README.md"), "# dirty-saved\n");
-
     const r = jumpTo(dir, sha2, { force: "save" });
     assert.equal(r.ok, true);
+
+    // No new branch was created.
+    const branchesAfter = execSync("git branch --list", { cwd: dir, encoding: "utf-8" }).trim();
+    assert.equal(branchesAfter, branchesBefore, "no new branch should be created");
+
+    // Exactly one autosave commit exists somewhere — verify by subject.
+    const autosaveLog = execSync(
+      `git log --all --grep='^dex: pre-jump autosave' --oneline`,
+      { cwd: dir, encoding: "utf-8" },
+    ).trim();
+    const autosaveCount = autosaveLog ? autosaveLog.split("\n").length : 0;
+    assert.equal(autosaveCount, 1, "exactly one autosave commit should exist");
+
+    // main now has one extra commit (the autosave) on top of sha1.
+    const mainCommits = Number(
+      execSync("git rev-list --count main", { cwd: dir, encoding: "utf-8" }).trim(),
+    );
+    assert.equal(
+      mainCommits,
+      commitCountBefore + 1,
+      "main should have exactly one new commit (the autosave)",
+    );
+
+    // HEAD moved to the click target.
     assert.equal(head(dir), sha2);
-    // A saved-branch should exist carrying the dirty change.
-    const branches = execSync("git branch --list 'attempt-*-saved'", { cwd: dir, encoding: "utf-8" });
-    assert.ok(branches.length > 0, "expected at least one attempt-*-saved branch");
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("jumpTo: dirty + force save on detached HEAD → friendly refusal, no commit, no jump", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha1 = head(dir);
+    const sha2 = commit(dir, "two.md", "two");
+    // Detach HEAD at sha1 — no branch.
+    execSync(`git checkout -q ${sha1}`, { cwd: dir });
+    // Confirm detached.
+    const symref = execSync(`git symbolic-ref -q HEAD || echo DETACHED`, {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
+    assert.equal(symref, "DETACHED", "expected detached HEAD for this test");
+
+    fs.writeFileSync(path.join(dir, "README.md"), "# dirty-detached\n");
+    const r = jumpTo(dir, sha2, { force: "save" });
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.error, "git_error");
+      if (r.error === "git_error") {
+        assert.match(r.message, /detached-HEAD/i, "expected friendly detached-HEAD message");
+      }
+    }
+    // No autosave commit was created on any ref.
+    const autosaveLog = execSync(
+      `git log --all --grep='^dex: pre-jump autosave' --oneline`,
+      { cwd: dir, encoding: "utf-8" },
+    ).trim();
+    assert.equal(autosaveLog, "", "no autosave commit should exist after refusal");
+    // HEAD did not move.
+    assert.equal(head(dir), sha1);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("jumpTo: dirty + force save on selected-* branch → autosave lands on selected-*, branch survives prune", () => {
+  const dir = mkTmpRepo();
+  try {
+    const sha1 = head(dir);
+    commit(dir, "two.md", "two");
+    const sha3 = commit(dir, "three.md", "three");
+    // First jump: fork a selected-* branch at sha1 from main.
+    const r1 = jumpTo(dir, sha1);
+    assert.equal(r1.ok, true);
+    let selectedBranch: string | null = null;
+    if (r1.ok && r1.action === "fork") {
+      selectedBranch = r1.branch;
+      assert.match(selectedBranch, /^selected-/);
+      assert.equal(currentBranch(dir), selectedBranch);
+    } else {
+      assert.fail(`expected fork to selected-*, got ${JSON.stringify(r1)}`);
+    }
+
+    // Now dirty the tree on the selected-* branch.
+    fs.writeFileSync(path.join(dir, "README.md"), "# dirty-on-selected\n");
+    // Save while jumping to sha3 (main's tip). The autosave must commit onto
+    // the selected-* branch and the branch must survive the post-jump prune.
+    const r2 = jumpTo(dir, sha3, { force: "save" });
+    assert.equal(r2.ok, true);
+
+    // The autosave commit lives on the selected-* branch (not main, not dex/*).
+    const autosaveOnSelected = execSync(
+      `git log ${selectedBranch} --grep='^dex: pre-jump autosave' --oneline`,
+      { cwd: dir, encoding: "utf-8" },
+    ).trim();
+    assert.ok(
+      autosaveOnSelected.length > 0,
+      "autosave commit must be reachable from the selected-* branch",
+    );
+
+    // The selected-* branch survives the auto-prune (it has the new commit
+    // relative to the jump target).
+    const stillThere = execSync(`git branch --list '${selectedBranch}'`, {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
+    assert.ok(
+      stillThere.length > 0,
+      `selected-* branch ${selectedBranch} must survive auto-prune`,
+    );
+
+    // HEAD moved to sha3.
+    assert.equal(head(dir), sha3);
   } finally {
     rmTmp(dir);
   }

@@ -74,7 +74,6 @@ test("finalize: shouldPause boolean is the only return shape", () => {
 //    - updateState called again with { lastCommit: { sha, timestamp } }
 //    - updatePhaseCheckpointInfo called with (projectDir, runId, agentRunId, tag, sha)
 //    - emit("step_candidate") with the right shape
-//    - autoPromoteIfRecordMode called
 //    - readPauseAfterStage consulted
 //    - returns { shouldPause: false } in non-step-mode
 //
@@ -94,7 +93,3 @@ test("finalize: shouldPause boolean is the only return shape", () => {
 //      and emits no further events (run continues; checkpoint is best-effort).
 //    - If getCurrentBranch throws, attemptBranch on the step_candidate event is "".
 //    - If updatePhaseCheckpointInfo throws, the rest of the sequence still runs.
-//
-// 5. Record-mode auto-promote:
-//    - With record mode active, autoPromoteIfRecordMode produces a tag emission.
-//      (Verified at integration level via the smoke test, not unit level.)

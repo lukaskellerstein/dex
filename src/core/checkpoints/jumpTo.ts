@@ -1,12 +1,12 @@
 /**
  * What: 010 click-to-jump core (jumpTo) plus its cleanup verb (unselect) and the auto-prune helper for transient `selected-<ts>` navigation forks.
- * Not: Does not promote (that's recordMode.ts), does not list the timeline (that's timeline.ts).
- * Deps: _helpers (gitExec, safeExec, log), tags.ts (attemptBranchName, selectedBranchName), node:child_process (raw execSync for porcelain status).
+ * Not: Does not list the timeline (that's timeline.ts).
+ * Deps: _helpers (gitExec, safeExec, log), tags.ts (selectedBranchName), node:child_process (raw execSync for porcelain status).
  */
 
 import { execSync } from "node:child_process";
 import { gitExec, safeExec, log, type RunLoggerLike } from "./_helpers.js";
-import { attemptBranchName, selectedBranchName } from "./tags.js";
+import { selectedBranchName } from "./tags.js";
 
 // ── Unselect (010 — drop a `selected-*` navigation fork) ──────
 
@@ -71,11 +71,17 @@ export type JumpToResult =
  * Decision tree (matches contracts/ipc-checkpoints-jumpTo.md):
  *  1. target == HEAD          → noop
  *  2. dirty tree, no force    → dirty_working_tree
- *  3. dirty tree, force=save  → save dirty change on attempt-<ts>-saved branch
+ *  3. dirty tree, force=save  → autosave (one commit on the current branch); refuse on detached HEAD
  *  4. dirty tree, force=disc  → reset --hard + clean -fd (preserves gitignored)
  *  5. unresolvable target     → not_found
  *  6. unique branch tip       → git checkout <branch>
- *  7. otherwise               → git checkout -B attempt-<ts> <target>
+ *  7. otherwise               → git checkout -B selected-<ts> <target>
+ *
+ * Note on `selected-*` interaction with force=save: when HEAD is on a
+ * `selected-*` branch, the autosave commits onto that `selected-*` (not
+ * onto `dex/*`). After the subsequent jump, `maybePruneEmptySelected`
+ * preserves it because the new commit means the branch isn't "empty"
+ * relative to the target.
  */
 export function jumpTo(
   projectDir: string,
@@ -127,15 +133,27 @@ export function jumpTo(
       return { ok: false, error: "dirty_working_tree", files: dirtyTracked.files };
     }
     if (options.force === "save") {
-      const saveBranch = attemptBranchName(new Date()) + "-saved";
+      // Refuse to autosave on detached HEAD — the commit would be unreachable
+      // from any branch. The user is inspecting history; preserve their
+      // changes in the worktree without committing them anywhere unexpected.
       try {
-        gitExec(`git checkout -B ${saveBranch}`, projectDir);
+        execSync(`git symbolic-ref -q HEAD`, {
+          cwd: projectDir,
+          encoding: "utf-8",
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch {
+        return {
+          ok: false,
+          error: "git_error",
+          message:
+            "Cannot save changes while in detached-HEAD state. Switch to a branch first.",
+        };
+      }
+      try {
         gitExec(`git add -A`, projectDir);
-        gitExec(`git commit -q -m "dex: dirty-tree autosave before jumpTo"`, projectDir);
-        // Return to whatever branch we came from before forking. We don't know the
-        // original ref, so instead just continue from the saved branch — the next
-        // step will move HEAD anyway and the dirty change is preserved on saveBranch.
-        log(rlog, "INFO", `jumpTo: saved dirty tree on ${saveBranch}`);
+        gitExec(`git commit -q -m "dex: pre-jump autosave"`, projectDir);
+        log(rlog, "INFO", `jumpTo: pre-jump autosave committed on current branch`);
       } catch (err) {
         return { ok: false, error: "git_error", message: String(err) };
       }
@@ -178,8 +196,8 @@ export function jumpTo(
   }
 
   // 7. Mid-branch ancestor or tip-of-multiple → fork a `selected-<ts>` branch
-  //    at the target. Distinct from 008's `attempt-<ts>` (Try Again / Go back)
-  //    so navigation forks don't get conflated with intentional retries.
+  //    at the target. Distinct from `dex/*` run branches so navigation forks
+  //    aren't conflated with run history.
   const branch = selectedBranchName(new Date());
   try {
     gitExec(`git checkout -B ${branch} ${resolved}`, projectDir);
@@ -196,8 +214,9 @@ export function jumpTo(
  * click-to-jump fork) with no commits the new branch doesn't already have,
  * delete it. Click-by-click navigation thus doesn't leave dead branches.
  *
- * 008 `attempt-*` branches (Try Again / Go back / variants) are NOT pruned —
- * those carry intentional user retry intent.
+ * When force=save is used and HEAD was on a `selected-*` branch, the autosave
+ * commit lands on that branch — making it non-empty relative to the new
+ * target — so this prune correctly preserves it.
  */
 function maybePruneEmptySelected(
   projectDir: string,

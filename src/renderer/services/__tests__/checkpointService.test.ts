@@ -46,10 +46,7 @@ describe("checkpointService — IPC pass-through", () => {
   it("listTimeline calls dexAPI.checkpoints.listTimeline with projectDir", async () => {
     const snap = {
       checkpoints: [],
-      attempts: [],
-      currentAttempt: null,
       pending: [],
-      captureBranches: [],
       startingPoint: null,
       commits: [],
       selectedPath: [],

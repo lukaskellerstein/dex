@@ -1,6 +1,6 @@
 # 010 Interactive Timeline — Click-to-jump + Variant Agent Profiles
 
-> **Status:** The "Keep this", "Unmark kept", "Try N ways from here", and Step Candidate prompt sections of this spec are superseded by `012-cleanup`. Record Mode auto-promote, Go-Back, and Jump-to-Checkpoint remain authoritative.
+> **Status:** The "Keep this", "Unmark kept", "Try N ways from here", and Step Candidate prompt sections of this spec are superseded by `012-cleanup`. Record Mode auto-promote, the `attempt-*` branch family (and the AttemptInfo/captureBranches fields on `TimelineSnapshot`), `capture/*` branches, and the REC badge are superseded by `013-cleanup-2`. Go-Back and Jump-to-Checkpoint remain authoritative; the dirty-tree-save flow now commits on the current branch (no side branch) per 013-cleanup-2.
 
 ## Context
 

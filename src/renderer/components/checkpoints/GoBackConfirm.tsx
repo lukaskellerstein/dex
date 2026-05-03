@@ -9,7 +9,7 @@ interface Props {
 
 /**
  * Shown when checkpoints:goBack returns dirty_working_tree.
- * User picks Save (stash uncommitted changes on a new branch), Discard, or Cancel.
+ * User picks Save (commit dirty changes onto the current branch before jumping), Discard, or Cancel.
  */
 export function GoBackConfirm({ tag, files, onCancel, onChoose }: Props) {
   return (
@@ -25,7 +25,7 @@ export function GoBackConfirm({ tag, files, onCancel, onChoose }: Props) {
             Discard
           </button>
           <button className="btn-primary" onClick={() => onChoose("save")}>
-            Save on a new branch
+            Save
           </button>
         </>
       }
@@ -53,8 +53,8 @@ export function GoBackConfirm({ tag, files, onCancel, onChoose }: Props) {
         )}
       </div>
       <p style={{ marginTop: 10, color: "var(--foreground-muted)", fontSize: 12 }}>
-        <strong>Save</strong> commits these files to a new <code>attempt-…-saved</code>{" "}
-        branch so you can revisit them later.
+        <strong>Save</strong> commits these changes to the current version so you can
+        keep working with them later.
       </p>
     </CheckpointModal>
   );

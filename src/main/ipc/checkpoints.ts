@@ -76,11 +76,8 @@ export function registerCheckpointsHandlers(): void {
       });
       return {
         checkpoints: [],
-        attempts: [],
-        currentAttempt: null,
         currentBranch: "",
         pending: [],
-        captureBranches: [],
         startingPoint: null,
         commits: [],
         selectedPath: [],

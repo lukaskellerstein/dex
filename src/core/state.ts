@@ -22,7 +22,6 @@ type DeepPartial<T> = {
 type PauseReason = "user_abort" | "step_mode" | "budget" | "failure";
 
 interface DexUiPrefs {
-  recordMode?: boolean;
   pauseAfterStage?: boolean;
 }
 

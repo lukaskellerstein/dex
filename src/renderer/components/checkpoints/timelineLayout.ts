@@ -332,7 +332,7 @@ export function layoutTimeline(
 
   // Inject the current `selected-*` branch when it has no canonical commits
   // yet — fresh forks created by Timeline click-to-jump (jumpTo case 7) point
-  // at SHAs already owned by a higher-priority lane (main/dex/*/attempt-*),
+  // at SHAs already owned by a higher-priority lane (main/dex/*),
   // so without this the just-created branch has no lane and the user gets no
   // immediate visual feedback that their click took effect. Anchor the
   // synthetic info at HEAD's row so a fork edge can connect to the original

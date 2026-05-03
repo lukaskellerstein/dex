@@ -1,5 +1,5 @@
 /**
- * What: listTimeline — single read-side aggregator that builds the TimelineSnapshot consumed by the renderer's TimelineGraph (checkpoints + attempts + pending candidates + capture branches + commit graph + selectedPath).
+ * What: listTimeline — single read-side aggregator that builds the TimelineSnapshot consumed by the renderer's TimelineGraph (checkpoints + pending candidates + commit graph + selectedPath).
  * Not: Does not modify git state; pure read. Does not own tag-naming (tags.ts) or jump semantics (jumpTo.ts). Mutating verbs live elsewhere.
  * Deps: _helpers (safeExec, RunLoggerLike), tags.ts (parseCheckpointTag, labelFor, checkpointTagFor), ../types.js (StepType).
  */
@@ -20,16 +20,6 @@ export interface CheckpointInfo {
   commitMessage: string;
   timestamp: string;
   unavailable?: boolean;
-}
-
-export interface AttemptInfo {
-  branch: string;
-  sha: string;
-  isCurrent: boolean;
-  baseCheckpoint: string | null;
-  stepsAhead: number;
-  timestamp: string;
-  variantGroup: string | null;
 }
 
 export interface PendingCandidate {
@@ -53,10 +43,10 @@ export interface StartingPoint {
  * upstream and never appear here.
  *
  * `branch` is the *canonical* home assigned by walking the first-parent
- * chain of each branch (in priority order: main → dex/* → attempt-* →
- * selected-*). The first branch whose first-parent walk reaches a SHA
- * "owns" it. This matches git semantics: merges trace history along
- * --first-parent, and the trunk gets to claim its own history.
+ * chain of each branch (in priority order: main → dex/* → selected-*).
+ * The first branch whose first-parent walk reaches a SHA "owns" it.
+ * This matches git semantics: merges trace history along --first-parent,
+ * and the trunk gets to claim its own history.
  *
  * `containingBranches` lists every visible branch that contains the SHA
  * (informational — used for tooltips, not rendering). The layout draws
@@ -82,28 +72,24 @@ export interface TimelineCommit {
 
 /**
  * Canonical branch ownership priority — lower wins. Used to ORDER the
- * first-parent walks, so main's history is claimed first, then dex/*, then
- * attempt-*, then selected-*. Each commit ends up canonical to the highest-
- * priority branch whose first-parent chain visits it.
+ * first-parent walks, so main's history is claimed first, then dex/*,
+ * then selected-*. Each commit ends up canonical to the highest-priority
+ * branch whose first-parent chain visits it.
  *
  * Unknown user branches (e.g. `feature/foo`) are treated as feature-branch-like.
  */
 function canonicalPriority(branch: string): number {
   if (branch === "main" || branch === "master") return 0;
   if (branch.startsWith("dex/")) return 1;
-  if (branch.startsWith("attempt-")) return 2;
   if (branch.startsWith("selected-")) return 3;
   return 1;
 }
 
 export interface TimelineSnapshot {
   checkpoints: CheckpointInfo[];
-  attempts: AttemptInfo[];
-  currentAttempt: AttemptInfo | null;
   /** Branch name HEAD is currently on (`git rev-parse --abbrev-ref HEAD`); empty string if detached or unavailable. */
   currentBranch: string;
   pending: PendingCandidate[];
-  captureBranches: string[];
   startingPoint: StartingPoint | null;
   /** Every step-commit reachable from any tracked branch, sorted ascending by timestamp. */
   commits: TimelineCommit[];
@@ -115,10 +101,7 @@ export interface TimelineSnapshot {
 
 export function listTimeline(projectDir: string, rlog?: RunLoggerLike): TimelineSnapshot {
   const checkpoints: CheckpointInfo[] = [];
-  const attempts: AttemptInfo[] = [];
   const pending: PendingCandidate[] = [];
-  const captureBranches: string[] = [];
-  let currentAttempt: AttemptInfo | null = null;
 
   // Local closure threads `rlog` to every safeExec so silent git failures get
   // recorded in `electron.log` with the failed command + stderr instead of
@@ -131,24 +114,6 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
   // Checkpoints — tags
   const tagsRaw = sx(`git tag --list 'checkpoint/*'`);
   for (const tag of tagsRaw.split("\n").filter(Boolean)) {
-    // Skip checkpoint/done-* tags — they aren't stage checkpoints
-    if (tag.startsWith("checkpoint/done-")) {
-      // Treat done tags as pseudo-checkpoint entries with sentinel values
-      const sha = sx(`git rev-list -n 1 ${tag}`);
-      const message = sx(`git log -1 --format=%B ${tag}`);
-      const when = sx(`git log -1 --format=%cI ${tag}`);
-      checkpoints.push({
-        tag,
-        label: "run completed",
-        sha,
-        step: "learnings",
-        cycleNumber: -1,
-        featureSlug: null,
-        commitMessage: message,
-        timestamp: when,
-      });
-      continue;
-    }
     const parsed = parseCheckpointTag(tag);
     if (!parsed) continue;
     const sha = sx(`git rev-list -n 1 ${tag}`);
@@ -182,51 +147,9 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
     });
   }
 
-  // Attempts — attempt-* branches
-  const branchesRaw = sx(`git branch --list 'attempt-*' --format='%(refname:short)'`);
-  for (const branch of branchesRaw.split("\n").filter(Boolean)) {
-    const sha = sx(`git rev-parse ${branch}`);
-    const when = sx(`git log -1 --format=%cI ${branch}`);
-    const variantMatch = branch.match(/-(?<letter>[a-e])$/);
-    const variantGroup = variantMatch ? (variantMatch.groups?.letter ?? null) : null;
-
-    // Find nearest ancestor checkpoint. `git describe` legitimately fails
-    // when no checkpoint tag is reachable from `sha` — that's a normal
-    // "no tag yet" outcome, not a diagnosable error, so call `safeExec`
-    // bare (no rlog) to keep the log clean. Same posture for the count
-    // probe below. The previous try/catch wrappers were dead code —
-    // safeExec never throws.
-    const nearest = safeExec(`git describe --tags --match 'checkpoint/*' --abbrev=0 ${sha}`, projectDir);
-    const baseCheckpoint: string | null = nearest || null;
-
-    let stepsAhead = 0;
-    if (baseCheckpoint) {
-      const count = safeExec(`git rev-list --count ${baseCheckpoint}..${branch}`, projectDir);
-      stepsAhead = parseInt(count, 10) || 0;
-    }
-
-    const info: AttemptInfo = {
-      branch,
-      sha,
-      isCurrent: branch === currentBranch,
-      baseCheckpoint,
-      stepsAhead,
-      timestamp: when,
-      variantGroup,
-    };
-    attempts.push(info);
-    if (info.isCurrent) currentAttempt = info;
-  }
-
-  // Capture branches
-  const captureRaw = sx(`git branch --list 'capture/*' --format='%(refname:short)'`);
-  for (const b of captureRaw.split("\n").filter(Boolean)) {
-    captureBranches.push(b);
-  }
-
   // Pending candidates — commits with [checkpoint:<stage>:<cycle>] reachable from
   // HEAD that have no matching tag. Scoped to HEAD (not --all) so orphan commits
-  // on stale dex/* or attempt-* branches from previous runs don't leak through.
+  // on stale dex/* branches from previous runs don't leak through.
   const existingTags = new Set(checkpoints.map((c) => c.tag));
   const candidateLog = sx(`git log HEAD --grep='^\\[checkpoint:' --format='%H%x09%s%x09%cI'`);
   for (const line of candidateLog.split("\n").filter(Boolean)) {
@@ -273,9 +196,9 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
 
   // Build commits[] — every step-commit reachable from any **session-relevant**
   // branch. Per spec FR-001, the canvas surfaces: `main`/`master`, the
-  // currentBranch, attempt-* branches, and the latest `dex/*` run branch.
-  // Stale dex/* runs from prior sessions, fixture/*, capture/*, and unrelated
-  // user branches are filtered out so the canvas stays legible.
+  // currentBranch, selected-* navigation forks, and `dex/*` run branches.
+  // Fixture/* and unrelated user branches are filtered out so the canvas
+  // stays legible.
   const checkpointShaSet = new Set(checkpoints.map((c) => c.sha).filter((s) => Boolean(s)));
 
   // for-each-ref's --format does not expand `%x09`. Use a delimiter git refnames
@@ -296,11 +219,9 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
   if (currentBranch && allBranches.some((b) => b.name === currentBranch)) {
     visibleBranches.add(currentBranch);
   }
-  // Always include all `attempt-*` branches (008 Try Again / Go back, and
-  // variant slots `attempt-<ts>-{a,b,c}`) and `selected-*` branches (010
-  // click-to-jump forks).
+  // Always include all `selected-*` branches (010 click-to-jump forks).
   for (const b of allBranches) {
-    if (b.name.startsWith("attempt-") || b.name.startsWith("selected-")) {
+    if (b.name.startsWith("selected-")) {
       visibleBranches.add(b.name);
     }
   }
@@ -365,17 +286,15 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
   }
 
   // ── Pass 2: Canonical branch assignment via first-parent walks ─
-  // Walk each branch in priority order (main → dex/* → attempt-* →
-  // selected-*) along its --first-parent chain. The first branch whose
-  // walk reaches a SHA claims it as canonical. This matches git's own
-  // notion of branch ownership: --first-parent on main shows the trunk's
-  // history (including merge commits), and feature branches inherit
-  // commits unique to them.
+  // Walk each branch in priority order (main → dex/* → selected-*) along
+  // its --first-parent chain. The first branch whose walk reaches a SHA
+  // claims it as canonical. This matches git's own notion of branch
+  // ownership: --first-parent on main shows the trunk's history (including
+  // merge commits), and feature branches inherit commits unique to them.
   //
-  // Net effect: main owns its setup commits and merge commits;
-  // dex/* owns its run-specific commits; attempt-* / selected-* own only
-  // commits unique to them (typically zero — they're labels on existing
-  // commits).
+  // Net effect: main owns its setup commits and merge commits; dex/* owns
+  // its run-specific commits; selected-* owns only commits unique to it
+  // (typically zero — they're labels on existing commits).
   const priorityOrdered = [...filtered].sort((a, b) => {
     const pa = canonicalPriority(a.name);
     const pb = canonicalPriority(b.name);
@@ -438,17 +357,13 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
     selectedPath.push(...acc);
   }
 
-  // Sort: checkpoints by timestamp ascending, attempts by timestamp descending
+  // Sort: checkpoints by timestamp ascending
   checkpoints.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  attempts.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   return {
     checkpoints,
-    attempts,
-    currentAttempt,
     currentBranch,
     pending,
-    captureBranches,
     startingPoint,
     commits,
     selectedPath,

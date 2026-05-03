@@ -1,14 +1,13 @@
 /**
- * What: Wraps the per-stage post-execution checkpoint sequence — updateState (lastCompletedStep + currentCycleNumber + currentSpecDir) → commitCheckpoint → updateState (lastCommit) → updatePhaseCheckpointInfo (runs record patch) → step_candidate emit → autoPromoteIfRecordMode → readPauseAfterStage → optional `paused` emit + abort. Returns whether the orchestrator should pause.
+ * What: Wraps the per-stage post-execution checkpoint sequence — updateState (lastCompletedStep + currentCycleNumber + currentSpecDir) → commitCheckpoint → updateState (lastCommit) → updatePhaseCheckpointInfo (runs record patch) → step_candidate emit → readPauseAfterStage → optional `paused` emit + abort. Returns whether the orchestrator should pause.
  * Not: Does not own the runStage execution itself. Does not decide whether to run the finalize step at all — caller checks abort + activeProjectDir before calling. Does not catch its own errors at the inner level — the surrounding try/catch in the caller does (matches the pre-extraction "Checkpoint failure shouldn't crash the run" semantics).
- * Deps: state.updateState, checkpoints (commit, recordMode, tags), git.getCurrentBranch, runs.updateRun, OrchestrationContext.emit.
+ * Deps: state.updateState, checkpoints (commit, tags), git.getCurrentBranch, runs.updateRun, OrchestrationContext.emit.
  */
 
 import { updateState } from "../state.js";
 import * as runs from "../runs.js";
 import {
   commitCheckpoint,
-  autoPromoteIfRecordMode,
   readPauseAfterStage,
   checkpointTagFor,
 } from "../checkpoints.js";
@@ -49,7 +48,7 @@ export interface FinalizeStageInput {
 export async function finalizeStageCheckpoint(
   input: FinalizeStageInput,
 ): Promise<{ shouldPause: boolean }> {
-  const { ctx, runId, agentRunId, cycleNumber, step, specDir, rlog, stepModeOverride, abortController } = input;
+  const { ctx, runId, agentRunId, cycleNumber, step, specDir, stepModeOverride, abortController } = input;
   const projectDir = ctx.projectDir;
 
   try {
@@ -95,10 +94,7 @@ export async function finalizeStageCheckpoint(
       attemptBranch,
     });
 
-    // 5. Record mode: auto-promote every candidate to canonical (no-op outside record mode).
-    await autoPromoteIfRecordMode(projectDir, checkpointTag, sha, runId, ctx.emit, rlog);
-
-    // 6. Step mode: pause after this stage awaiting Keep / Try-again. The
+    // 5. Step mode: pause after this stage awaiting Keep / Try-again. The
     //    caller's resume path (config.resume=true) picks up the next stage.
     const stepMode = Boolean(stepModeOverride) || (await readPauseAfterStage(projectDir));
     if (stepMode) {

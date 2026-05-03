@@ -45,7 +45,7 @@ Before every test run, restore `dex-ecommerce` to a known state. The project shi
 ./scripts/reset-example-to.sh <checkpoint-name>      # reset to checkpoint/<name>
 ```
 
-Any tag of the form `checkpoint/cycle-N-after-<stage>` (or `checkpoint/after-<stage>` for cycle 0) can be used as a reset target. The script creates a fresh `attempt-<ts>` branch and restores the working tree to exactly that checkpoint's state, preserving gitignored files (`.env`, build output, editor state — `git clean -fd`, never `-fdx`).
+Any tag of the form `checkpoint/cycle-N-after-<stage>` (or `checkpoint/after-<stage>` for cycle 0) can be used as a reset target. The script creates a fresh `attempt-<ts>` branch (fixture-only — `attempt-*` is internal scaffolding for the testing flow and never reaches the running app per 013-cleanup-2) and restores the working tree to exactly that checkpoint's state, preserving gitignored files (`.env`, build output, editor state — `git clean -fd`, never `-fdx`).
 
 **Picking a checkpoint**:
 
@@ -72,7 +72,7 @@ cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce && git status --sh
 
 For `clean`, `ls` must show only `GOAL.md` and `.git/`. For a checkpoint reset, the tree matches that checkpoint's commit.
 
-**Branch hygiene**: autonomous runs leave behind `dex/YYYY-MM-DD-xxxxxx` branches; go-backs and variants leave behind `attempt-*` branches. Run `./scripts/prune-example-branches.sh` periodically — it deletes `dex/*` branches older than 7 days and `attempt-*` branches older than 30 days. `main`, `fixture/*` (if any linger), `lukas/*`, `checkpoint/*` (tags are immune), and `capture/*` are always preserved.
+**Branch hygiene**: autonomous runs leave behind `dex/YYYY-MM-DD-xxxxxx` branches. Click-to-jump navigation forks leave behind transient `selected-<ts>` branches (auto-pruned when empty relative to the next jump target). Post-013-cleanup-2 the running app no longer produces `attempt-*` or `capture/*` branches; only the fixture script (`reset-example-to.sh`) mints `attempt-*` branches against the example project. Run `./scripts/prune-example-branches.sh` periodically — it deletes `dex/*` branches older than 7 days. `main`, `fixture/*` (if any linger), `lukas/*`, `checkpoint/*` (tags are immune), `attempt-*` (fixture remnants), and any pre-existing `capture/*` (legacy refs) are always preserved.
 
 `reset-example-to.sh`, `prune-example-branches.sh`, and `promote-checkpoint.sh` are the **only authorized destructive paths** against `dex-ecommerce`. You do not need to ask before running them against `dex-ecommerce`. Never run them against any other repo.
 

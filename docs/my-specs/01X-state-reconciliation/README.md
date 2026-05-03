@@ -107,7 +107,7 @@ That TBD never landed. This spec lands it.
 | Layer | Where | Authority | Live-run rule |
 |---|---|---|---|
 | **Cache** | `<projectDir>/.dex/state.json` | Derived | Rebuilt from History on the events listed in § "Trigger matrix". Renderer reads via `getRunState()` IPC after every reconciliation event. |
-| **History** | Git refs — `checkpoint/*` tags, `attempt-*` branches, `capture/*` anchor, structured commit messages | **Authoritative for cycle/stage progression.** | Append-only during a run. Read by `reconcileState` to rebuild Cache. |
+| **History** | Git refs — `checkpoint/*` tags (manual via `promote-checkpoint.sh` post-013), `dex/*` run branches, `selected-*` navigation forks, structured commit messages with `[checkpoint:<step>:<cycle>]` subjects | **Authoritative for cycle/stage progression.** | Append-only during a run. Read by `reconcileState` to rebuild Cache. (`attempt-*` and `capture/*` were retired in 013-cleanup-2; pre-existing refs may linger but are not produced by the running app.) |
 | **Audit** | `<projectDir>/.dex/runs/<runId>.json` (007) + `~/.dex/logs/<project>/<runId>/` | **Authoritative for cost / duration / per-subagent traces.** | Append-only during a run. Read by `reconcileState` to populate fields not derivable from refs (cost, duration). |
 
 Authority is partitioned: cycle/stage **progression** comes from refs; cost/duration **metrics** come from runs JSON; both are merged into state.json on every reconciliation event. The renderer never derives progression from its own event log — it always reads the reconciled state.json (via `getRunState()`).

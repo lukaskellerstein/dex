@@ -6,16 +6,19 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import {
   checkpointTagFor,
-  checkpointDoneTag,
-  captureBranchName,
-  attemptBranchName,
   labelFor,
   isParallelizable,
-  promoteToCheckpoint,
   unselect,
   listTimeline,
   CHECKPOINT_MESSAGE_PREFIX,
 } from "../checkpoints.ts";
+
+// Inline tag promotion — used to be `promoteToCheckpoint` from recordMode.ts
+// (deleted in 013-cleanup-2). The tests still need to seed checkpoint tags;
+// they do so directly via git.
+function tagAt(dir: string, tag: string, sha: string): void {
+  execSync(`git tag -f ${tag} ${sha}`, { cwd: dir });
+}
 import type { StepType } from "../types.ts";
 
 const STAGES: StepType[] = [
@@ -93,21 +96,6 @@ test("checkpointTagFor round-trips over (stage × cycles {0,1,7})", () => {
   }
 });
 
-test("attemptBranchName with variant", () => {
-  const d = new Date("2026-04-17T18:23:01.000Z");
-  assert.match(attemptBranchName(d), /^attempt-\d{8}T\d{6}$/);
-  assert.match(attemptBranchName(d, "a"), /^attempt-\d{8}T\d{6}-a$/);
-});
-
-test("captureBranchName uses date + runId slice", () => {
-  const d = new Date("2026-04-17T00:00:00.000Z");
-  assert.equal(captureBranchName("abcdef12-3456", d), "capture/2026-04-17-abcdef");
-});
-
-test("checkpointDoneTag uses 6-char slice", () => {
-  assert.equal(checkpointDoneTag("abcdef12-3456"), "checkpoint/done-abcdef");
-});
-
 test("isParallelizable: spec-only stages true, others false", () => {
   assert.equal(isParallelizable("plan"), true);
   assert.equal(isParallelizable("specify"), true);
@@ -122,41 +110,17 @@ test("isParallelizable: spec-only stages true, others false", () => {
   assert.equal(isParallelizable("clarification_product"), false);
 });
 
-test("promoteToCheckpoint: happy path + idempotent + bad SHA", () => {
-  const dir = mkTmpRepo();
-  try {
-    const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
-    const tag = "checkpoint/cycle-1-after-plan";
-
-    const r1 = promoteToCheckpoint(dir, tag, sha);
-    assert.equal(r1.ok, true);
-    const tagsAfter = execSync("git tag --list", { cwd: dir, encoding: "utf-8" }).trim();
-    assert.ok(tagsAfter.includes(tag));
-
-    // Idempotent
-    const r2 = promoteToCheckpoint(dir, tag, sha);
-    assert.equal(r2.ok, true);
-
-    // Bad SHA (non-existent but syntactically valid hex)
-    const rBad = promoteToCheckpoint(dir, "checkpoint/x", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
-    assert.equal(rBad.ok, false);
-  } finally {
-    rmTmp(dir);
-  }
-});
-
 test("listTimeline: seeded repo returns expected structure", () => {
   const dir = mkTmpRepo();
   try {
     const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
-    promoteToCheckpoint(dir, "checkpoint/cycle-1-after-plan", sha);
+    tagAt(dir, "checkpoint/cycle-1-after-plan", sha);
 
     const snap = listTimeline(dir);
     assert.equal(snap.checkpoints.length, 1);
     assert.equal(snap.checkpoints[0].tag, "checkpoint/cycle-1-after-plan");
     assert.equal(snap.checkpoints[0].step, "plan");
     assert.equal(snap.checkpoints[0].cycleNumber, 1);
-    assert.equal(snap.attempts.length, 0);
     // 010: extended snapshot fields are always arrays — never undefined.
     assert.ok(Array.isArray(snap.commits));
     assert.ok(Array.isArray(snap.selectedPath));
@@ -212,7 +176,7 @@ test("listTimeline: hasCheckpointTag flips true for promoted SHAs", () => {
   const dir = mkTmpRepo();
   try {
     const sha = mkStepCommit(dir, "plan", 1, "plan.md");
-    promoteToCheckpoint(dir, "checkpoint/cycle-1-after-plan", sha);
+    tagAt(dir, "checkpoint/cycle-1-after-plan", sha);
     const snap = listTimeline(dir);
     const planCommit = snap.commits.find((c) => c.sha === sha);
     assert.ok(planCommit, "plan commit should be in commits[]");
@@ -307,8 +271,8 @@ test("listTimeline: surfaces step-commits from a sibling branch", () => {
   const dir = mkTmpRepo();
   try {
     const sha1 = mkStepCommit(dir, "plan", 1, "plan.md");
-    // Create an attempt branch off sha1 with its own step-commit.
-    execSync(`git checkout -q -b attempt-test-a ${sha1}`, { cwd: dir });
+    // Create a dex/* run branch off sha1 with its own step-commit.
+    execSync(`git checkout -q -b dex/test-a ${sha1}`, { cwd: dir });
     const sha1a = mkStepCommit(dir, "tasks", 1, "tasks-a.md");
     // Switch back to main so HEAD's selectedPath does NOT include sha1a.
     execSync("git checkout -q master 2>/dev/null || git checkout -q main", { cwd: dir });
@@ -316,7 +280,7 @@ test("listTimeline: surfaces step-commits from a sibling branch", () => {
     const snap = listTimeline(dir);
     const shas = new Set(snap.commits.map((c) => c.sha));
     assert.ok(shas.has(sha1), "main's plan commit must be surfaced");
-    assert.ok(shas.has(sha1a), "attempt branch's tasks commit must be surfaced");
+    assert.ok(shas.has(sha1a), "sibling branch's tasks commit must be surfaced");
     // selectedPath only follows first-parent of current HEAD (main), so
     // sha1a is NOT on the path.
     assert.equal(snap.selectedPath.includes(sha1a), false);
