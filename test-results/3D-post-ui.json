@@ -1,0 +1,17 @@
+{
+  "badges": [
+    "branch-badge-dex/2026-05-04-rename",
+    "branch-badge-main",
+    "branch-badge-main-tail"
+  ],
+  "deletes": [
+    "delete-branch-dex/2026-05-04-rename"
+  ],
+  "modals": [],
+  "context": [],
+  "alerts": [
+    "This version has a kind of conflict AI can't resolve yet. The merge has been undone. Edit the files manually and try again."
+  ],
+  "toasts": [],
+  "url": "http://localhost:5500/"
+}

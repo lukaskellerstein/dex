@@ -20,9 +20,22 @@ export { syncStateFromHead } from "./syncState.js";
 
 export {
   jumpTo,
-  unselect,
   type JumpToResult,
 } from "./jumpTo.js";
+
+export {
+  deleteBranch,
+  mergeToMain,
+  computePromoteSummary,
+  type DeleteBranchOpts,
+  type DeleteBranchResult,
+  type LostStep,
+  type MergeToMainOpts,
+  type MergeToMainResult,
+  type MergeToMainResolverDeps,
+  type NonContentConflictKind,
+  type PromoteSummary,
+} from "./branchOps.js";
 
 export {
   listTimeline,
@@ -47,10 +60,8 @@ import {
   parseCheckpointTag,
 } from "./tags.js";
 import { syncStateFromHead } from "./syncState.js";
-import {
-  jumpTo,
-  unselect,
-} from "./jumpTo.js";
+import { jumpTo } from "./jumpTo.js";
+import { deleteBranch, mergeToMain, computePromoteSummary } from "./branchOps.js";
 import { listTimeline } from "./timeline.js";
 import { commitCheckpoint, readPauseAfterStage } from "./commit.js";
 
@@ -77,9 +88,13 @@ export const checkpoints = {
   // State sync
   syncStateFromHead,
 
-  // Jump-to + cleanup
+  // Jump-to (navigation)
   jumpTo,
-  unselect,
+
+  // Branch ops (014 — delete subsumes the legacy `unselect`)
+  deleteBranch,
+  mergeToMain,
+  computePromoteSummary,
 
   // Timeline (read-side)
   listTimeline,

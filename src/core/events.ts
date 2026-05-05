@@ -101,6 +101,38 @@ export type OrchestratorEvent =
       runId: string;
       reason: "user_abort" | "step_mode" | "budget" | "failure";
       step?: StepType;
+    }
+  // Conflict resolver progress events (014/US3) — emitted while
+  // mergeToMain hands off to the AI resolver harness. Field shapes are
+  // contracted in specs/014-branch-management/contracts/conflict-resolver-events.md.
+  | {
+      type: "conflict-resolver:file-start";
+      file: string;
+      index: number;
+      total: number;
+    }
+  | {
+      type: "conflict-resolver:file-done";
+      file: string;
+      ok: boolean;
+      iterationsUsed: number;
+    }
+  | {
+      type: "conflict-resolver:iteration";
+      n: number;
+      costSoFar: number;
+      currentFile: string;
+    }
+  | {
+      type: "conflict-resolver:done";
+      ok: boolean;
+      costTotal: number;
+      reason?:
+        | "max_iterations"
+        | "cost_cap"
+        | "verify_failed"
+        | "agent_gave_up"
+        | "user_cancelled";
     };
 
 export type EmitFn = (event: OrchestratorEvent) => void;

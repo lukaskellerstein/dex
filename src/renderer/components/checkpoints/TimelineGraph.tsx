@@ -9,8 +9,17 @@ interface Props {
   onJumpTo: (sha: string) => void;
   /** SHA corresponding to current HEAD; rendered with subtle emphasis. */
   headSha?: string | null;
-  /** Click the ✕ on a `selected-*` lane's badge. Caller calls checkpoints:unselect. */
-  onUnselect?: (branchName: string) => void;
+  /**
+   * Click the ✕ on a Dex-owned lane's badge (`dex/*` or `selected-*`).
+   * Caller calls checkpoints:deleteBranch (014). The button is hidden on
+   * protected (`main`/`master`) and user branches.
+   */
+  onDeleteBranch?: (branchName: string) => void;
+  /**
+   * Right-click on any branch badge → opens the BranchContextMenu (014/US2).
+   * Caller renders the menu; coordinates are viewport pixels (clientX/Y).
+   */
+  onBranchContextMenu?: (branchName: string, x: number, y: number) => void;
   /** Branch currently in "focus" mode — others dim to gray. */
   focusedBranch?: string | null;
   /** Click on a header badge → toggle focus for that branch. */
@@ -83,11 +92,17 @@ function rightAnglePath(
   }
 }
 
+/** Returns true when this branch is one Dex owns and is allowed to delete. */
+function isDexOwnedBranch(branch: string): boolean {
+  return branch.startsWith("dex/") || branch.startsWith("selected-");
+}
+
 export function TimelineGraph({
   snapshot,
   onJumpTo,
   headSha,
-  onUnselect,
+  onDeleteBranch,
+  onBranchContextMenu,
   focusedBranch,
   onBranchFocus,
 }: Props) {
@@ -268,10 +283,13 @@ export function TimelineGraph({
             const fill = displayColor(title.laneColor, title.branch, focused);
             const opacity = displayOpacity(title.branch, focused, 1);
             const charW = 7.5;
-            // Unselect ✕ lives only on the head badge so duplicate tail badges
-            // don't produce duplicate testids or click targets.
-            const showUnselect = title.isSelectedLane && !!onUnselect && !title.isTail;
-            const xBtnW = showUnselect ? 16 : 0;
+            // ✕ delete lives only on the head badge so duplicate tail badges
+            // don't produce duplicate testids or click targets. Shown on every
+            // Dex-owned lane (`dex/*` + `selected-*`); hidden on protected
+            // and user branches.
+            const showDelete =
+              isDexOwnedBranch(title.branch) && !!onDeleteBranch && !title.isTail;
+            const xBtnW = showDelete ? 16 : 0;
             const padInner = 6;
             const labelW = Math.max(text.length * charW, 28) + padInner * 2 + xBtnW;
             const badgeH = 20;
@@ -297,6 +315,12 @@ export function TimelineGraph({
                     ev.stopPropagation();
                     onBranchFocus?.(title.branch);
                   }}
+                  onContextMenu={(ev) => {
+                    if (!onBranchContextMenu) return;
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    onBranchContextMenu(title.branch, ev.clientX, ev.clientY);
+                  }}
                 />
                 <text
                   x={textX}
@@ -310,15 +334,16 @@ export function TimelineGraph({
                 >
                   {text}
                 </text>
-                {showUnselect && (
+                {showDelete && (
                   <g
-                    data-testid={`unselect-${title.branch}`}
+                    data-testid={`delete-branch-${title.branch}`}
                     style={{ cursor: "pointer" }}
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      onUnselect?.(title.branch);
+                      onDeleteBranch?.(title.branch);
                     }}
                   >
+                    <title>Remove this version</title>
                     <rect
                       x={badgeX + labelW - xBtnW}
                       y={badgeY}

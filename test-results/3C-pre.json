@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "d040e85",
+  "status": "",
+  "dex_branches": "dex/2026-05-04-cflict-a,",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: tasks completed [cycle:1] [feature:specs/main-side]",
+  "main_parents": "7b39271573a577da118efc5ce4d40bfed5f1ed1c",
+  "promoted_tags": ""
+}

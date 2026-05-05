@@ -1,0 +1,28 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+[F2 applied]
+--- click delete ---
+{
+  "found": true
+}
+--- wait for lost-work modal ---
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- modal text ---
+{
+  "found": true,
+  "text": "cycle 1 · plan writtendfd3d9c"
+}
+--- click cancel ---
+{
+  "found": true
+}
+--- wait for modal gone ---
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- post git ---
+  dex/2026-05-04-unique

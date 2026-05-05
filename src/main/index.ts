@@ -82,6 +82,21 @@ function createWindow(): void {
   registerProfilesHandlers();
   registerAppConfigHandlers();
 
+  // Surface renderer-side errors (window.onerror / unhandledrejection) into
+  // the main-process stderr so they land in `~/.dex/dev-logs/electron.log`
+  // alongside main-process diagnostics. Without this, renderer crashes are
+  // only visible inside DevTools, which is hard to inspect when the window
+  // closes itself before the user can open it.
+  ipcMain.on("dev:renderer-error", (_e, payload: unknown) => {
+    const p = (payload ?? {}) as Record<string, unknown>;
+    const tag = p.type === "unhandledrejection" ? "unhandled-rejection" : "error";
+    const where = p.source
+      ? ` (${String(p.source)}:${p.line ?? "?"}:${p.col ?? "?"})`
+      : "";
+    const stack = typeof p.stack === "string" && p.stack ? `\n${p.stack}` : "";
+    console.error(`[renderer:${tag}] ${String(p.message ?? "")}${where}${stack}`);
+  });
+
   // DevTools toggle
   globalShortcut.register("F12", () => {
     mainWindow?.webContents.toggleDevTools();

@@ -78,7 +78,19 @@ For `clean`, `ls` must show only `GOAL.md` and `.git/`. For a checkpoint reset, 
 
 ### Step 2 — Ensure the dev server is running
 
-Check `electron-chrome` MCP connectivity via `mcp__electron-chrome__list_pages`. If it fails, `dev-setup.sh` is not running.
+Check `electron-chrome` MCP connectivity via `mcp__electron-chrome__list_pages` (or `curl -fs http://localhost:9333/json/version`). If it fails, `dev-setup.sh` is not running.
+
+**You are authorized to start the dev server yourself.** Do not ask the user to run it. Run it in the background and continue:
+
+```sh
+bash /home/lukas/Projects/Github/lukaskellerstein/dex/dev-setup.sh    # run_in_background=true
+```
+
+Then poll `~/.dex/dev-logs/vite.log` and `~/.dex/dev-logs/electron.log` (truncated on every start) until you see `ready in` (Vite) and `DevTools listening on ws://127.0.0.1:9333` (Electron) — typically 5–15 seconds. After that, CDP is reachable and you can drive the app. **Never** background the script and immediately fire CDP commands; wait for the readiness lines.
+
+The same authorization applies to **restarting** the dev server when it's already running but stale (e.g. main-process changes need a restart). Kill it and re-run.
+
+If the server fails to start (port collision, Electron crash on boot), surface the relevant log lines and ask — don't loop on retries.
 
 ### Step 3 — Fill the welcome screen
 

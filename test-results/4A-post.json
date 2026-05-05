@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "e20f769",
+  "status": "UU conflict-test.txt,",
+  "dex_branches": "dex/2026-05-04-cflict-a,",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: tasks completed [cycle:1] [feature:specs/main-side]",
+  "main_parents": "af98d9a95125c1cb26006274ef2e49bd032a9a96",
+  "promoted_tags": ""
+}

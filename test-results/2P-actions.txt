@@ -1,0 +1,27 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- modal stats ---
+{
+  "found": true,
+  "text": "4 files changed · +12 -1(+12 -1)"
+}
+--- expected from git diff --shortstat ---
+ 4 files changed, 12 insertions(+), 1 deletion(-)
+--- cancel modal ---
+{
+  "ok": true
+}

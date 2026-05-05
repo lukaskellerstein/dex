@@ -243,6 +243,72 @@ test("layoutTimeline: merge commit on main — hollow flag + merge edge from mer
   assert.equal(merges[0].elbow!.y, mNode.y);
 });
 
+test("layoutTimeline: promote step on main — main lane extends to merge tip, source lane preserved", () => {
+  // Reproduces the post-promote topology where listTimeline has surfaced
+  // the merge commit as a `step: "promote"` TimelineCommit and recovered
+  // the (now-deleted) source branch's exclusive step-commit. Verifies the
+  // main lane reaches all the way to the merge row (so the `main` badge
+  // sits on the actual HEAD) and the source-branch lane gets its own
+  // column with a merge edge into main.
+  const baseline = STEP_COMMIT(
+    "a".repeat(40), "main", null, "specify", 0, "2026-05-04T17:45:16Z",
+  );
+  const sideTip = STEP_COMMIT(
+    "b".repeat(40),
+    "dex/2026-05-04-clean",
+    baseline.parentSha,
+    "specify",
+    1,
+    "2026-05-04T17:45:16.500Z",
+  );
+  const promoteMerge: TimelineCommit = {
+    sha: "c".repeat(40),
+    shortSha: "ccccccc",
+    branch: "main",
+    containingBranches: ["main"],
+    parentSha: baseline.sha,
+    mergedParentShas: [sideTip.sha],
+    step: "promote",
+    cycleNumber: -1,
+    subject: "dex: promoted dex/2026-05-04-clean to main",
+    timestamp: "2026-05-04T17:45:22Z",
+    hasCheckpointTag: false,
+  };
+  const snap: TimelineSnapshot = {
+    ...EMPTY_SNAP,
+    commits: [baseline, sideTip, promoteMerge],
+    currentBranch: "main",
+  };
+  const out = layoutTimeline(snap, OPTS);
+
+  const baselineNode = out.nodes.find((n) => n.id === baseline.sha)!;
+  const mergeNode = out.nodes.find((n) => n.id === promoteMerge.sha)!;
+  const sideNode = out.nodes.find((n) => n.id === sideTip.sha)!;
+
+  // Merge node sits in main's column, below baseline, and is hollow.
+  assert.equal(mergeNode.branch, "main");
+  assert.equal(mergeNode.columnIndex, baselineNode.columnIndex);
+  assert.equal(mergeNode.isMerge, true);
+  assert.ok(mergeNode.y > baselineNode.y);
+
+  // Side branch claimed its own non-trunk column.
+  assert.equal(sideNode.branch, "dex/2026-05-04-clean");
+  assert.notEqual(sideNode.columnIndex, baselineNode.columnIndex);
+
+  // Merge edge from sideTip → mergeNode is drawn.
+  const merges = out.edges.filter((e) => e.kind === "merge");
+  assert.equal(merges.length, 1);
+  assert.equal(merges[0].fromId, sideTip.sha);
+  assert.equal(merges[0].toId, promoteMerge.sha);
+
+  // The `main` badge's tail row sits below the merge — proves main's lane
+  // extends all the way to its actual HEAD instead of stopping at the
+  // last step-commit (the original bug).
+  const mainTail = out.branchTitles.find((t) => t.branch === "main" && t.isTail);
+  assert.ok(mainTail, "main should have a tail badge once it has ≥2 commits in lane");
+  assert.ok(mainTail!.y > mergeNode.y);
+});
+
 test("layoutTimeline: color states — selected (blue), kept (red), both, default", () => {
   const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
   const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");

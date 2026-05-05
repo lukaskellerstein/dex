@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "1694976",
+  "status": "",
+  "dex_branches": "",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: promoted dex/2026-05-04-cflict-a to main",
+  "main_parents": "d040e85535cb2c0f33cc1d03a65edcfb5f32e3a5,63fd8dd068b0bb89ce5b97eb0461af86714e3818",
+  "promoted_tags": ""
+}

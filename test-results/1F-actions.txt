@@ -1,0 +1,80 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+[no-primary fixture applied]
+--- IPC delete attempt ---
+{
+  "ok": false,
+  "error": "would_lose_work",
+  "lostSteps": [
+    {
+      "label": "spec written",
+      "shortSha": "0062657"
+    },
+    {
+      "label": "remove testing",
+      "shortSha": "9e340e6"
+    },
+    {
+      "label": "adjust mocked config",
+      "shortSha": "b4a85b2"
+    },
+    {
+      "label": "Add Dex checkpoint-testing harness (009)",
+      "shortSha": "ff1811b"
+    },
+    {
+      "label": "minimalistic project",
+      "shortSha": "e750b7c"
+    },
+    {
+      "label": "minimalistic project",
+      "shortSha": "b560295"
+    },
+    {
+      "label": "minimal project",
+      "shortSha": "72e2f29"
+    },
+    {
+      "label": "Merge pull request #2 from lukaskellerstein/chore/clean-u…",
+      "shortSha": "b349115"
+    },
+    {
+      "label": "Improve README and remove superseded planning docs",
+      "shortSha": "affcdeb"
+    },
+    {
+      "label": "Merge pull request #1 from lukaskellerstein/000-specifica…",
+      "shortSha": "0e1d3a1"
+    },
+    {
+      "label": "backup of specs",
+      "shortSha": "76c98f5"
+    },
+    {
+      "label": "update .env",
+      "shortSha": "dbace4e"
+    },
+    {
+      "label": "update README.md",
+      "shortSha": "a149d31"
+    },
+    {
+      "label": "add testing tools",
+      "shortSha": "a48935b"
+    },
+    {
+      "label": "add my specs",
+      "shortSha": "ee15965"
+    },
+    {
+      "label": "first commit",
+      "shortSha": "45c1cce"
+    },
+    {
+      "label": "Initial commit",
+      "shortSha": "84e6ba8"
+    }
+  ]
+}
+--- post git ---
+* dex/2026-05-04-orphan

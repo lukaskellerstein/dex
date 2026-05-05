@@ -33,6 +33,28 @@ export interface DexLoopEntry {
   cycles: CycleEntry[];
 }
 
+/**
+ * 014 — scripted response for `MockAgentRunner.runOneShot`. Each entry maps a
+ * prompt match (string-exact or RegExp source) to a deterministic reply, with
+ * an optional file-edit side effect so resolver tests can simulate the agent
+ * actually editing a conflicted file.
+ */
+export interface MockOneShotResponse {
+  /** Either an exact-match string or a RegExp source string compiled at lookup time. */
+  matchPrompt: string;
+  /** When true, `matchPrompt` is treated as a regular expression (`new RegExp(matchPrompt).test(prompt)`). */
+  isRegex?: boolean;
+  finalText: string;
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  finishedNormally?: boolean;
+  /** Mock writes this content to {ctx.cwd}/{path} before returning — simulates an Edit tool call. */
+  editFile?: { path: string; content: string };
+  /** Simulated invocation latency. */
+  delayMs?: number;
+}
+
 export interface MockConfig {
   enabled: boolean;
   fixtureDir?: string;
@@ -40,6 +62,8 @@ export interface MockConfig {
   clarification: PhaseEntry;
   dex_loop: DexLoopEntry;
   completion: PhaseEntry;
+  /** 014 — scripted runOneShot responses. Optional; mock returns a permissive default when unset. */
+  oneShotResponses?: MockOneShotResponse[];
 }
 
 // ── Error classes ──────────────────────────────────────────
@@ -184,6 +208,16 @@ export function loadMockConfig(projectDir: string): MockConfig {
     throw new MockConfigInvalidError(file, "'fixtureDir' must be a string if present");
   }
 
+  const oneShotResponses = obj.oneShotResponses;
+  if (oneShotResponses !== undefined) {
+    if (!Array.isArray(oneShotResponses)) {
+      throw new MockConfigInvalidError(file, "'oneShotResponses' must be an array if present");
+    }
+    oneShotResponses.forEach((r, i) =>
+      validateOneShotResponse(file, `oneShotResponses[${i}]`, r),
+    );
+  }
+
   return {
     enabled: obj.enabled,
     fixtureDir: fixtureDir as string | undefined,
@@ -191,7 +225,42 @@ export function loadMockConfig(projectDir: string): MockConfig {
     clarification: obj.clarification as PhaseEntry,
     dex_loop: obj.dex_loop as DexLoopEntry,
     completion: obj.completion as PhaseEntry,
+    oneShotResponses: oneShotResponses as MockOneShotResponse[] | undefined,
   };
+}
+
+function validateOneShotResponse(file: string, where: string, spec: unknown): void {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+    throw new MockConfigInvalidError(file, `${where} must be an object`);
+  }
+  const r = spec as Record<string, unknown>;
+  if (typeof r.matchPrompt !== "string") {
+    throw new MockConfigInvalidError(file, `${where}.matchPrompt must be a string`);
+  }
+  if (typeof r.finalText !== "string") {
+    throw new MockConfigInvalidError(file, `${where}.finalText must be a string`);
+  }
+  if (r.isRegex !== undefined && typeof r.isRegex !== "boolean") {
+    throw new MockConfigInvalidError(file, `${where}.isRegex must be a boolean if present`);
+  }
+  if (r.cost !== undefined && (typeof r.cost !== "number" || r.cost < 0)) {
+    throw new MockConfigInvalidError(file, `${where}.cost must be a non-negative number if present`);
+  }
+  if (r.delayMs !== undefined && (typeof r.delayMs !== "number" || r.delayMs < 0)) {
+    throw new MockConfigInvalidError(file, `${where}.delayMs must be a non-negative number if present`);
+  }
+  if (r.editFile !== undefined) {
+    if (!r.editFile || typeof r.editFile !== "object" || Array.isArray(r.editFile)) {
+      throw new MockConfigInvalidError(file, `${where}.editFile must be an object if present`);
+    }
+    const ef = r.editFile as Record<string, unknown>;
+    if (typeof ef.path !== "string" || ef.path.length === 0) {
+      throw new MockConfigInvalidError(file, `${where}.editFile.path must be a non-empty string`);
+    }
+    if (typeof ef.content !== "string") {
+      throw new MockConfigInvalidError(file, `${where}.editFile.content must be a string`);
+    }
+  }
 }
 
 function validatePhaseEntry(file: string, name: string, entry: unknown): void {

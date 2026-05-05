@@ -1,59 +1,12 @@
 /**
- * What: 010 click-to-jump core (jumpTo) plus its cleanup verb (unselect) and the auto-prune helper for transient `selected-<ts>` navigation forks.
- * Not: Does not list the timeline (that's timeline.ts).
+ * What: 010 click-to-jump core (jumpTo) and the auto-prune helper for transient `selected-<ts>` navigation forks.
+ * Not: Does not list the timeline (that's timeline.ts). Removal of timeline branches lives in `branchOps.ts` (014).
  * Deps: _helpers (gitExec, safeExec, log), tags.ts (selectedBranchName), node:child_process (raw execSync for porcelain status).
  */
 
 import { execSync } from "node:child_process";
 import { gitExec, safeExec, log, type RunLoggerLike } from "./_helpers.js";
 import { selectedBranchName } from "./tags.js";
-
-// ── Unselect (010 — drop a `selected-*` navigation fork) ──────
-
-/**
- * Drop a `selected-<ts>` navigation fork. If HEAD is currently on it, switch
- * first to the most "natural" parent branch — main / master, then any `dex/*`
- * containing the SHA, then any other non-`selected-*` branch — and only then
- * delete it. Refuses to act on non-`selected-*` branches.
- */
-export function unselect(
-  projectDir: string,
-  branchName: string,
-  rlog?: RunLoggerLike,
-): { ok: true; switchedTo: string | null; deleted: string } | { ok: false; error: string } {
-  if (!branchName.startsWith("selected-")) {
-    return { ok: false, error: "only selected-* branches can be unselected" };
-  }
-  let switchedTo: string | null = null;
-  try {
-    const current = gitExec(`git rev-parse --abbrev-ref HEAD`, projectDir);
-    if (current === branchName) {
-      // HEAD is on this branch; switch to a natural parent before deleting.
-      const sha = gitExec(`git rev-parse HEAD`, projectDir);
-      const containingRaw = safeExec(
-        `git for-each-ref --contains ${sha} --format='%(refname:short)' refs/heads/`,
-        projectDir,
-      );
-      const containing = containingRaw
-        .split("\n")
-        .filter((b) => Boolean(b) && b !== branchName && !b.startsWith("selected-"));
-      const preferred =
-        containing.find((b) => b === "main" || b === "master") ??
-        containing.find((b) => b.startsWith("dex/")) ??
-        containing[0];
-      if (!preferred) {
-        return { ok: false, error: "no parent branch contains this commit" };
-      }
-      gitExec(`git checkout -q ${preferred}`, projectDir);
-      switchedTo = preferred;
-    }
-    gitExec(`git branch -D ${branchName}`, projectDir);
-    log(rlog, "INFO", `unselect: deleted ${branchName}${switchedTo ? ` (switched to ${switchedTo})` : ""}`);
-    return { ok: true, switchedTo, deleted: branchName };
-  } catch (err) {
-    return { ok: false, error: String(err) };
-  }
-}
 
 // ── Jump-to (010) ────────────────────────────────────────
 

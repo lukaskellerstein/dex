@@ -1,0 +1,26 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+[F2 applied]
+--- concurrent IPC delete ---
+{
+  "r1": {
+    "ok": false,
+    "error": "would_lose_work",
+    "lostSteps": [
+      {
+        "label": "cycle 1 · plan written",
+        "shortSha": "f6e19b9"
+      }
+    ]
+  },
+  "r2": {
+    "ok": false,
+    "error": "would_lose_work",
+    "lostSteps": [
+      {
+        "label": "cycle 1 · plan written",
+        "shortSha": "f6e19b9"
+      }
+    ]
+  }
+}

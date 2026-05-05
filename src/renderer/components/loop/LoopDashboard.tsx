@@ -172,6 +172,10 @@ export function LoopDashboard({
       completedAt: ts,
     });
     for (const c of pathCommits) {
+      // Promote merges (step === "promote") aren't orchestrator stages —
+      // the regex that builds selectedPath already excludes them, so this
+      // branch is defensive but keeps the type narrow for `synth`.
+      if (c.step === "promote") continue;
       const stage = synth(c.step, c.timestamp, c.sha);
       if (c.cycleNumber === 0) {
         preCycle.push(stage);

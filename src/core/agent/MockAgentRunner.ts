@@ -2,7 +2,15 @@ import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentRunner, TaskPhaseContext, TaskPhaseResult, StepContext, StepResult } from "./AgentRunner.js";
+import type {
+  AgentRunner,
+  TaskPhaseContext,
+  TaskPhaseResult,
+  StepContext,
+  StepResult,
+  OneShotContext,
+  OneShotResult,
+} from "./AgentRunner.js";
 import type { AgentStep, RunConfig } from "../types.js";
 import {
   MockConfig,
@@ -12,6 +20,7 @@ import {
   MockDisabledError,
   PHASE_OF_STEP,
   StepDescriptor,
+  MockOneShotResponse,
   loadMockConfig,
   mockConfigPath,
 } from "./MockConfig.js";
@@ -262,6 +271,80 @@ export class MockAgentRunner implements AgentRunner {
       durationMs: Date.now() - start,
       inputTokens: 0,
       outputTokens: 0,
+    };
+  }
+
+  /**
+   * 014 — scripted runOneShot. Looks up `ctx.prompt` against
+   * `MockConfig.oneShotResponses`; honours the optional `editFile` side
+   * effect (write content into the resolved cwd before returning); falls
+   * back to a permissive default record when no entry matches so tests
+   * aren't required to script every prompt the harness might send.
+   */
+  async runOneShot(ctx: OneShotContext): Promise<OneShotResult> {
+    const start = Date.now();
+    const cwd = ctx.cwd ?? this.projectDir;
+    const responses: MockOneShotResponse[] = this.config.oneShotResponses ?? [];
+
+    let matched: MockOneShotResponse | undefined;
+    for (const r of responses) {
+      if (r.isRegex) {
+        try {
+          if (new RegExp(r.matchPrompt).test(ctx.prompt)) {
+            matched = r;
+            break;
+          }
+        } catch {
+          // Bad regex source — skip silently; surfaces in test by missing match.
+          continue;
+        }
+      } else if (r.matchPrompt === ctx.prompt) {
+        matched = r;
+        break;
+      }
+    }
+
+    if (matched?.delayMs && matched.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, matched!.delayMs));
+    }
+
+    if (matched?.editFile) {
+      const dest = path.isAbsolute(matched.editFile.path)
+        ? matched.editFile.path
+        : path.resolve(cwd, matched.editFile.path);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, matched.editFile.content, "utf8");
+    }
+
+    if (ctx.abortController?.signal.aborted) {
+      return {
+        cost: 0,
+        durationMs: Date.now() - start,
+        inputTokens: 0,
+        outputTokens: 0,
+        finalText: "",
+        finishedNormally: false,
+      };
+    }
+
+    if (!matched) {
+      return {
+        cost: 0,
+        durationMs: Date.now() - start,
+        inputTokens: 0,
+        outputTokens: 0,
+        finalText: "(mock default — no oneShotResponses entry matched)",
+        finishedNormally: true,
+      };
+    }
+
+    return {
+      cost: matched.cost ?? 0,
+      durationMs: Date.now() - start,
+      inputTokens: matched.inputTokens ?? 0,
+      outputTokens: matched.outputTokens ?? 0,
+      finalText: matched.finalText,
+      finishedNormally: matched.finishedNormally ?? true,
     };
   }
 

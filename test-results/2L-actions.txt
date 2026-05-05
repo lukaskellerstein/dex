@@ -1,0 +1,32 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "found": true,
+  "elapsed": 0
+}
+--- click Cancel ---
+{
+  "cancelClicked": true
+}
+--- post git ---
+main subject: dex: specify completed [cycle:0] [feature:specs/baseline]
+git status: 1 lines
+dex/* branches:   dex/2026-05-04-clean
+autosave count: 0

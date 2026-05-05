@@ -1,0 +1,18 @@
+{
+  "badges": [
+    "branch-badge-dex/2026-05-04-clean",
+    "branch-badge-main",
+    "branch-badge-dex/2026-05-04-clean-tail"
+  ],
+  "deletes": [
+    "delete-branch-dex/2026-05-04-clean"
+  ],
+  "modals": [],
+  "context": [
+    "branch-context-menu",
+    "promote-menu-item-main"
+  ],
+  "alerts": [],
+  "toasts": [],
+  "url": "http://localhost:5500/"
+}

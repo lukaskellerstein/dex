@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "3ee3e8d",
+  "status": "",
+  "dex_branches": "",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: promoted dex/2026-05-04-clean to main",
+  "main_parents": "c9508e5088e6fcfa289ffb4779de581781a64ce6,6ffc15bed91dc938c4008a7283f3238ef5abb183",
+  "promoted_tags": ""
+}

@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "e9fe914",
+  "status": " M .dex/dex-config.json,",
+  "dex_branches": "",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: specify completed [cycle:0] [feature:specs/baseline]",
+  "main_parents": "9e340e62388688c449bb7b213fff4494ea1db058",
+  "promoted_tags": ""
+}

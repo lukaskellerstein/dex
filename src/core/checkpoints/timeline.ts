@@ -63,7 +63,15 @@ export interface TimelineCommit {
   containingBranches: string[];
   parentSha: string | null;
   mergedParentShas: string[];
-  step: StepType;
+  /**
+   * `StepType` for ordinary `dex: <step> completed […]` step-commits.
+   * `"promote"` for the merge commit a `mergeToMain` produces (subject
+   * `dex: promoted <source> to (main|master)`). Promote commits are NOT
+   * orchestrator stages — `LoopDashboard` and `selectedPath` filter them
+   * out — but they ARE rendered on the timeline so the actual `main` HEAD
+   * is visible after a promote.
+   */
+  step: StepType | "promote";
   cycleNumber: number;
   subject: string;
   timestamp: string;
@@ -239,11 +247,25 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
     sha: string;
     parentSha: string | null;
     mergedParentShas: string[];
-    step: StepType;
+    step: StepType | "promote";
     cycleNumber: number;
     subject: string;
     timestamp: string;
   };
+
+  // Subject parser: returns step + cycle for ordinary step-commits, or a
+  // synthetic `step: "promote"` for the merge commit a `mergeToMain` writes.
+  // Returns null for any other commit subject (skipped by Pass 1).
+  function classifySubject(subject: string): { step: StepType | "promote"; cycleNumber: number } | null {
+    const stepMatch = subject.match(/^dex: (\w+) completed \[cycle:(\d+)\]/);
+    if (stepMatch) {
+      return { step: stepMatch[1] as StepType, cycleNumber: Number(stepMatch[2]) };
+    }
+    if (/^dex: promoted \S+ to (main|master)$/.test(subject)) {
+      return { step: "promote", cycleNumber: -1 };
+    }
+    return null;
+  }
 
   // ── Pass 1: Full reachability scan ─────────────────────
   // For each visible branch, walk every reachable commit (not just
@@ -262,8 +284,8 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
       const parts = line.split("\t");
       if (parts.length < 4) continue;
       const [sha, parents, subject, timestamp] = parts;
-      const m = subject.match(/^dex: (\w+) completed \[cycle:(\d+)\]/);
-      if (!m) continue;
+      const classified = classifySubject(subject);
+      if (!classified) continue;
       let set = containing.get(sha);
       if (!set) {
         set = new Set<string>();
@@ -276,8 +298,8 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
           sha,
           parentSha: parentList[0] ?? null,
           mergedParentShas: parentList.slice(1),
-          step: m[1] as StepType,
-          cycleNumber: Number(m[2]),
+          step: classified.step,
+          cycleNumber: classified.cycleNumber,
           subject,
           timestamp,
         });
@@ -308,6 +330,48 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
       if (!commitData.has(sha)) continue; // not a step-commit
       if (canonicalOf.has(sha)) continue; // already claimed
       canonicalOf.set(sha, branch);
+    }
+  }
+
+  // ── Pass 3: Recover deleted-branch lineage from promote merges ──
+  // After mergeToMain promotes a `dex/<run>` branch and deletes it, the
+  // run's exclusive step-commits (the ones reachable only via the merge's
+  // second parent) have no canonical owner — Pass 2 walks --first-parent
+  // and never sees them. Without this pass they'd be dropped from
+  // commits[] entirely, costing the user the visual lineage that
+  // motivated keeping the merge in the first place.
+  //
+  // For each promote merge in commitData, parse the source-branch name
+  // out of its subject and walk `<secondParent> ^<firstParent>` to find
+  // commits exclusive to the deleted branch. Each unclaimed step-commit
+  // along that walk gets canonical to the synthetic source branch — the
+  // layout then renders the original fork-and-rejoin shape with the
+  // source branch's name on the badge, even though the underlying ref no
+  // longer exists.
+  for (const data of commitData.values()) {
+    if (data.step !== "promote") continue;
+    if (data.mergedParentShas.length === 0 || !data.parentSha) continue;
+    const m = data.subject.match(/^dex: promoted (\S+) to (main|master)$/);
+    if (!m) continue;
+    const sourceBranch = m[1];
+    if (sourceBranch === "main" || sourceBranch === "master") continue;
+    for (const mergedParent of data.mergedParentShas) {
+      const exclusiveRaw = sx(
+        `git rev-list --first-parent ${mergedParent} ^${data.parentSha}`,
+      );
+      for (const orphanSha of exclusiveRaw.split("\n").filter(Boolean)) {
+        if (!commitData.has(orphanSha)) continue;
+        if (canonicalOf.has(orphanSha)) continue;
+        canonicalOf.set(orphanSha, sourceBranch);
+        // Surface the recovered branch in `containingBranches` too so the
+        // tooltip reflects where the dot's lane name comes from.
+        let set = containing.get(orphanSha);
+        if (!set) {
+          set = new Set<string>();
+          containing.set(orphanSha, set);
+        }
+        set.add(sourceBranch);
+      }
     }
   }
 

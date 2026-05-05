@@ -6,12 +6,14 @@ import { historyApi } from "./preload-modules/history-api.js";
 import { checkpointsApi } from "./preload-modules/checkpoints-api.js";
 import { profilesApi } from "./preload-modules/profiles-api.js";
 import { windowApi } from "./preload-modules/window-api.js";
+import { devApi } from "./preload-modules/dev-api.js";
 
 const dexAPI = {
   ...projectApi,
   ...orchestratorApi,
   ...historyApi,
   ...windowApi,
+  ...devApi,
   checkpoints: checkpointsApi,
   profiles: profilesApi,
 } satisfies DexAPI;

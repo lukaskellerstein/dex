@@ -1,0 +1,46 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] Removing README.md
+[pristine] Deleted branch dex/2026-05-04-clean (was 978f588).
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+git status before promote:
+ M GOAL.md
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+--- wait for GoBackConfirm modal ---
+{
+  "found": true,
+  "elapsed": 1
+}
+--- click Save ---
+{
+  "saveClicked": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true,
+  "text": "dex/2026-05-04-clean is now main. The old version has been removed.×"
+}
+--- post git ---
+main subject: dex: promoted dex/2026-05-04-clean to main
+autosave count: 1
+HEAD: main
+dex/* branches: 
+git status: 

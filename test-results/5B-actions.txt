@@ -1,0 +1,47 @@
+--- tsc --noEmit ---
+
+tsc exit: 0
+--- npm run test:core ---
+✔ phase-lifecycle: PhaseStartInput shape pinned (0.677161ms)
+✔ phase-lifecycle: logStrategy union is the documented set (0.539067ms)
+✔ phase-lifecycle: PhaseCompleteInput status union (0.116458ms)
+✔ phase-lifecycle: PhaseFailureInput requires error (0.167889ms)
+✔ phase-lifecycle: SkippedStepInput exposes minimal shape (0.124426ms)
+(node:1481558) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/lukas/Projects/Github/lukaskellerstein/dex/src/core/__tests__/timelineLayout.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /home/lukas/Projects/Github/lukaskellerstein/dex/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ layoutTimeline: empty snapshot → no nodes, no edges, sensible bounds (0.72478ms)
+✔ layoutTimeline: linear single-branch run — within-column edges between consecutive commits (3.792966ms)
+✔ layoutTimeline: feature branch fork — single fork edge with elbow at child column, parent row (0.236377ms)
+✔ layoutTimeline: two branches forking from same commit get separate lanes (0.183807ms)
+✔ layoutTimeline: chronological allocation — later branches always sit to the right (no recycling) (0.183411ms)
+✔ layoutTimeline: branch titles — every lane's tenant is top-pinned at the header row (0.129968ms)
+✔ layoutTimeline: selected-* lane flagged isSelectedLane (0.081804ms)
+✔ layoutTimeline: a third branch forking last gets the rightmost lane (0.102406ms)
+✔ layoutTimeline: dotted column markers — one per non-trunk lane, full canvas height (0.097636ms)
+✔ layoutTimeline: lane segments — one per branch with ≥2 commits, colored by branch (0.141535ms)
+✔ layoutTimeline: merge commit on main — hollow flag + merge edge from merged tip (0.11738ms)
+✔ layoutTimeline: color states — selected (blue), kept (red), both, default (0.099302ms)
+✔ layoutTimeline: cycle bands — one band per contiguous cycleNumber run (0.060484ms)
+ℹ tests 85
+ℹ suites 0
+ℹ pass 85
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 83.347937
+--- npm run test:renderer ---
+
+> dex@0.1.0 test:renderer
+> vitest run
+
+
+ RUN  v4.1.5 /home/lukas/Projects/Github/lukaskellerstein/dex
+
+
+ Test Files  5 passed (5)
+      Tests  40 passed (40)
+   Start at  17:27:53
+   Duration  456ms (transform 141ms, setup 0ms, import 353ms, tests 56ms, environment 1.46s)

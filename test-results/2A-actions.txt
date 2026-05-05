@@ -1,0 +1,43 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+[F7 applied]
+--- rclick on dex/2026-05-04-clean ---
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- click promote menu item ---
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- summary modal ---
+{
+  "found": true,
+  "text": "4 files changed · +12 -1(+12 -1)"
+}
+--- click confirm ---
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- toast text ---
+{
+  "found": true,
+  "text": "dex/2026-05-04-clean is now main. The old version has been removed.×"
+}
+--- post git ---
+main subject: dex: promoted dex/2026-05-04-clean to main
+main parents: 2
+dex/* branches: 
+HEAD: main
+promoted tags: 

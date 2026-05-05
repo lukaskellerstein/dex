@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "7b08577",
+  "status": "",
+  "dex_branches": "dex/2026-05-04-both-add,",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: tasks completed [cycle:1] [feature:specs/main-aa]",
+  "main_parents": "7b6b4b28eb00d54e9106592df566ac2a71e5383d",
+  "promoted_tags": ""
+}

@@ -1,11 +1,14 @@
 /**
- * What: Typed wrapper over window.dexAPI.checkpoints.* — listTimeline, jumpTo, unselect, syncStateFromHead, initRepo, setIdentity, plus typed CheckpointError.
+ * What: Typed wrapper over window.dexAPI.checkpoints.* — listTimeline, jumpTo, deleteBranch, mergeToMain, promoteSummary, syncStateFromHead, initRepo, setIdentity, plus typed CheckpointError.
  * Not: Does not cache, retry, or transform results — methods are 1:1 with IPC. Does not subscribe to events; that's orchestratorService.
  * Deps: window.dexAPI.checkpoints, error-codes.md vocabulary, core/checkpoints types.
  */
 import type {
   TimelineSnapshot,
   JumpToResult,
+  DeleteBranchResult,
+  MergeToMainResult,
+  PromoteSummary,
 } from "../../core/checkpoints.js";
 
 export type CheckpointErrorCode =
@@ -69,15 +72,57 @@ export const checkpointService = {
     return call(() => window.dexAPI.checkpoints.checkIdentity(projectDir));
   },
 
-  unselect(
+  deleteBranch(
     projectDir: string,
     branchName: string,
+    opts?: { confirmedLoss?: boolean },
+  ): Promise<DeleteBranchResult | { ok: false; error: "locked_by_other_instance" }> {
+    return call(() =>
+      window.dexAPI.checkpoints.deleteBranch(projectDir, branchName, opts),
+    );
+  },
+
+  promoteSummary(projectDir: string, sourceBranch: string): Promise<PromoteSummary> {
+    return call(() =>
+      window.dexAPI.checkpoints.promoteSummary(projectDir, sourceBranch),
+    );
+  },
+
+  mergeToMain(
+    projectDir: string,
+    sourceBranch: string,
+    opts?: { force?: "save" | "discard" },
+  ): Promise<MergeToMainResult | { ok: false; error: "locked_by_other_instance" }> {
+    return call(() =>
+      window.dexAPI.checkpoints.mergeToMain(projectDir, sourceBranch, opts),
+    );
+  },
+
+  acceptResolverResult(
+    projectDir: string,
   ): Promise<
-    | { ok: true; switchedTo: string | null; deleted: string }
+    | { ok: true; mergeSha: string }
     | { ok: false; error: string }
     | { ok: false; error: "locked_by_other_instance" }
   > {
-    return call(() => window.dexAPI.checkpoints.unselect(projectDir, branchName));
+    return call(() => window.dexAPI.checkpoints.acceptResolverResult(projectDir));
+  },
+
+  abortResolverMerge(
+    projectDir: string,
+  ): Promise<
+    | { ok: true }
+    | { ok: false; error: string }
+    | { ok: false; error: "locked_by_other_instance" }
+  > {
+    return call(() => window.dexAPI.checkpoints.abortResolverMerge(projectDir));
+  },
+
+  openInEditor(
+    projectDir: string,
+    files: string[],
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    return call(() => window.dexAPI.checkpoints.openInEditor(projectDir, files));
   },
 
   syncStateFromHead(projectDir: string): Promise<

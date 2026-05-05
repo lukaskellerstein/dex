@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "ab8d1c4",
+  "status": "",
+  "dex_branches": "dex/2026-05-04-rename,",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: tasks completed [cycle:1] [feature:specs/main-rm]",
+  "main_parents": "bc7e6d3e5c6f76dbf7d4504ab56a6f487a9f5e32",
+  "promoted_tags": ""
+}

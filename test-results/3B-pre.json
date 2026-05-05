@@ -1,0 +1,11 @@
+{
+  "head": "main",
+  "head_sha": "2b1d012",
+  "status": "",
+  "dex_branches": "dex/2026-05-04-multi,",
+  "feature_branches": "",
+  "selected_branches": "",
+  "main_subject": "dex: tasks completed [cycle:1] [feature:specs/main]",
+  "main_parents": "765e7201b6ed11cf26d1f686e8e125bb06d4df0d",
+  "promoted_tags": ""
+}

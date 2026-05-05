@@ -1,0 +1,8 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+[F7 + state.json on main applied]
+--- IPC mergeToMain ---
+{
+  "ok": false,
+  "error": "main_in_active_run"
+}

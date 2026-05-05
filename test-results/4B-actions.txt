@@ -1,0 +1,45 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 1
+}
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+--- click Accept ---
+{
+  "found": true
+}
+--- post UI ---
+{
+  "badges": [
+    "branch-badge-main",
+    "branch-badge-main-tail"
+  ],
+  "deletes": [],
+  "modals": [],
+  "context": [],
+  "alerts": [],
+  "toasts": [
+    "dex/2026-05-04-cflict-a is now main. The old version has been removed.×"
+  ],
+  "url": "http://localhost:5500/"
+}
+--- post git ---
+main subject: dex: promoted dex/2026-05-04-cflict-a to main
+dex/* branches: 

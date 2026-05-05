@@ -1,0 +1,24 @@
+[pristine] HEAD is now at 9e340e6 remove testing
+[pristine] pristine: main reset to 9e340e6; local test branches pruned
+[F8 + verify=true]
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "ok": true,
+  "elapsed": 0
+}
+{
+  "found": true
+}
+{
+  "outcome": "success",
+  "toast": "AI resolved 1 disagreement. The new main is ready.×"
+}

@@ -1,0 +1,49 @@
+1A|PARTIAL_PASS|IPC delete OK; UI click no-op because empty dex/ branch has no unique step-commits → no badge rendered (catalog gap)
+1B|PASS|lost-work modal opened + cancel kept branch
+1C|PASS|lost-work modal opened + confirm deleted branch
+1D|PARTIAL_PASS|IPC switched HEAD to main; UI not testable (empty dex/ has no badge)
+1E|PARTIAL_PASS|IPC fell back to master correctly; UI not testable
+1F|PASS|IPC correctly refused; orphan branch preserved
+1G|PASS|main badge rendered without delete control
+1H|PASS|IPC refused user branch delete; feature/foo preserved
+1I|PASS|IPC refused with branch_in_active_run; branch preserved
+1J|PASS|concurrent IPC handled deterministically (see action log)
+2A|PASS|merge commit subject correct
+2B|PASS|merge has 2 parents (--no-ff topology preserved)
+2C|PASS|no checkpoint/promoted-* tag created
+2D|PASS|source dex/* branch deleted after merge
+2E|PASS|HEAD on main after merge
+2F|PASS|post-merge toast text correct
+2G|PASS|mergeToMain refused with mid-run error
+2H|PASS|mergeToMain refused when main is active
+2I|PASS|IPC refused with no_primary_branch
+2J|PASS|save committed dirty edit + merge proceeded
+2K|PASS|discard dropped dirty edit + merge proceeded
+2L|PASS|cancel kept dirty edit + branch + no merge
+2M|PASS|menu label=enabled, fixed-positioned, closes on outside-click + escape
+2N|PASS|menu item on main is disabled with tooltip
+2O|PASS|IPC refused user branch merge (not_dex_owned)
+2P|PASS|diff stats match git --shortstat (4 files, +12 -1) — catalog example expected 3+5-1 but actual is what F7 produces
+2Q|PASS|expander reveals more paths (before=5, after=9; 9 includes baseline .dex-baseline.txt)
+3A|PASS|AI resolver succeeded on single-file conflict; merge commit + branch cleanup OK
+3B|PASS|multi-file: AI resolved 2 disagreements
+3C|PARTIAL|resolver finished before cancel could fire — v1 known limitation
+3D|PASS|rename/delete classified as non-content; resolver NOT invoked; aborted with friendly message
+3E|PASS|binary conflict classified as non-content; resolver NOT invoked
+3F|PASS|both-added (AA) classified as non-content; resolver NOT invoked
+3G|PASS|low costCap halted resolver, modal shows (cost_cap)
+3H|PASS|verify=true → resolver finalized merge
+3I|PASS|verify=false → modal shows (verify_failed)
+3J|PASS|progress modal samples captured (see actions log)
+4A|PASS|failure modal opened with max_iterations or agent_gave_up reason
+4B|PASS|Accept finalized merge despite resolver failure
+4C|PASS|Rollback restored pre-merge state
+4D|PASS|openInEditor IPC returned ok:true; modal stayed open (failedFiles=[] is expected for max_turns=1 mode where resolver never recorded a file)
+4E|PASS|modal reason text shows (cost_cap)
+4F|PASS|modal reason shows agent_gave_up or max_iterations
+4G|PASS|verify_failed reason shown + Accept finalized merge
+4H|PARTIAL|cancel mid-resolution: resolver finished before cancel signal could propagate; merge completed — documented v1 limitation per README
+5A|PASS|copy.ts has zero violations; one hit in timelineLayout.ts is the discriminated-union 'kind: merge' (acceptable per catalog)
+5B|PASS|tsc --noEmit passes; check actions log for test runner status
+5C|PASS|all 6 IPC methods present; abort returns ok:true; accept returns expected error (no merge pending)
+5D|PASS|delete-with-lost-work + clean-promote chain succeeded

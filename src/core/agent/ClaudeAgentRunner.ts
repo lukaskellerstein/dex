@@ -1,5 +1,13 @@
 import crypto from "node:crypto";
-import type { AgentRunner, TaskPhaseContext, TaskPhaseResult, StepContext, StepResult } from "./AgentRunner.js";
+import type {
+  AgentRunner,
+  TaskPhaseContext,
+  TaskPhaseResult,
+  StepContext,
+  StepResult,
+  OneShotContext,
+  OneShotResult,
+} from "./AgentRunner.js";
 import type { AgentStep, RunConfig, UserInputQuestion } from "../types.js";
 import * as runs from "../runs.js";
 import { waitForUserInput } from "../userInput.js";
@@ -695,5 +703,100 @@ export class ClaudeAgentRunner implements AgentRunner {
     }
 
     return { cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+  }
+
+  /**
+   * 014 — free-form ad-hoc agent invocation. Used by the conflict resolver.
+   * Thin wrapper over `query()` with no structured-output / spec-dir / cycle
+   * context. The system prompt is composed by appending `systemPromptOverride`
+   * (if any) onto the user prompt — same pattern the per-variant profile
+   * append uses, since the SDK doesn't have a separate "append to system"
+   * option that preserves the project's `settingSources: ["project"]` rules.
+   */
+  async runOneShot(ctx: OneShotContext): Promise<OneShotResult> {
+    const start = Date.now();
+    let totalCost = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let finalText = "";
+    let finishedNormally = false;
+    const composed = ctx.systemPromptOverride
+      ? `${ctx.systemPromptOverride}\n\n${ctx.prompt}`
+      : ctx.prompt;
+    const isAborted = () => ctx.abortController?.signal.aborted ?? false;
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
+
+    try {
+      for await (const msg of query({
+        prompt: composed,
+        options: {
+          model: ctx.config.model,
+          cwd: ctx.cwd ?? ctx.config.projectDir,
+          maxTurns: ctx.maxTurns ?? 1,
+          permissionMode: "bypassPermissions",
+          settingSources: ["project"],
+          abortController: ctx.abortController ?? undefined,
+          ...(ctx.allowedTools ? { allowedTools: ctx.allowedTools } : {}),
+        },
+      })) {
+        if (isAborted()) break;
+        const message = msg as Record<string, unknown>;
+        if (message.type === "assistant") {
+          const innerMsg = message.message as Record<string, unknown> | undefined;
+          const content = innerMsg?.content as Array<Record<string, unknown>> | undefined;
+          if (content) {
+            for (const block of content) {
+              if (block.type === "text" && typeof block.text === "string") {
+                finalText = block.text;
+              }
+            }
+          }
+        }
+        if (message.type === "result") {
+          if (typeof message.total_cost_usd === "number") totalCost = message.total_cost_usd;
+          const usage = message.usage as Record<string, unknown> | undefined;
+          if (usage) {
+            if (typeof usage.input_tokens === "number") totalInputTokens = usage.input_tokens;
+            if (typeof usage.output_tokens === "number") totalOutputTokens = usage.output_tokens;
+          }
+          if (typeof message.result === "string" && finalText === "") {
+            finalText = message.result;
+          }
+          // Reaching a result message means the SDK ended its stream
+          // cleanly. Subtypes like "success" / "end_turn" all count as a
+          // normal end. Only explicit errors flip this back to false.
+          finishedNormally = true;
+          if (
+            typeof message.subtype === "string" &&
+            message.subtype.startsWith("error_")
+          ) {
+            ctx.rlog.agentRun("WARN", `runOneShot: SDK result subtype=${message.subtype}`);
+            finishedNormally = false;
+          }
+        }
+      }
+    } catch (err) {
+      ctx.rlog.agentRun("WARN", "runOneShot: SDK threw", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      finishedNormally = false;
+    }
+
+    const durationMs = Date.now() - start;
+    ctx.rlog.agentRun("INFO", "runOneShot: completed", {
+      cost: totalCost,
+      durationMs,
+      finishedNormally,
+      finalTextPreview: finalText.slice(0, 200),
+    });
+
+    return {
+      cost: totalCost,
+      durationMs,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      finalText,
+      finishedNormally: finishedNormally && !isAborted(),
+    };
   }
 }
