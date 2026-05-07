@@ -37,21 +37,41 @@ For any test that exercises the full loop (welcome screen → loop start → aut
 
 ### Step 1 — Reset the example project
 
-Before every test run, restore `dex-ecommerce` to a known state. The project ships a single entry point for this — `scripts/reset-example-to.sh` — which is now **checkpoint-aware** (008-interactive-checkpoint):
+Before every test run, restore `dex-ecommerce` to a known state. A single entry point — `scripts/reset-example-to.sh` — covers every reset shape via its mode argument. Pick the mode that matches what your test needs.
+
+**When to use what:**
+
+| You want to… | Use |
+|---|---|
+| Run the loop on a totally empty repo **including the remote** — `origin/main` rolled back to root commit, all branches deleted, force-pushed | `./scripts/reset-example-to.sh initial` |
+| Run a fresh loop but **keep whatever `origin/main` already has** on GitHub; just clean up local clutter | `./scripts/reset-example-to.sh pristine` |
+| Replay a test starting from a saved mid-loop point without re-running earlier stages | `./scripts/reset-example-to.sh <checkpoint-name>` |
+| Discard local working-tree changes without touching commit history | `./scripts/reset-example-to.sh clean` |
+| See what checkpoint replay points are available | `./scripts/reset-example-to.sh list` |
 
 ```bash
-./scripts/reset-example-to.sh list                   # list all available checkpoints
-./scripts/reset-example-to.sh clean                  # blank slate on main (destructive)
-./scripts/reset-example-to.sh <checkpoint-name>      # reset to checkpoint/<name>
+./scripts/reset-example-to.sh initial                # total nuke incl. origin/main → root commit + force-push
+./scripts/reset-example-to.sh pristine               # resync local main to origin/main + prune local test branches
+./scripts/reset-example-to.sh clean                  # wipe working tree on local main (history preserved)
+./scripts/reset-example-to.sh <checkpoint-name>      # mint attempt-* branch from checkpoint/<name>
+./scripts/reset-example-to.sh list                   # list all available checkpoint tags
 ```
 
-Any tag of the form `checkpoint/cycle-N-after-<stage>` (or `checkpoint/after-<stage>` for cycle 0) can be used as a reset target. The script creates a fresh `attempt-<ts>` branch (fixture-only — `attempt-*` is internal scaffolding for the testing flow and never reaches the running app per 013-cleanup-2) and restores the working tree to exactly that checkpoint's state, preserving gitignored files (`.env`, build output, editor state — `git clean -fd`, never `-fdx`).
+#### Mode details
+
+`initial` — **destructive on origin.** Resets `main` to the repo's root commit, deletes every other local branch, deletes every non-main branch on `origin`, and force-pushes `origin/main` back to root. Use when you genuinely want the GitHub-side state wiped — the loop will then push fresh `dex/*` branches into a clean remote, with no leftover history to confuse a fresh feature run. Reach for this only when the scenario calls for a true blank slate; otherwise prefer `pristine`.
+
+`pristine` — `git fetch origin → reset --hard origin/main → clean -fdx → delete dex/* / selected-* / attempt-* / feature/* local branches → checkout main`. Strongest local-only reset — discards every local commit ahead of origin and every leftover test branch, then resyncs local main to whatever `origin/main` currently is. Does **not** rewrite origin.
+
+`clean` — `git reset --hard HEAD → clean -fdx → checkout main`. Doesn't sync to origin; doesn't prune `dex/*` branches.
+
+`<checkpoint-name>` — resolves to `checkpoint/<name>` (or pass the full ref if it already starts with `checkpoint/`). The script creates a fresh `attempt-<ts>` branch (fixture-only — `attempt-*` is internal scaffolding for the testing flow and never reaches the running app per 013-cleanup-2) and restores the working tree to exactly that checkpoint's state, preserving gitignored files (`.env`, build output, editor state — `git clean -fd`, never `-fdx`).
 
 **Picking a checkpoint**:
 
 - Your change only touches the implement loop or later → use the most recent `cycle-N-after-tasks`.
 - Your change touches `gap_analysis`, `specify`, `plan`, or `tasks` → use the most recent `cycle-N-after-manifest-extraction` or `after-manifest-extraction` if it's cycle 0.
-- Your change touches `prerequisites`, any `clarification_*`, `constitution`, `manifest_extraction`, or you're validating non-regression → use `clean`.
+- Your change touches `prerequisites`, any `clarification_*`, `constitution`, `manifest_extraction`, or you're validating non-regression → use `clean` or `pristine` (or `initial` if origin needs wiping too).
 
 **Legacy fixtures**: `fixture/after-clarification` and `fixture/after-tasks` have been deleted — they're fully replaced by the `checkpoint/*` tag tree. Any references to `fixture/*` in older docs are obsolete.
 
@@ -70,7 +90,7 @@ Sanity check — after reset, inspect the workspace:
 cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce && git status --short && ls
 ```
 
-For `clean`, `ls` must show only `GOAL.md` and `.git/`. For a checkpoint reset, the tree matches that checkpoint's commit.
+For `initial`, `clean`, or `pristine`, `ls` must show only the root commit's contents (typically `GOAL.md`) and `.git/`. For a checkpoint reset, the tree matches that checkpoint's commit.
 
 **Branch hygiene**: autonomous runs leave behind `dex/YYYY-MM-DD-xxxxxx` branches. Click-to-jump navigation forks leave behind transient `selected-<ts>` branches (auto-pruned when empty relative to the next jump target). Post-013-cleanup-2 the running app no longer produces `attempt-*` or `capture/*` branches; only the fixture script (`reset-example-to.sh`) mints `attempt-*` branches against the example project. Run `./scripts/prune-example-branches.sh` periodically — it deletes `dex/*` branches older than 7 days. `main`, `fixture/*` (if any linger), `lukas/*`, `checkpoint/*` (tags are immune), `attempt-*` (fixture remnants), and any pre-existing `capture/*` (legacy refs) are always preserved.
 
@@ -144,7 +164,7 @@ If a test fails: fix the issue, then retest. Repeat until all DoD items pass. If
 
 ## 4f. Diagnostics — logs, state, audit DB, and the DEBUG badge
 
-When something looks wrong, check these sources in order. They are listed from cheapest to most expensive, and each one answers a different class of question. **The fastest path from "something's wrong" to the right log file is: click the DEBUG badge (4f.6) → copy the `RunID` and `PhaseTraceID` → open `~/.dex/logs/<project>/<RunID>/phase-<N>_<slug>/agent.log`.**
+When something looks wrong, check these sources in order. They are listed from cheapest to most expensive, and each one answers a different class of question. **The fastest path from "something's wrong" to the right log file is: click the DEBUG badge (4f.6) → copy the `RunID` and `AgentRunID` (the badge already prints the resolved `RunLog` / `PhaseLog` paths too) → open `~/.dex/logs/<project>/<RunID>/phase-<N>_<slug>/agent.log`.**
 
 ### 4f.1 Process logs — `~/.dex/dev-logs/`
 
@@ -187,15 +207,15 @@ Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 | You have… | Path |
 |---|---|
 | `runId` | `~/.dex/logs/<project>/<runId>/run.log` — run-level events only |
-| `runId` + phase number | `~/.dex/logs/<project>/<runId>/phase-<N>_*/agent.log` — the main agent for that phase |
-| `phaseTraceId` | grep `run.log` for the ID to find its phase number, then open `phase-<N>_*/agent.log`. `phaseTraceId` is logged at phase start. |
+| `runId` + phase number | `~/.dex/logs/<project>/<runId>/phase-<N>_*/agent.log` — the main agent for that phase (on-disk dirs are still `phase-<N>_*` for backward-compat) |
+| `agentRunId` | grep `run.log` for the ID to find its phase number, then open `phase-<N>_*/agent.log`. `agentRunId` is logged at agent-run start. |
 | `subagentId` | `~/.dex/logs/<project>/<runId>/phase-*/subagents/<subagentId>.log` — glob across phases if you don't know which one spawned it |
 
-**How to get a `runId` / `phaseTraceId` in the first place:**
+**How to get a `runId` / `agentRunId` in the first place:**
 
-- From the running app — click the **DEBUG badge** (4f.6); both IDs are in the payload.
-- From the on-disk audit JSON (4f.4) — `ls -t <projectDir>/.dex/runs/*.json | head -1` for the latest run; `jq '.phases[].phaseTraceId' <projectDir>/.dex/runs/<runId>.json` for its phases.
-- From the orchestrator event stream — every event carries `runId` / `phaseTraceId`.
+- From the running app — click the **DEBUG badge** (4f.6); both IDs are in the payload, alongside the resolved `RunLog` and `PhaseLog` paths.
+- From the on-disk audit JSON (4f.4) — `ls -t <projectDir>/.dex/runs/*.json | head -1` for the latest run; `jq '.agentRuns[].agentRunId' <projectDir>/.dex/runs/<runId>.json` for its agent runs.
+- From the orchestrator event stream — every event carries `runId` / `agentRunId`.
 
 **`~/.dex/logs/_orchestrator.log`** — fallback log written when the orchestrator is in a pre-run state and no run directory exists yet. Rarely interesting; consult only if startup dies before a run directory is created. The underscore prefix keeps it sorted above the per-project run directories inside `~/.dex/logs/`.
 
@@ -226,15 +246,16 @@ Schema (see `specs/007-sqlite-removal/contracts/json-schemas.md` for the authori
 
 **From the agent** — prefer the IPC helpers; they return typed records:
 
-- `window.dexAPI.listRuns(projectDir, 10)` — recent runs for one project
-- `window.dexAPI.getRun(projectDir, runId)` — full `RunRecord` (phases inline)
-- `window.dexAPI.getPhaseSteps(projectDir, runId, phaseTraceId)` — steps for one phase (parsed from `steps.jsonl`)
-- `window.dexAPI.getPhaseSubagents(projectDir, runId, phaseTraceId)` — subagents of one phase
+- `window.dexAPI.getLatestProjectRun(projectDir)` — latest `RunRecord` for one project (use this instead of the retired `listRuns`)
+- `window.dexAPI.getRun(projectDir, runId)` — full `RunRecord` (agent runs inline)
+- `window.dexAPI.getAgentSteps(projectDir, runId, agentRunId)` — steps for one agent run (parsed from `steps.jsonl`)
+- `window.dexAPI.getAgentRunSubagents(projectDir, runId, agentRunId)` — subagents of one agent run
+- `window.dexAPI.getSpecAgentRuns(projectDir, specDir)` / `getSpecAggregateStats(projectDir, specDir)` — spec-folder roll-ups
 
 Invoke via `mcp__electron-chrome__evaluate_script`:
 
 ```js
-async () => await window.dexAPI.listRuns("/abs/path/to/project", 5)
+async () => await window.dexAPI.getLatestProjectRun("/abs/path/to/project")
 ```
 
 **Plain-shell fallback** (when the app isn't running):
@@ -243,16 +264,16 @@ async () => await window.dexAPI.listRuns("/abs/path/to/project", 5)
 # Latest run
 ls -t <projectDir>/.dex/runs/*.json | head -1 | xargs cat | jq
 
-# Just the cost / status / phase count
-cat <projectDir>/.dex/runs/<runId>.json | jq '{mode, status, totalCostUsd, phases: .phases | length}'
+# Just the cost / status / agent-run count
+cat <projectDir>/.dex/runs/<runId>.json | jq '{mode, status, totalCostUsd, agentRuns: .agentRuns | length}'
 
-# Steps for one phase
+# Steps for one agent run
 jq -c '.' ~/.dex/logs/<project>/<runId>/phase-<N>_*/steps.jsonl | head
 ```
 
-Cycle-level summaries (`loop_cycles` in the old SQL world) are derivable from `phases[]` grouped by `cycleNumber` — the renderer computes them via `runs.cycleSummary(run)`.
+Cycle-level summaries (`loop_cycles` in the old SQL world) are derivable from `agentRuns[]` grouped by `cycleNumber` — the renderer computes them via `runs.cycleSummary(run)`.
 
-The JSON files and the per-run log tree in 4f.2 share the same IDs — `runId`, `phaseTraceId`, `subagent.id`. Use the JSON to *find* an ID, then open the corresponding log file for the full event stream.
+The JSON files and the per-run log tree in 4f.2 share the same IDs — `runId`, `agentRunId`, `subagent.id`. Use the JSON to *find* an ID, then open the corresponding log file for the full event stream.
 
 **Legacy `~/.dex/db/`** — removed on first launch post-007. If still present, that means the app hasn't run since the upgrade; it is safe to `rm -rf` manually.
 
@@ -280,20 +301,30 @@ The payload is plain text, formatted like:
 Dex Debug Context
 ─────────────────
 RunID:           <uuid>
-PhaseTraceID:    <uuid>
+AgentRunID:      <uuid>
 Mode:            loop | build
 Cycle:           <n>
 Stage:           specify | plan | tasks | implement | ...
 SpecDir:         <relative path>
-Phase:           <number> - <name>
+TaskPhase:       <number> - <name>
 ProjectDir:      <absolute path>
+Branch:          <current git branch>
 View:            overview | tasks | trace | loop-dashboard | ...
 IsRunning:       true | false
 ViewHistory:     true | false
+CurrentAttemptBranch: <dex/* | selected-* | null>
+LastCheckpointTag:    checkpoint/<name> | null
+CandidateSha:    <sha> | null
+RunDir:          ~/.dex/logs/<project>/<runId>/
+RunLog:          ~/.dex/logs/<project>/<runId>/run.log
+PhaseLog:        ~/.dex/logs/<project>/<runId>/phase-<N>_<slug>/agent.log
+RunRecord:       <projectDir>/.dex/runs/<runId>.json
 Timestamp:       <ISO-8601>
 ```
 
-`RunID` and `PhaseTraceID` are the **primary keys** for both the SQLite audit tables (4f.4) and the per-run log directory (4f.2). This makes the badge the quickest way to pivot from "the UI is showing something weird" to "the exact log file that contains the answer".
+Empty / null fields are omitted from the payload (e.g. `AgentRunID` is missing pre-run, the `RunDir`/`RunLog`/`PhaseLog`/`RunRecord` block only appears once a `runId` exists). Field labels follow the post-rename vocabulary (`AgentRunID` is the renamed `phaseTraceId`; `TaskPhase` is the user-facing name for what the loop calls a "phase").
+
+`RunID` and `AgentRunID` are the **primary keys** for both the JSON audit files (4f.4) and the per-run log directory (4f.2). This makes the badge the quickest way to pivot from "the UI is showing something weird" to "the exact log file that contains the answer" — and the resolved `RunLog` / `PhaseLog` / `RunRecord` lines mean you usually do not even need to assemble the path yourself.
 
 **When to use it:**
 

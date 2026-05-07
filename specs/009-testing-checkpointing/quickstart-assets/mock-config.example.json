@@ -10,20 +10,20 @@
     "clarification_product": {
       "delay": 150,
       "writes": [
-        { "path": "GOAL_product_domain.md", "from": "GOAL_product_domain.md" }
+        { "path": "{goalProductDomain}", "from": "GOAL_product_domain.md" }
       ]
     },
     "clarification_technical": {
       "delay": 150,
       "writes": [
-        { "path": "GOAL_technical_domain.md", "from": "GOAL_technical_domain.md" }
+        { "path": "{goalTechnicalDomain}", "from": "GOAL_technical_domain.md" }
       ]
     },
     "clarification_synthesis": {
       "delay": 200,
       "writes": [
-        { "path": "GOAL_clarified.md", "from": "GOAL_clarified.md" },
-        { "path": "CLAUDE.md",         "from": "CLAUDE.md" }
+        { "path": "{goalClarified}", "from": "GOAL_clarified.md" },
+        { "path": "CLAUDE.md",       "from": "CLAUDE.md" }
       ]
     },
     "constitution": {

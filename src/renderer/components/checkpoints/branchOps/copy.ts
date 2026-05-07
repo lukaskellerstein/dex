@@ -27,15 +27,17 @@ export const DELETE_FAILED = (detail: string): string =>
 
 // ── Promote a saved version to main ───────────────────────────────
 
-export const PROMOTE_MENU_ITEM = "Make this the new main";
+export const PROMOTE_MENU_ITEM = "Merge into main";
 export const PROMOTE_MENU_DISABLED_TOOLTIP =
-  "This version can't be made the new main.";
+  "This version can't be merged into main.";
+export const PROMOTE_MENU_ALREADY_MERGED_TOOLTIP =
+  "Already merged into main.";
 
-export const PROMOTE_CONFIRM_TITLE = "Replace main with this version?";
+export const PROMOTE_CONFIRM_TITLE = "Merge into main?";
 export const PROMOTE_CONFIRM_BODY =
-  "The current main will be replaced by this version's work. The old main stays in your history.";
+  "Combines this version's changes into main as a single squashed commit. The version stays in your history for drill-down.";
 export const PROMOTE_CONFIRM_VIEW_ALL = "View all changes";
-export const PROMOTE_CONFIRM_CONFIRM = "Make this the new main";
+export const PROMOTE_CONFIRM_CONFIRM = "Squash and merge";
 export const PROMOTE_CONFIRM_CANCEL = "Cancel";
 
 export const PROMOTE_MID_RUN_BRANCH =
@@ -44,13 +46,13 @@ export const PROMOTE_MID_RUN_MAIN =
   "Main is currently being built — pause the run first.";
 
 export const PROMOTE_NON_CONTENT_CONFLICT =
-  "This version has a kind of conflict AI can't resolve yet. The merge has been undone. Edit the files manually and try again."; // allowed: spec-mandated copy retains the word "merge" — see FR-028 allowlist note in spec.md and source design doc voice-and-copy table
+  "This version has a kind of conflict AI can't resolve yet. The merge has been undone. Edit the files manually and try again.";
 
 export const POST_MERGE_TOAST = (sourceBranch: string): string =>
-  `${sourceBranch} is now main. The old version has been removed.`;
+  `Merged ${sourceBranch} into main.`;
 
 export const PROMOTE_FAILED = (detail: string): string =>
-  `Couldn't make this version the new main: ${detail}`;
+  `Couldn't merge into main: ${detail}`;
 
 // ── Diff summary helpers (used by the promote-confirm modal) ───────
 

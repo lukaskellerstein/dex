@@ -310,7 +310,7 @@ test("deleteBranch: when source branch shares its tip with another tracked dex/*
 
 // ── mergeToMain (014/US2 — clean-merge path) ─────────────
 
-test("mergeToMain: clean merge produces a --no-ff merge commit on main", async () => {
+test("mergeToMain: clean merge produces a single-parent squash commit on main", async () => {
   const dir = mkTmpRepo();
   try {
     // Create a dex/* branch ahead of main with one commit.
@@ -322,25 +322,32 @@ test("mergeToMain: clean merge produces a --no-ff merge commit on main", async (
     const r = await mergeToMain(dir, "dex/2026-05-04-mmmmmm");
     assert.equal(r.ok, true);
     if (r.ok && r.mode === "clean") {
-      // Two-parent merge commit (--no-ff topology).
+      // Single-parent squash commit (no merge topology).
       const parentCount = execSync(
         `git log -1 --format='%P' ${r.mergeSha}`,
         { cwd: dir, encoding: "utf-8" },
       ).trim().split(" ").filter(Boolean).length;
-      assert.equal(parentCount, 2);
-      // Merge subject names the source branch.
+      assert.equal(parentCount, 1);
+      // Squash subject names the source branch (timeline parser depends on this).
       const subject = execSync(
         `git log -1 --format=%s ${r.mergeSha}`,
         { cwd: dir, encoding: "utf-8" },
       ).trim();
       assert.match(subject, /^dex: promoted dex\/2026-05-04-mmmmmm to main$/);
+      assert.equal(r.mergedSource, "dex/2026-05-04-mmmmmm");
     } else {
       assert.fail(`expected clean mode, got ${JSON.stringify(r)}`);
     }
-    // Source branch is gone.
-    assert.equal(branches(dir).includes("dex/2026-05-04-mmmmmm"), false);
+    // Source branch is kept — Timeline drill-down walks it to recover
+    // the version's agent-step history.
+    assert.equal(branches(dir).includes("dex/2026-05-04-mmmmmm"), true);
     // HEAD is on main.
     assert.equal(currentBranch(dir), "main");
+    // Pending-promote sidecar is cleared on success.
+    assert.equal(
+      fs.existsSync(path.join(dir, ".git", "dex-pending-promote")),
+      false,
+    );
   } finally {
     rmTmp(dir);
   }

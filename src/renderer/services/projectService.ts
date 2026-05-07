@@ -1,5 +1,5 @@
 /**
- * What: Typed wrapper over window.dexAPI project + appConfig surface — openProject, listSpecs, parseSpec, readFile/writeFile, pickFolder, createProject, openProjectPath, pathExists, getWelcomeDefaults.
+ * What: Typed wrapper over window.dexAPI project + appConfig surface — openProject, listSpecs, parseSpec, readFile/writeFile, pickFolder, pickGoalFile, createProject, openProjectPath, pathExists, getWelcomeDefaults.
  * Not: Does not own project state — that lives in useProject. Does not handle history/runs reads — that's historyService.
  * Deps: window.dexAPI project methods, TaskPhase from core/types.
  */
@@ -12,9 +12,7 @@ export type ProjectErrorCode =
   | "MANIFEST_NOT_FOUND"
   | "MOCK_CONFIG_PARSE_ERROR"
   | "MOCK_CONFIG_INVALID"
-  | "MOCK_DISABLED"
   | "MOCK_CONFIG_MISSING_ENTRY"
-  | "MOCK_FIXTURE_MISSING"
   | "MOCK_CONFIG_INVALID_PATH"
   | "UNKNOWN_AGENT"
   | "FILE_IO_ERROR"
@@ -53,14 +51,8 @@ function mapToProjectError(err: unknown): ProjectError {
       ? new ProjectError("MOCK_CONFIG_INVALID_PATH", message)
       : new ProjectError("MOCK_CONFIG_INVALID", message);
   }
-  if (/MockDisabledError/i.test(message)) {
-    return new ProjectError("MOCK_DISABLED", message);
-  }
   if (/MockConfigMissingEntryError/i.test(message)) {
     return new ProjectError("MOCK_CONFIG_MISSING_ENTRY", message);
-  }
-  if (/MockFixtureMissingError/i.test(message)) {
-    return new ProjectError("MOCK_FIXTURE_MISSING", message);
   }
   if (/UnknownAgentError/i.test(message)) {
     return new ProjectError("UNKNOWN_AGENT", message);
@@ -102,6 +94,10 @@ export const projectService = {
 
   pickFolder(): Promise<string | null> {
     return call(() => window.dexAPI.pickFolder());
+  },
+
+  pickGoalFile(defaultDir: string): Promise<string | null> {
+    return call(() => window.dexAPI.pickGoalFile(defaultDir));
   },
 
   createProject(

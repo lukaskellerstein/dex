@@ -172,10 +172,13 @@ export function LoopDashboard({
       completedAt: ts,
     });
     for (const c of pathCommits) {
-      // Promote merges (step === "promote") aren't orchestrator stages —
-      // the regex that builds selectedPath already excludes them, so this
-      // branch is defensive but keeps the type narrow for `synth`.
-      if (c.step === "promote") continue;
+      // Only `kind: "step"` commits are real orchestrator stages.
+      // `selectedPath` already excludes everything else, so this is
+      // defensive — but it also narrows c.step to StepType for synth().
+      // `completion` is a phase-level marker (cycleNumber flattened to -1 by
+      // classifySubject in timeline.ts) — not a cycle stage. Same posture as
+      // promote — skip, otherwise it would synthesise a phantom Cycle -1 row.
+      if (c.kind !== "step" || !c.step || c.step === "promote" || c.step === "completion") continue;
       const stage = synth(c.step, c.timestamp, c.sha);
       if (c.cycleNumber === 0) {
         preCycle.push(stage);
@@ -289,13 +292,20 @@ export function LoopDashboard({
   const effectiveIsCheckingPrerequisites =
     isRunning && !pathHasCycleWork && !pathHasClarification ? isCheckingPrerequisites : false;
 
+  // pathStages = stage types whose step-commit is on the active git path.
+  // Must be sourced from `pathDerived.cycles` (committed history) — not the
+  // merged `effectiveCycles`, which also includes orchestrator-emitted
+  // in-memory stages with status="running". Including a running stage here
+  // would short-circuit `deriveStageStatus` to "completed" before the
+  // running-check can fire, so the active stage would never render with the
+  // cyan spinner — it'd flip straight from "pending" to "completed".
   const pathStagesByCycle = useMemo(() => {
     const m = new Map<number, Set<StepType>>();
-    for (const c of effectiveCycles) {
+    for (const c of pathDerived.cycles) {
       m.set(c.cycleNumber, new Set(c.stages.map((s) => s.type)));
     }
     return m;
-  }, [effectiveCycles]);
+  }, [pathDerived.cycles]);
 
   // Termination state belongs to the run that produced it. When the user
   // navigates to a historical commit (hasPath && !isRunning), it only still

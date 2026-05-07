@@ -69,8 +69,6 @@ export interface AppRouterProps {
   handleWelcomeComplete: (next: WelcomeNextView) => void;
   handleStartLoop: (loopConfig: {
     descriptionFile?: string;
-    maxLoopCycles?: number;
-    maxBudgetUsd?: number;
     autoClarification?: boolean;
     resume?: boolean;
   }) => void;

@@ -1,7 +1,7 @@
 /**
- * What: Owns LoopStartPanel form state — goalPath, goalContent, goalDetected, showEditor, saving, maxCycles, maxBudget, autoClarification — plus the auto-detect / save side-effects.
- * Not: Does not render. Does not own start-run logic; the panel calls onStart with the form's current values.
- * Deps: projectService for readFile/writeFile.
+ * What: Owns LoopStartPanel form state — goalPath, goalContent, goalDetected, showEditor, saving, autoClarification — plus the auto-detect / save / pick-file side-effects.
+ * Not: Does not render. Does not own start-run logic; the panel calls onStart with the form's current values. Does not own per-run budget caps (max cycles / max budget) — those move to dex-config.json or programmatic config, not this UI.
+ * Deps: projectService for readFile/writeFile/pickGoalFile.
  */
 import { useState, useEffect, useCallback } from "react";
 import { projectService } from "../services/projectService.js";
@@ -32,20 +32,15 @@ export interface UseLoopStartFormResult {
   showEditor: boolean;
   setShowEditor: (b: boolean) => void;
   saving: boolean;
-  maxCycles: string;
-  setMaxCycles: (s: string) => void;
-  maxBudget: string;
-  setMaxBudget: (s: string) => void;
   autoClarification: boolean;
   setAutoClarification: (b: boolean | ((prev: boolean) => boolean)) => void;
   saveGoal: () => Promise<void>;
   loadGoalFromPath: (path: string) => Promise<void>;
+  pickGoalFile: () => Promise<void>;
 }
 
 export function useLoopStartForm(projectDir: string): UseLoopStartFormResult {
   const [goalPath, setGoalPath] = useState("");
-  const [maxCycles, setMaxCycles] = useState("");
-  const [maxBudget, setMaxBudget] = useState("");
   const [autoClarification, setAutoClarificationState] = useState(false);
   const [goalDetected, setGoalDetected] = useState(false);
   const [goalContent, setGoalContent] = useState("");
@@ -59,26 +54,52 @@ export function useLoopStartForm(projectDir: string): UseLoopStartFormResult {
     [],
   );
 
-  // Auto-detect GOAL.md in project root.
+  // Auto-detect goal file in project root. Order:
+  //   1. previous run's choice (state.json `config.descriptionFile`) — honors a
+  //      non-default file the user picked last time without forcing a retype.
+  //   2. `GOAL.md` — the conventional default.
+  // Falls back to an empty path (with the editor primed for new content) when
+  // neither resolves.
   useEffect(() => {
-    const defaultPath = `${projectDir}/GOAL.md`;
-    projectService.readFile(defaultPath).then((content) => {
-      if (content !== null) {
-        setGoalPath(defaultPath);
-        setGoalDetected(true);
-        setGoalContent(content);
-        setShowEditor(false);
-      } else {
-        setGoalDetected(false);
-        setGoalPath("");
-        setGoalContent(GOAL_TEMPLATE);
-        setShowEditor(true);
+    let cancelled = false;
+    (async () => {
+      const candidates: string[] = [];
+      const stateRaw = await projectService.readFile(`${projectDir}/.dex/state.json`);
+      if (stateRaw) {
+        try {
+          const persisted = JSON.parse(stateRaw)?.config?.descriptionFile;
+          if (typeof persisted === "string" && persisted.length > 0) {
+            candidates.push(persisted);
+          }
+        } catch {
+          // ignore — state.json being malformed shouldn't break the welcome screen
+        }
       }
-    });
+      candidates.push(`${projectDir}/GOAL.md`);
+
+      for (const candidate of candidates) {
+        const content = await projectService.readFile(candidate);
+        if (cancelled) return;
+        if (content !== null) {
+          setGoalPath(candidate);
+          setGoalDetected(true);
+          setGoalContent(content);
+          setShowEditor(false);
+          return;
+        }
+      }
+
+      if (cancelled) return;
+      setGoalDetected(false);
+      setGoalPath("");
+      setGoalContent(GOAL_TEMPLATE);
+      setShowEditor(false);
+    })();
+    return () => { cancelled = true; };
   }, [projectDir]);
 
   const saveGoal = useCallback(async () => {
-    const filePath = `${projectDir}/GOAL.md`;
+    const filePath = goalPath.trim() || `${projectDir}/GOAL.md`;
     setSaving(true);
     const ok = await projectService.writeFile(filePath, goalContent);
     setSaving(false);
@@ -86,13 +107,23 @@ export function useLoopStartForm(projectDir: string): UseLoopStartFormResult {
       setGoalPath(filePath);
       setGoalDetected(true);
     }
-  }, [projectDir, goalContent]);
+  }, [projectDir, goalPath, goalContent]);
 
   const loadGoalFromPath = useCallback(async (path: string) => {
     if (!path) return;
     const c = await projectService.readFile(path);
     if (c) setGoalContent(c);
   }, []);
+
+  const pickGoalFile = useCallback(async () => {
+    const picked = await projectService.pickGoalFile(projectDir);
+    if (!picked) return;
+    setGoalPath(picked);
+    setGoalDetected(true);
+    setShowEditor(false);
+    const content = await projectService.readFile(picked);
+    if (content !== null) setGoalContent(content);
+  }, [projectDir]);
 
   return {
     goalPath,
@@ -103,13 +134,10 @@ export function useLoopStartForm(projectDir: string): UseLoopStartFormResult {
     showEditor,
     setShowEditor,
     saving,
-    maxCycles,
-    setMaxCycles,
-    maxBudget,
-    setMaxBudget,
     autoClarification,
     setAutoClarification,
     saveGoal,
     loadGoalFromPath,
+    pickGoalFile,
   };
 }

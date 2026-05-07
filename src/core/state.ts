@@ -83,6 +83,10 @@ interface ConfigSnapshot {
   maxTurns: number;
   maxIterations: number;
   autoClarification?: boolean;
+  /** Absolute path to the user's goal file. Default `<projectDir>/GOAL.md`;
+   * persisted so resume + UI auto-detect honor a non-default choice without
+   * the user having to retype it on every launch. */
+  descriptionFile?: string;
 }
 
 interface ArtifactManifest {
@@ -262,6 +266,7 @@ export function createInitialState(
       maxTurns: config.maxTurns,
       maxIterations: config.maxIterations,
       autoClarification: config.autoClarification,
+      descriptionFile: config.descriptionFile,
     },
     artifacts: {
       goalFile: null,
@@ -590,13 +595,14 @@ function deriveResumeCursor(state: DexState, acc: DriftAccumulator): ResumeCurso
 
   if (state.artifacts.clarifiedGoal) {
     const goalPath = state.artifacts.clarifiedGoal.path;
+    const goalName = path.basename(goalPath);
     if (acc.driftSummary.missingArtifacts.includes(goalPath)) {
       cursor.phase = "clarification";
       cursor.step = null;
-      acc.warnings.push("GOAL_clarified.md deleted — resetting to clarification phase");
+      acc.warnings.push(`${goalName} deleted — resetting to clarification phase`);
     } else if (acc.driftSummary.modifiedArtifacts.includes(goalPath)) {
       acc.blockers.push(
-        "GOAL_clarified.md was modified. Re-run gap analysis? Choose: re-run or accept.",
+        `${goalName} was modified. Re-run gap analysis? Choose: re-run or accept.`,
       );
     }
   }

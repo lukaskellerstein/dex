@@ -1,5 +1,5 @@
 /**
- * What: Markdown editor for GOAL.md — toolbar (bold/italic/code/H1/H2/lists/HR) + textarea + Save button. Also renders the collapsed input row when the editor is hidden.
+ * What: Markdown editor for the goal file — toolbar (bold/italic/code/H1/H2/lists/HR) + textarea + Save button. Also renders the collapsed input row when the editor is hidden. Labels reflect the current basename (defaults to "GOAL.md").
  * Not: Does not own form state — receives values + setters from useLoopStartForm via props. Does not start the run.
  * Deps: lucide-react icons, useLoopStartForm setters/state.
  */
@@ -91,6 +91,15 @@ interface LoopStartFormProps {
   saving: boolean;
   saveGoal: () => Promise<void>;
   loadGoalFromPath: (path: string) => Promise<void>;
+  pickGoalFile: () => Promise<void>;
+}
+
+function basenameFromPath(p: string, fallback: string): string {
+  if (!p) return fallback;
+  const trimmed = p.replace(/[\\/]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  const name = idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+  return name || fallback;
 }
 
 export function LoopStartForm({
@@ -105,8 +114,10 @@ export function LoopStartForm({
   saving,
   saveGoal,
   loadGoalFromPath,
+  pickGoalFile,
 }: LoopStartFormProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const goalName = basenameFromPath(goalPath, "GOAL.md");
 
   const handleToolbarAction = useCallback(
     (action: ToolbarAction) => {
@@ -130,7 +141,7 @@ export function LoopStartForm({
           <label
             style={{ fontSize: "0.78rem", fontWeight: 500, color: "var(--foreground-muted)" }}
           >
-            GOAL.md — describe your project
+            {goalName} — describe your project
           </label>
           {goalDetected && (
             <button
@@ -246,7 +257,7 @@ export function LoopStartForm({
               cursor: goalContent.trim() && !saving ? "pointer" : "not-allowed",
             }}
           >
-            {saving ? "Saving..." : goalDetected ? "Update GOAL.md" : "Save GOAL.md"}
+            {saving ? "Saving..." : goalDetected ? `Update ${goalName}` : `Save ${goalName}`}
           </button>
           {goalDetected && (
             <span
@@ -280,7 +291,7 @@ export function LoopStartForm({
           marginBottom: 6,
         }}
       >
-        GOAL.md Path
+        {goalName} Path
         {goalDetected && (
           <span
             style={{
@@ -317,27 +328,49 @@ export function LoopStartForm({
           }}
         />
         <button
+          onClick={() => { void pickGoalFile(); }}
+          disabled={isRunning}
+          style={secondaryButtonStyle}
+        >
+          Pick file
+        </button>
+        <button
           onClick={() => {
             setShowEditor(true);
             if (!goalContent && goalPath) {
               loadGoalFromPath(goalPath);
             }
           }}
-          style={{
-            padding: "6px 10px",
-            borderRadius: "var(--radius)",
-            fontSize: "0.78rem",
-            fontWeight: 500,
-            background: "var(--surface-elevated)",
-            color: "var(--foreground-muted)",
-            border: "1px solid var(--border)",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
+          disabled={isRunning}
+          style={secondaryButtonStyle}
         >
-          Edit
+          {goalDetected ? "Edit" : "Create new"}
         </button>
       </div>
+      {!goalDetected && (
+        <p
+          style={{
+            fontSize: "0.72rem",
+            color: "var(--foreground-dim)",
+            marginTop: 6,
+            lineHeight: 1.4,
+          }}
+        >
+          Pick an existing markdown file or create a new one with the editor. Conventional name is <code>GOAL.md</code>.
+        </p>
+      )}
     </div>
   );
 }
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: "var(--radius)",
+  fontSize: "0.78rem",
+  fontWeight: 500,
+  background: "var(--surface-elevated)",
+  color: "var(--foreground-muted)",
+  border: "1px solid var(--border)",
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};

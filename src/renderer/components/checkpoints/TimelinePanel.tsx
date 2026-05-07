@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTimeline } from "./hooks/useTimeline";
 import { GoBackConfirm } from "./GoBackConfirm";
 import { TimelineGraph } from "./TimelineGraph";
@@ -15,6 +15,7 @@ import {
   DELETE_NO_PRIMARY,
   POST_MERGE_TOAST,
   PROMOTE_FAILED,
+  PROMOTE_MENU_ALREADY_MERGED_TOOLTIP,
   PROMOTE_MID_RUN_BRANCH,
   PROMOTE_MID_RUN_MAIN,
   PROMOTE_NON_CONTENT_CONFLICT,
@@ -46,6 +47,7 @@ interface ContextMenuEnvelope {
   x: number;
   y: number;
   enabled: boolean;
+  disabledReason?: string;
 }
 
 interface PromoteConfirmEnvelope {
@@ -197,16 +199,34 @@ export function TimelinePanel({
 
   // ── Promote flow (014/US2) ─────────────────────────────────
 
+  // Branches whose tip has been promoted to main via squash-merge — derived
+  // from `dex: promoted <branch> to (main|master)` commits already present in
+  // the snapshot. These should not offer "Merge into main" again.
+  const mergedBranches = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of snapshot.commits) {
+      if (c.kind !== "promote") continue;
+      const m = c.subject.match(/^dex: promoted (\S+) to (?:main|master)$/);
+      if (m) set.add(m[1]);
+    }
+    return set;
+  }, [snapshot.commits]);
+
   const handleBranchContextMenu = useCallback(
     (branchName: string, x: number, y: number) => {
+      const dexOwned = isDexOwnedBranch(branchName);
+      const alreadyMerged = mergedBranches.has(branchName);
       setContextMenu({
         branchName,
         x,
         y,
-        enabled: isDexOwnedBranch(branchName),
+        enabled: dexOwned && !alreadyMerged,
+        disabledReason: alreadyMerged
+          ? PROMOTE_MENU_ALREADY_MERGED_TOOLTIP
+          : undefined,
       });
     },
-    [],
+    [mergedBranches],
   );
 
   const performMerge = useCallback(
@@ -307,13 +327,12 @@ export function TimelinePanel({
     );
   }
 
-  // headSha — try to derive from the last entry of selectedPath, else from
-  // the starting-point if no commits exist yet. The graph uses this to
-  // emphasize the current HEAD's node.
-  const headSha =
-    snapshot.selectedPath.length > 0
-      ? snapshot.selectedPath[snapshot.selectedPath.length - 1]
-      : (snapshot.startingPoint?.sha ?? null);
+  // headSha — actual `git rev-parse HEAD` carried on the snapshot. We
+  // can't use `selectedPath[last]` because that path only contains
+  // step-commits; if HEAD is a promote merge or a user commit, the
+  // halo would attach to the wrong row. Falls back to startingPoint
+  // for the empty-repo edge case where snapshot.headSha is "".
+  const headSha = snapshot.headSha || snapshot.startingPoint?.sha || null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0, flex: 1 }}>
@@ -400,6 +419,7 @@ export function TimelinePanel({
           y={contextMenu.y}
           branchName={contextMenu.branchName}
           enabled={contextMenu.enabled}
+          disabledReason={contextMenu.disabledReason}
           onPromote={handlePromoteRequest}
           onClose={() => setContextMenu(null)}
         />

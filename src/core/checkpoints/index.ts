@@ -27,6 +27,8 @@ export {
   deleteBranch,
   mergeToMain,
   computePromoteSummary,
+  readPendingPromote,
+  clearPendingPromote,
   type DeleteBranchOpts,
   type DeleteBranchResult,
   type LostStep,
@@ -34,6 +36,7 @@ export {
   type MergeToMainResult,
   type MergeToMainResolverDeps,
   type NonContentConflictKind,
+  type PendingPromote,
   type PromoteSummary,
 } from "./branchOps.js";
 
@@ -50,6 +53,8 @@ export {
   commitCheckpoint,
   readPauseAfterStage,
 } from "./commit.js";
+
+export { ensureDexGitignore } from "./gitignore.js";
 
 // ── Namespace object ────────────────────────────────────
 

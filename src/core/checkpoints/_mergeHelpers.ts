@@ -90,20 +90,22 @@ export function gatherCommitSubjects(projectDir: string, branch: string): string
   return raw.split("\n").filter(Boolean);
 }
 
-export function readGoalText(projectDir: string): string {
-  const goalPath = path.join(projectDir, "GOAL.md");
-  if (!fs.existsSync(goalPath)) return "";
+export function readGoalText(projectDir: string, goalPath?: string): string {
+  const target = goalPath ?? path.join(projectDir, "GOAL.md");
+  if (!fs.existsSync(target)) return "";
   try {
-    return fs.readFileSync(goalPath, "utf-8");
+    return fs.readFileSync(target, "utf-8");
   } catch {
     return "";
   }
 }
 
 /**
- * Wrap up a successful merge: capture the merge SHA, delete the source
- * branch (best-effort — leftover branch is cosmetic, never blocks success),
- * and return the discriminated result shape the IPC layer surfaces.
+ * Wrap up a successful squash-merge: capture the squash commit SHA and
+ * return the discriminated result shape the IPC layer surfaces. The
+ * source branch is **kept** — Timeline drill-down walks it to recover
+ * the version's full agent-step history; long-term clutter is handled
+ * by `prune-example-branches.sh`'s 7-day sweep.
  */
 export function finalizeMergeSuccess(
   projectDir: string,
@@ -120,29 +122,20 @@ export function finalizeMergeSuccess(
   } catch (err) {
     return { ok: false, error: "git_error", message: String(err) };
   }
-  try {
-    gitExec(`git branch -D ${sourceBranch}`, projectDir);
-  } catch (err) {
-    log(
-      rlog,
-      "WARN",
-      `mergeToMain: branch delete failed for ${sourceBranch}: ${String(err)}`,
-    );
-  }
   log(
     rlog,
     "INFO",
-    `mergeToMain: ${mode} merge of ${sourceBranch} → ${primary} (mergeSha=${mergeSha.slice(0, 7)})`,
+    `mergeToMain: ${mode} squash of ${sourceBranch} → ${primary} (mergeSha=${mergeSha.slice(0, 7)})`,
   );
   if (mode === "resolved") {
     return {
       ok: true,
       mode: "resolved",
       mergeSha,
-      deletedSource: sourceBranch,
+      mergedSource: sourceBranch,
       resolverCostUsd: resolverCostUsd ?? 0,
       resolvedFiles,
     };
   }
-  return { ok: true, mode: "clean", mergeSha, deletedSource: sourceBranch };
+  return { ok: true, mode: "clean", mergeSha, mergedSource: sourceBranch };
 }

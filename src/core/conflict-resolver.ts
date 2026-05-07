@@ -53,7 +53,7 @@ export interface ResolverContext {
   primaryCommitSubjects: string[];
   /** Recent commit subjects on the source branch — fed into the resolver prompt. */
   sourceCommitSubjects: string[];
-  /** Truncated GOAL.md contents (≤ 2KB) — fed into the resolver prompt. May be empty. */
+  /** Truncated goal-file contents (≤ 2KB) — fed into the resolver prompt. May be empty. */
   goalText: string;
   /** RunConfig the resolver embeds into each OneShotContext. */
   runConfig: RunConfig;
@@ -298,7 +298,7 @@ function buildPromptForFile(file: string, ctx: ResolverContext): string {
     source || "(none)",
     "",
     "Project goal:",
-    goal || "(no GOAL.md)",
+    goal || "(no goal file)",
     "",
     `STEPS:`,
     `1. Read ${file} to see the conflict markers.`,

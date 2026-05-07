@@ -108,7 +108,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "description": "Destination path, relative to projectDir. Substitution tokens: {specDir}, {cycle}, {feature}. Unknown tokens → MockConfigInvalidPathError."
+          "description": "Destination path. Relative paths resolve against projectDir; absolute paths (including those produced by goal-* tokens) are used as-is. Substitution tokens: {specDir}, {cycle}, {feature}, {goalFile}, {goalProductDomain}, {goalTechnicalDomain}, {goalClarified}. The four goal-* tokens expand to the absolute paths derived from runConfig.descriptionFile so clarification stages follow whichever goal file the user picked. Unknown tokens → MockConfigInvalidPathError."
         },
         "from": {
           "type": "string",

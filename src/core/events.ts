@@ -16,6 +16,7 @@ import type {
 
 export type OrchestratorEvent =
   | { type: "run_started"; config: RunConfig; runId: string; branchName: string }
+  | { type: "loop_reset"; reason: "promoted" }
   | { type: "spec_started"; specDir: string }
   | { type: "spec_completed"; specDir: string; taskPhasesCompleted: number }
   | { type: "task_phase_started"; taskPhase: TaskPhase; iteration: number; agentRunId: string }

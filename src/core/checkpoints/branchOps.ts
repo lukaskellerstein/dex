@@ -62,11 +62,18 @@ function isProtected(branchName: string): boolean {
 }
 
 /**
- * Mid-run safety probe. Read `<projectDir>/.dex/state.json`. If it exists and
- * `state.status === "running"` AND HEAD is on `branchName`, the orchestrator
- * is currently building this version — refuse the destructive op.
+ * Mid-run safety probe. Read `<projectDir>/.dex/state.json`. If it exists,
+ * `state.status === "running"`, the lock file points at a live PID, AND
+ * HEAD is on `branchName`, the orchestrator is currently building this
+ * version — refuse the destructive op.
  *
- * Returns `true` if the orchestrator is actively building the target branch.
+ * The lock-liveness check mirrors `isLockStale` in `src/core/state.ts`:
+ * if `state.lock` is absent or its PID is dead, the previous run exited
+ * without flipping `status` away from `"running"` and the file is stale.
+ * Without this check, any stale running-state would permanently block the
+ * squash-merge / delete flows for the branch that happens to match HEAD.
+ *
+ * Returns `true` only when the orchestrator is provably still running.
  */
 function isBranchInActiveRun(projectDir: string, branchName: string): boolean {
   try {
@@ -75,12 +82,36 @@ function isBranchInActiveRun(projectDir: string, branchName: string): boolean {
     const raw = fs.readFileSync(stateFile, "utf-8");
     const state = JSON.parse(raw) as { status?: string };
     if (state.status !== "running") return false;
+    if (!isStateLockAlive(projectDir)) return false;
     const head = safeExec(`git rev-parse --abbrev-ref HEAD`, projectDir);
     return head === branchName;
   } catch {
     // If state.json is unparseable or HEAD is unreadable, fail-open (allow
     // the operation to proceed). The IPC's withLock guard is the second
     // line of defence against concurrent state mutation.
+    return false;
+  }
+}
+
+/**
+ * Returns true iff `<projectDir>/.dex/state.lock` exists and its PID is
+ * still alive (`process.kill(pid, 0)` doesn't throw). Same liveness rule
+ * as `isLockStale` in state.ts, but inverted and inlined here to avoid
+ * dragging the entire `state.ts` module graph into the checkpoints
+ * sub-namespace.
+ */
+function isStateLockAlive(projectDir: string): boolean {
+  try {
+    const lockFile = path.join(projectDir, ".dex", "state.lock");
+    if (!fs.existsSync(lockFile)) return false;
+    const raw = fs.readFileSync(lockFile, "utf-8");
+    const lock = JSON.parse(raw) as { pid?: number };
+    if (typeof lock.pid !== "number") return false;
+    process.kill(lock.pid, 0);
+    return true;
+  } catch {
+    // Either the file is missing/unparseable, or `process.kill(pid, 0)`
+    // threw because the PID is dead. Either way, no live owner.
     return false;
   }
 }
@@ -242,12 +273,12 @@ export type NonContentConflictKind =
   | "both_deleted";
 
 export type MergeToMainResult =
-  | { ok: true; mode: "clean"; mergeSha: string; deletedSource: string }
+  | { ok: true; mode: "clean"; mergeSha: string; mergedSource: string }
   | {
       ok: true;
       mode: "resolved";
       mergeSha: string;
-      deletedSource: string;
+      mergedSource: string;
       resolverCostUsd: number;
       resolvedFiles: string[];
     }
@@ -387,44 +418,49 @@ export async function mergeToMain(
 
   const subject = `dex: promoted ${sourceBranch} to ${primary}`;
 
-  // Two-phase merge so we can intervene on conflicts:
-  //   1. `git merge --no-ff --no-commit` — create the merge state without
-  //      committing. On clean: nothing in `git status` is unmerged → commit.
-  //      On conflict: unmerged paths exist → hand off to resolver.
+  // Two-phase squash so we can intervene on conflicts:
+  //   1. `git merge --squash` — apply the merge to the index/work-tree
+  //      without recording a merge commit. On clean: nothing in `git
+  //      status` is unmerged → commit as a single-parent squash. On
+  //      conflict: unmerged paths exist → hand off to resolver.
   //   2. `git commit -m <subject>` — finalize on clean OR after resolver.
-  let mergeStarted = false;
+  //
+  // `git merge --squash` does NOT set MERGE_HEAD, so `git merge --abort`
+  // is unavailable. We use `git reset --merge` for rollback. The
+  // resolver's accept/abort path runs in a different IPC call and needs
+  // the source branch + subject; we stash both in `.git/dex-pending-promote`
+  // so `acceptResolverResult` / `abortResolverMerge` can recover them.
+  writePendingPromote(projectDir, { sourceBranch, primary });
   try {
-    gitExec(
-      `git merge --no-ff --no-commit -m "${subject}" ${sourceBranch}`,
-      projectDir,
-    );
-    mergeStarted = true;
+    gitExec(`git merge --squash ${sourceBranch}`, projectDir);
   } catch {
     // Non-zero exit usually means conflicts; the index is left in the
     // unmerged state for `git status` to inspect. We don't abort yet —
     // we'll classify and either resolve or roll back.
-    mergeStarted = true;
   }
 
   // Inspect `git status --porcelain` for unmerged paths.
   const unmergedClassified = classifyUnmergedPaths(projectDir);
 
   if (unmergedClassified.contentConflicts.length === 0 && unmergedClassified.nonContentKinds.length === 0) {
-    // Clean merge — finalize.
+    safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json`, projectDir); // legacy-branch safety net (pre-gitignore-migration)
     try {
-      gitExec(`git commit -q --no-edit`, projectDir);
+      gitExec(`git commit -q -m "${subject}"`, projectDir);
     } catch (err) {
       // If even the commit fails (rare — usually means there's nothing to
       // commit because main was already up-to-date), abort and surface.
-      if (mergeStarted) safeExec(`git merge --abort`, projectDir);
+      safeExec(`git reset --merge`, projectDir);
+      clearPendingPromote(projectDir);
       return { ok: false, error: "git_error", message: String(err) };
     }
+    clearPendingPromote(projectDir);
     return finalizeMergeSuccess(projectDir, sourceBranch, primary, "clean", null, [], rlog);
   }
 
   // Non-content conflicts (rename/delete, binary, submodule) → abort and surface.
   if (unmergedClassified.nonContentKinds.length > 0) {
-    safeExec(`git merge --abort`, projectDir);
+    safeExec(`git reset --merge`, projectDir);
+    clearPendingPromote(projectDir);
     return {
       ok: false,
       error: "non_content_conflict",
@@ -436,7 +472,8 @@ export async function mergeToMain(
   // abort cleanly and surface as git_error so the caller doesn't get a
   // half-merged tree.
   if (!resolver) {
-    safeExec(`git merge --abort`, projectDir);
+    safeExec(`git reset --merge`, projectDir);
+    clearPendingPromote(projectDir);
     return {
       ok: false,
       error: "git_error",
@@ -453,7 +490,7 @@ export async function mergeToMain(
     config: resolver.config,
     primaryCommitSubjects: gatherCommitSubjects(projectDir, primary),
     sourceCommitSubjects: gatherCommitSubjects(projectDir, sourceBranch),
-    goalText: readGoalText(projectDir),
+    goalText: readGoalText(projectDir, resolver.runConfig.descriptionFile),
     runConfig: resolver.runConfig,
     emit: resolver.emit,
     abortController: resolver.abortController,
@@ -480,14 +517,16 @@ export async function mergeToMain(
     };
   }
 
-  // Resolver succeeded — stage all + commit.
   try {
     gitExec(`git add -A`, projectDir);
-    gitExec(`git commit -q --no-edit`, projectDir);
+    safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json`, projectDir); // see clean-path note
+    gitExec(`git commit -q -m "${subject}"`, projectDir);
   } catch (err) {
-    safeExec(`git merge --abort`, projectDir);
+    safeExec(`git reset --merge`, projectDir);
+    clearPendingPromote(projectDir);
     return { ok: false, error: "git_error", message: String(err) };
   }
+  clearPendingPromote(projectDir);
 
   return finalizeMergeSuccess(
     projectDir,
@@ -498,5 +537,63 @@ export async function mergeToMain(
     resolverResult.resolvedFiles,
     rlog,
   );
+}
+
+// ── Pending-promote sidecar (.git/dex-pending-promote) ─────────────
+//
+// `git merge --squash` does not write MERGE_HEAD/MERGE_MSG, so the
+// resolver-failure → user-decides flow (which spans two IPC calls — the
+// initial `mergeToMain` call returns `resolver_failed` with the merge
+// state in-progress, then the renderer fires either
+// `acceptResolverResult` or `abortResolverMerge` later) needs an explicit
+// place to remember (a) which branch is being squashed and (b) what
+// subject to commit with. We write a small JSON sidecar at
+// `<projectDir>/.git/dex-pending-promote` that any of those handlers can
+// read; it is cleared on every terminal outcome (success, abort, error).
+
+export interface PendingPromote {
+  sourceBranch: string;
+  primary: string;
+}
+
+function pendingPromotePath(projectDir: string): string {
+  return path.join(projectDir, ".git", "dex-pending-promote");
+}
+
+export function writePendingPromote(
+  projectDir: string,
+  pending: PendingPromote,
+): void {
+  fs.writeFileSync(pendingPromotePath(projectDir), JSON.stringify(pending));
+}
+
+export function readPendingPromote(projectDir: string): PendingPromote | null {
+  const p = pendingPromotePath(projectDir);
+  if (!fs.existsSync(p)) return null;
+  try {
+    const raw = fs.readFileSync(p, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed?.sourceBranch === "string" &&
+      typeof parsed?.primary === "string"
+    ) {
+      return { sourceBranch: parsed.sourceBranch, primary: parsed.primary };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingPromote(projectDir: string): void {
+  const p = pendingPromotePath(projectDir);
+  if (fs.existsSync(p)) {
+    try {
+      fs.unlinkSync(p);
+    } catch {
+      // Best-effort — leftover sidecar is harmless cosmetic state; next
+      // promote overwrites it.
+    }
+  }
 }
 

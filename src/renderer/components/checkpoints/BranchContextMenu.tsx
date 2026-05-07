@@ -9,8 +9,10 @@ interface Props {
   x: number;
   y: number;
   branchName: string;
-  /** True for `dex/*` and `selected-*` branches; false for `main`/`master`/user branches. */
+  /** True for `dex/*` and `selected-*` branches; false for `main`/`master`/user branches and for branches already merged into main. */
   enabled: boolean;
+  /** When provided, used as the disabled-state tooltip in place of the generic copy. */
+  disabledReason?: string;
   onPromote: (branchName: string) => void;
   onClose: () => void;
 }
@@ -26,6 +28,7 @@ export function BranchContextMenu({
   y,
   branchName,
   enabled,
+  disabledReason,
   onPromote,
   onClose,
 }: Props) {
@@ -71,7 +74,7 @@ export function BranchContextMenu({
         role="menuitem"
         type="button"
         disabled={!enabled}
-        title={enabled ? undefined : PROMOTE_MENU_DISABLED_TOOLTIP}
+        title={enabled ? undefined : (disabledReason ?? PROMOTE_MENU_DISABLED_TOOLTIP)}
         data-testid={`promote-menu-item-${branchName}`}
         onClick={() => {
           if (!enabled) return;

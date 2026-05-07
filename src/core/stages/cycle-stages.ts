@@ -90,6 +90,14 @@ export async function runImplementVerifyLearnings(
     status: "running",
   });
 
+  // Mirror what `runStage` does for every other cycle stage — bind the
+  // logger to a `phase-<cycle>_implement/` directory and write the
+  // `TaskPhase N started: implement` line to run.log. Without this,
+  // implement is invisible in run.log and any sub-agent it spawns logs
+  // to whichever phase dir the previous stage left dangling.
+  rlog.startAgentRun(cycleNumber, "implement", implStageTraceId);
+  rlog.agentRun("INFO", `runImplement: implement stage for cycle ${cycleNumber}`);
+
   emit({
     type: "step_started",
     runId,

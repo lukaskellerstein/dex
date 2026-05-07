@@ -55,6 +55,11 @@ export interface StartingPoint {
  * `mergedParentShas` is non-empty when this commit is a merge — its second
  * (and beyond) parents. The layout draws a merge-back edge from each merged
  * parent's canonical-lane back to this commit.
+ *
+ * `promoteSourceTip` is set on `kind: "promote"` commits that are squash
+ * commits (no second parent). The renderer draws a synthetic rejoin edge
+ * from the source branch's tip into the squash commit so the dex/* lane
+ * visually merges back into main, matching the `--no-ff` predecessor.
  */
 export interface TimelineCommit {
   sha: string;
@@ -63,15 +68,22 @@ export interface TimelineCommit {
   containingBranches: string[];
   parentSha: string | null;
   mergedParentShas: string[];
+  promoteSourceTip?: string;
   /**
-   * `StepType` for ordinary `dex: <step> completed […]` step-commits.
-   * `"promote"` for the merge commit a `mergeToMain` produces (subject
-   * `dex: promoted <source> to (main|master)`). Promote commits are NOT
-   * orchestrator stages — `LoopDashboard` and `selectedPath` filter them
-   * out — but they ARE rendered on the timeline so the actual `main` HEAD
-   * is visible after a promote.
+   * Discriminator the renderer uses to differentiate dot styling and
+   * interaction. Only `"step"` commits enter `selectedPath`, can be
+   * jumped to as checkpoints, or feed `LoopDashboard.pathDerived`.
+   *   `"step"`    — `dex: <step> completed [cycle:N]` (orchestrator step)
+   *   `"promote"` — `dex: promoted <source> to (main|master)` (merge commit)
+   *   `"user"`    — anything else (manual commits, PR merges, etc.)
    */
-  step: StepType | "promote";
+  kind: "step" | "promote" | "user";
+  /**
+   * For `kind: "step"`: the step name. For `kind: "promote"`: `"promote"`.
+   * Undefined for `kind: "user"` — read `subject` for the label instead.
+   */
+  step?: StepType | "promote";
+  /** -1 for `promote` and `user`. Step number for `step` kind. */
   cycleNumber: number;
   subject: string;
   timestamp: string;
@@ -97,9 +109,21 @@ export interface TimelineSnapshot {
   checkpoints: CheckpointInfo[];
   /** Branch name HEAD is currently on (`git rev-parse --abbrev-ref HEAD`); empty string if detached or unavailable. */
   currentBranch: string;
+  /**
+   * Actual current HEAD SHA (`git rev-parse HEAD`). Distinct from
+   * `selectedPath[last]` because HEAD may be a non-step commit (e.g. a
+   * promote merge or a user commit) — in those cases selectedPath
+   * doesn't include it. Empty string when detached or unavailable.
+   */
+  headSha: string;
   pending: PendingCandidate[];
   startingPoint: StartingPoint | null;
-  /** Every step-commit reachable from any tracked branch, sorted ascending by timestamp. */
+  /**
+   * Every commit reachable from any tracked branch, sorted ascending by
+   * timestamp. Includes step / promote / user commits; the renderer
+   * differentiates via `TimelineCommit.kind` and may apply its own
+   * display window (e.g. "show last 50, Load more for older").
+   */
   commits: TimelineCommit[];
   /** Step-commit SHAs from the run's starting-point to current HEAD, oldest-first. */
   selectedPath: string[];
@@ -247,45 +271,61 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
     sha: string;
     parentSha: string | null;
     mergedParentShas: string[];
-    step: StepType | "promote";
+    kind: "step" | "promote" | "user";
+    step?: StepType | "promote";
     cycleNumber: number;
     subject: string;
     timestamp: string;
   };
 
-  // Subject parser: returns step + cycle for ordinary step-commits, or a
-  // synthetic `step: "promote"` for the merge commit a `mergeToMain` writes.
-  // Returns null for any other commit subject (skipped by Pass 1).
-  function classifySubject(subject: string): { step: StepType | "promote"; cycleNumber: number } | null {
+  // Subject parser: classifies any commit subject into `step` / `promote`
+  // / `user`. Step-commits get a parsed `step` + `cycleNumber`; promote
+  // merges get `step: "promote"`, `cycleNumber: -1`; everything else is a
+  // user commit with no step/cycle info.
+  //
+  // Special case: the orchestrator stamps the post-run `completion`
+  // commit with `[cycle:N]` (the last-completed cycle) for audit
+  // traceability, but it's a phase-level marker — not part of any
+  // cycle's story. We flatten its cycleNumber to -1 so the layout
+  // groups it under the "Run Complete" band instead of the last cycle.
+  function classifySubject(
+    subject: string,
+  ): { kind: "step" | "promote" | "user"; step?: StepType | "promote"; cycleNumber: number } {
     const stepMatch = subject.match(/^dex: (\w+) completed \[cycle:(\d+)\]/);
     if (stepMatch) {
-      return { step: stepMatch[1] as StepType, cycleNumber: Number(stepMatch[2]) };
+      const step = stepMatch[1] as StepType;
+      const cycleNumber = step === "completion" ? -1 : Number(stepMatch[2]);
+      return { kind: "step", step, cycleNumber };
     }
     if (/^dex: promoted \S+ to (main|master)$/.test(subject)) {
-      return { step: "promote", cycleNumber: -1 };
+      return { kind: "promote", step: "promote", cycleNumber: -1 };
     }
-    return null;
+    return { kind: "user", cycleNumber: -1 };
   }
 
   // ── Pass 1: Full reachability scan ─────────────────────
   // For each visible branch, walk every reachable commit (not just
   // first-parent). Records:
-  //   • commitData[sha]   — parents, step, cycle, subject, timestamp
+  //   • commitData[sha]   — parents, kind, step, cycle, subject, timestamp
   //   • containing[sha]   — every visible branch that reaches this SHA
   //
-  // We need the full reachable set (not just first-parent) so that
-  // `containingBranches` and merge detection see EVERY branch that
-  // contains a given commit, not only the trunk.
+  // We include EVERY commit (step / promote / user) so the canvas can
+  // surface the full history with dex commits visually differentiated.
   const containing = new Map<string, Set<string>>();
   const commitData = new Map<string, CommitData>();
   for (const { name: branch } of filtered) {
-    const logRaw = sx(`git log ${branch} --format='%H%x09%P%x09%s%x09%cI'`);
+    // `--topo-order --reverse` inserts parents before children in our
+    // commitData map. When two commits share the same committer-second
+    // timestamp (common for back-to-back stage commits, e.g. learnings
+    // and completion both fired in <1s), the later `commits.sort` is
+    // stable and ties resolve to insertion order — guaranteeing the
+    // child commit always renders below its parent.
+    const logRaw = sx(`git log --topo-order --reverse ${branch} --format='%H%x09%P%x09%s%x09%cI'`);
     for (const line of logRaw.split("\n").filter(Boolean)) {
       const parts = line.split("\t");
       if (parts.length < 4) continue;
       const [sha, parents, subject, timestamp] = parts;
       const classified = classifySubject(subject);
-      if (!classified) continue;
       let set = containing.get(sha);
       if (!set) {
         set = new Set<string>();
@@ -298,6 +338,7 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
           sha,
           parentSha: parentList[0] ?? null,
           mergedParentShas: parentList.slice(1),
+          kind: classified.kind,
           step: classified.step,
           cycleNumber: classified.cycleNumber,
           subject,
@@ -343,13 +384,13 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
   //
   // For each promote merge in commitData, parse the source-branch name
   // out of its subject and walk `<secondParent> ^<firstParent>` to find
-  // commits exclusive to the deleted branch. Each unclaimed step-commit
-  // along that walk gets canonical to the synthetic source branch — the
-  // layout then renders the original fork-and-rejoin shape with the
-  // source branch's name on the badge, even though the underlying ref no
-  // longer exists.
+  // commits exclusive to the deleted branch. Each unclaimed commit
+  // along that walk (step or user) gets canonical to the synthetic
+  // source branch — the layout then renders the original fork-and-rejoin
+  // shape with the source branch's name on the badge, even though the
+  // underlying ref no longer exists.
   for (const data of commitData.values()) {
-    if (data.step !== "promote") continue;
+    if (data.kind !== "promote") continue;
     if (data.mergedParentShas.length === 0 || !data.parentSha) continue;
     const m = data.subject.match(/^dex: promoted (\S+) to (main|master)$/);
     if (!m) continue;
@@ -388,6 +429,23 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
       if (pa !== pb) return pa - pb;
       return a.localeCompare(b);
     });
+
+    // Squash-promote rejoin: if this is a `kind: "promote"` commit with no
+    // second parent (squash, not `--no-ff`), look up the source branch's
+    // current tip so the layout can draw a synthetic merge-back edge from
+    // the dex/* lane into the squash commit on main. The source branch is
+    // intentionally retained post-squash (see _mergeHelpers.ts), so the ref
+    // is normally still resolvable.
+    let promoteSourceTip: string | undefined;
+    if (data.kind === "promote" && data.mergedParentShas.length === 0) {
+      const m = data.subject.match(/^dex: promoted (\S+) to (?:main|master)$/);
+      if (m) {
+        const sourceBranch = m[1];
+        const tip = sx(`git rev-parse refs/heads/${sourceBranch}`);
+        if (tip) promoteSourceTip = tip;
+      }
+    }
+
     commits.push({
       sha,
       shortSha: sha.slice(0, 7),
@@ -395,6 +453,8 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
       containingBranches,
       parentSha: data.parentSha,
       mergedParentShas: data.mergedParentShas,
+      ...(promoteSourceTip ? { promoteSourceTip } : {}),
+      kind: data.kind,
       step: data.step,
       cycleNumber: data.cycleNumber,
       subject: data.subject,
@@ -427,6 +487,7 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
   return {
     checkpoints,
     currentBranch,
+    headSha,
     pending,
     startingPoint,
     commits,

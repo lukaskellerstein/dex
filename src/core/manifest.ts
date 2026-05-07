@@ -16,8 +16,9 @@ interface FeatureManifestEntry {
 }
 
 export interface FeatureManifest {
-  version: 1;
+  version: 2;
   sourceHash: string;
+  sourcePath: string;
   features: FeatureManifestEntry[];
 }
 
@@ -97,8 +98,12 @@ export function checkSourceDrift(
   manifest: FeatureManifest,
   goalPath: string
 ): boolean {
-  const currentHash = hashFile(goalPath);
-  return currentHash !== manifest.sourceHash;
+  // Treat v1 manifests (no sourcePath) as drifted — they predate path tracking
+  // and the safest assumption is that they were extracted from a different file.
+  if (typeof manifest.sourcePath !== "string") return true;
+  const relPath = path.relative(projectDir, goalPath);
+  if (manifest.sourcePath !== relPath) return true;
+  return hashFile(goalPath) !== manifest.sourceHash;
 }
 
 // ── Learnings ──

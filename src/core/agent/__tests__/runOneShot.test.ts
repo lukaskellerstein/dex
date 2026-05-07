@@ -9,8 +9,6 @@ import type { OneShotContext } from "../AgentRunner.ts";
 import type { RunConfig, AgentStep, OrchestratorEvent } from "../../types.ts";
 
 const VALID_BASE = {
-  enabled: true,
-  fixtureDir: "/abs/fixtures",
   prerequisites: { prerequisites: { delay: 0 } },
   clarification: {
     clarification_product: { delay: 0 },

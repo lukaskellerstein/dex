@@ -5,9 +5,21 @@ import type { StepType } from "../types.js";
 // ── Types ──────────────────────────────────────────────────
 
 export interface WriteSpec {
+  /**
+   * Destination. Relative paths resolve against projectDir; absolute paths
+   * (including the ones produced by `{goalFile}` / `{goalProductDomain}` /
+   * `{goalTechnicalDomain}` / `{goalClarified}`) are written as-is.
+   * Other tokens: `{specDir}`, `{cycle}`, `{feature}`.
+   */
   path: string;
-  from?: string;
-  content?: string;
+  /**
+   * Inline content the mock writes verbatim (after token substitution — same
+   * tokens as `path`). The earlier `from`-fixture-file variant was removed —
+   * mock outputs are inlined into mock-config.json to keep mock state in one
+   * place and avoid coupling the orchestrator repo to per-project fixture
+   * files.
+   */
+  content: string;
 }
 
 export interface AppendSpec {
@@ -56,8 +68,6 @@ export interface MockOneShotResponse {
 }
 
 export interface MockConfig {
-  enabled: boolean;
-  fixtureDir?: string;
   prerequisites: PhaseEntry;
   clarification: PhaseEntry;
   dex_loop: DexLoopEntry;
@@ -86,13 +96,6 @@ export class MockConfigInvalidError extends Error {
   }
 }
 
-export class MockDisabledError extends Error {
-  constructor(filePath: string) {
-    super(`MockDisabledError: dex-config.json selected agent 'mock' but ${filePath} has 'enabled: false'. Set enabled to true, or change dex-config.json's agent to 'claude'.`);
-    this.name = "MockDisabledError";
-  }
-}
-
 export class MockConfigMissingEntryError extends Error {
   readonly phase: string;
   readonly step: string;
@@ -109,15 +112,6 @@ export class MockConfigMissingEntryError extends Error {
     this.step = step;
     this.cycleNumber = cycleNumber;
     this.featureId = featureId;
-  }
-}
-
-export class MockFixtureMissingError extends Error {
-  readonly resolvedPath: string;
-  constructor(resolvedPath: string) {
-    super(`MockFixtureMissingError: fixture file not found at ${resolvedPath}`);
-    this.name = "MockFixtureMissingError";
-    this.resolvedPath = resolvedPath;
   }
 }
 
@@ -160,7 +154,7 @@ export const PHASE_OF_STEP: Record<StepType, "prerequisites" | "clarification" |
 
 // ── Loader + validator ─────────────────────────────────────
 
-const REQUIRED_TOP_LEVEL = ["enabled", "prerequisites", "clarification", "dex_loop", "completion"] as const;
+const REQUIRED_TOP_LEVEL = ["prerequisites", "clarification", "dex_loop", "completion"] as const;
 const REQUIRED_CYCLE_STAGES = ["gap_analysis", "specify", "plan", "tasks", "implement", "verify", "learnings"] as const;
 
 export function mockConfigPath(projectDir: string): string {
@@ -168,14 +162,13 @@ export function mockConfigPath(projectDir: string): string {
 }
 
 /**
- * Parse and validate .dex/mock-config.json. Does not touch `enabled` semantics
- * (that check lives in MockAgentRunner's constructor so error messages can
- * reference the active dex-config selection context).
+ * Parse and validate .dex/mock-config.json. Caller decides whether to
+ * actually use the mock — that's `dex-config.json`'s `mocked` flag.
  */
 export function loadMockConfig(projectDir: string): MockConfig {
   const file = mockConfigPath(projectDir);
   if (!fs.existsSync(file)) {
-    throw new MockConfigInvalidError(file, "file does not exist. Create it or change .dex/dex-config.json's agent selection.");
+    throw new MockConfigInvalidError(file, "file does not exist. Create it or set 'mocked: false' in .dex/dex-config.json.");
   }
   const raw = fs.readFileSync(file, "utf8");
   let parsed: unknown;
@@ -194,19 +187,11 @@ export function loadMockConfig(projectDir: string): MockConfig {
       throw new MockConfigInvalidError(file, `missing required top-level key '${key}'`);
     }
   }
-  if (typeof obj.enabled !== "boolean") {
-    throw new MockConfigInvalidError(file, "'enabled' must be a boolean");
-  }
 
   validatePhaseEntry(file, "prerequisites", obj.prerequisites);
   validatePhaseEntry(file, "clarification", obj.clarification);
   validatePhaseEntry(file, "completion", obj.completion);
   validateDexLoop(file, obj.dex_loop);
-
-  const fixtureDir = obj.fixtureDir;
-  if (fixtureDir !== undefined && typeof fixtureDir !== "string") {
-    throw new MockConfigInvalidError(file, "'fixtureDir' must be a string if present");
-  }
 
   const oneShotResponses = obj.oneShotResponses;
   if (oneShotResponses !== undefined) {
@@ -219,8 +204,6 @@ export function loadMockConfig(projectDir: string): MockConfig {
   }
 
   return {
-    enabled: obj.enabled,
-    fixtureDir: fixtureDir as string | undefined,
     prerequisites: obj.prerequisites as PhaseEntry,
     clarification: obj.clarification as PhaseEntry,
     dex_loop: obj.dex_loop as DexLoopEntry,
@@ -354,10 +337,8 @@ function validateWriteSpec(file: string, where: string, spec: unknown): void {
   if (typeof w.path !== "string" || w.path.length === 0) {
     throw new MockConfigInvalidError(file, `${where}.path must be a non-empty string`);
   }
-  const hasFrom = typeof w.from === "string" && w.from.length > 0;
-  const hasContent = typeof w.content === "string";
-  if (hasFrom === hasContent) {
-    throw new MockConfigInvalidError(file, `${where} must have exactly one of 'from' or 'content'`);
+  if (typeof w.content !== "string") {
+    throw new MockConfigInvalidError(file, `${where}.content must be a string`);
   }
 }
 

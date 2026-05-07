@@ -13,8 +13,9 @@ import { loadState } from "../state.js";
  * stderr to the parent process. We deliberately enumerate committable
  * pathspecs here rather than `git add .dex/` — behaviour stays identical
  * regardless of how the consumer project configures `.gitignore`, and we
- * never accidentally commit runtime caches like `state.json` or
- * `state.lock` even on projects without proper ignore rules.
+ * never accidentally commit runtime caches like `state.json`,
+ * `feature-manifest.json`, or `state.lock` even on projects without proper
+ * ignore rules.
  */
 function tryStage(projectDir: string, pathspec: string): void {
   try {
@@ -23,8 +24,8 @@ function tryStage(projectDir: string, pathspec: string): void {
       stdio: ["ignore", "ignore", "ignore"],
     });
   } catch {
-    // Pathspec may not match yet (e.g., before manifest_extraction creates
-    // feature-manifest.json, or before learnings.md is appended). Non-fatal.
+    // Pathspec may not match yet (e.g., before learnings.md is appended).
+    // Non-fatal.
   }
 }
 
@@ -41,10 +42,10 @@ export function commitCheckpoint(
     `[checkpoint:${stage}:${cycleNumber}]`;
 
   // Explicit allow-list of committable Dex artifacts. Anything else under
-  // `.dex/` (state.json, state.lock, dex-config.json, mock-config.json) is
-  // per-developer / runtime and stays out of git. Add to this list when
-  // introducing a new committable artifact.
-  tryStage(projectDir, ".dex/feature-manifest.json");
+  // `.dex/` (state.json, state.lock, feature-manifest.json, dex-config.json,
+  // mock-config.json) is per-developer / runtime and stays out of git via
+  // `.gitignore` (managed by `initRepo`). Add to this list when introducing
+  // a new committable artifact.
   tryStage(projectDir, ".dex/learnings.md");
   tryStage(projectDir, ".dex/runs/");
 

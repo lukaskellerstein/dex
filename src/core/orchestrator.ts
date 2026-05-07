@@ -20,6 +20,7 @@ import { runBuild } from "./stages/build.js";
 import { runStage } from "./stages/run-stage.js";
 import { RunTaskState, runPhase, buildPrompt } from "./stages/run-phase.js";
 import { ensureManifest } from "./stages/manifest-extraction.js";
+import { deriveGoalPaths } from "./goal-paths.js";
 import {
   initRun,
   finalizeRun,
@@ -138,8 +139,9 @@ async function runLoop(
 ): Promise<{ taskPhasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
   const goalPath = config.descriptionFile ?? path.join(config.projectDir, "GOAL.md");
   if (!fs.existsSync(goalPath)) {
-    throw new Error(`Loop mode requires GOAL.md at ${goalPath}`);
+    throw new Error(`Loop mode requires goal file at ${goalPath}`);
   }
+  const goalPaths = deriveGoalPaths(goalPath);
 
   // Detect stale state from a different branch or completed run.
   if (config.resume) {
@@ -154,7 +156,7 @@ async function runLoop(
     }
   }
 
-  const clarifiedPath = path.join(config.projectDir, "GOAL_clarified.md");
+  const clarifiedPath = goalPaths.clarified;
   let fullPlanPath = "";
   let cumulativeCost = 0;
   let cyclesCompleted = 0;
@@ -243,7 +245,10 @@ async function runLoop(
   {
     const existingSpecsAtStart = listSpecDirs(config.projectDir);
     const result = await runClarificationPhase(ctxForClarify, {
-      config, runId, goalPath, clarifiedPath, existingSpecsAtStart,
+      config, runId, goalPath, clarifiedPath,
+      productDomainPath: goalPaths.productDomain,
+      technicalDomainPath: goalPaths.technicalDomain,
+      existingSpecsAtStart,
       seedCumulativeCost: cumulativeCost,
     });
     fullPlanPath = result.fullPlanPath;

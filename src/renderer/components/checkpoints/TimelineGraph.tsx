@@ -1,7 +1,10 @@
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { type LaidOutNode, type LaidOutEdge, type ColorState } from "./timelineLayout";
 import type { TimelineSnapshot, TimelineCommit } from "../../../core/checkpoints.js";
 import { useD3Timeline } from "./hooks/useD3Timeline.js";
+
+const DEFAULT_DISPLAY_LIMIT = 50;
+const LOAD_MORE_INCREMENT = 50;
 
 interface Props {
   snapshot: TimelineSnapshot;
@@ -107,8 +110,19 @@ export function TimelineGraph({
   onBranchFocus,
 }: Props) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Display window: show only the most-recent N commits on the canvas.
+  // "Load more" extends the window in fixed increments. Older commits are
+  // still in `snapshot.commits` (LoopDashboard reads them); we just hide
+  // them from the canvas to keep the visual scope manageable.
+  const [displayLimit, setDisplayLimit] = useState(DEFAULT_DISPLAY_LIMIT);
+  const totalCommits = snapshot.commits.length;
+  const hasMore = totalCommits > displayLimit;
+  const displayedSnapshot = useMemo<TimelineSnapshot>(() => {
+    if (!hasMore) return snapshot;
+    return { ...snapshot, commits: snapshot.commits.slice(-displayLimit) };
+  }, [snapshot, displayLimit, hasMore]);
   const { svgRef, layout, nodeById, transform, hovered, setHovered } =
-    useD3Timeline(snapshot);
+    useD3Timeline(displayedSnapshot);
   const focused = focusedBranch ?? null;
 
   if (layout.nodes.length === 0) {
@@ -134,9 +148,7 @@ export function TimelineGraph({
   }
 
   const handleClick = (n: LaidOutNode) => {
-    if (n.node.kind === "step-commit") {
-      onJumpTo(n.node.data.sha);
-    } else if (n.node.kind === "start") {
+    if (n.node.kind === "step-commit" || n.node.kind === "start") {
       onJumpTo(n.node.data.sha);
     }
   };
@@ -202,13 +214,47 @@ export function TimelineGraph({
         minHeight: 0,
       }}
     >
+      {hasMore && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            padding: "8px 0",
+            borderBottom: "1px solid var(--border)",
+            background: "var(--surface)",
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          <button
+            type="button"
+            data-testid="timeline-load-more"
+            onClick={() =>
+              setDisplayLimit((n) => Math.min(totalCommits, n + LOAD_MORE_INCREMENT))
+            }
+            style={{
+              fontSize: 11,
+              fontFamily: "var(--font, sans-serif)",
+              padding: "4px 12px",
+              borderRadius: "var(--radius)",
+              border: "1px solid var(--border)",
+              background: "var(--surface-elevated, var(--surface))",
+              color: "var(--foreground-muted)",
+              cursor: "pointer",
+            }}
+          >
+            Load more — showing {displayLimit} of {totalCommits}
+          </button>
+        </div>
+      )}
       <svg
         ref={svgRef}
         role="img"
         aria-label="Checkpoint timeline"
         width={Math.max(layout.width, 480)}
         height={Math.max(layout.height, 240)}
-        style={{ display: "block", cursor: "grab" }}
+        style={{ display: "block" }}
       >
         <g transform={transform.toString()}>
           {/* Cycle bands — horizontal background stripes per cycle. */}
@@ -370,11 +416,18 @@ export function TimelineGraph({
 
           {/* Dots */}
           {layout.nodes.map((n) => {
+            const isUser = n.commitKind === "user";
             const isHovered = hovered?.id === n.id;
             const isHead = n.node.kind === "step-commit" && headSha === n.node.data.sha;
             const ring = ringFor(n.colorState);
             const dotColor = displayColor(n.laneColor, n.branch, focused);
-            const dotOpacity = displayOpacity(n.branch, focused, 1);
+            // Visual language:
+            //   • Dex step / promote = circle (filled or hollow)
+            //   • User commit       = diamond (filled or hollow)
+            // Different shape, not just smaller, so users can scan dex
+            // milestones at a glance even in a sea of user commits.
+            const baseOpacity = isUser ? 0.6 : 1;
+            const dotOpacity = displayOpacity(n.branch, focused, baseOpacity);
             const shortSha = n.node.kind === "step-commit"
               ? (n.node.data as TimelineCommit).shortSha
               : "";
@@ -382,7 +435,13 @@ export function TimelineGraph({
               ? "timeline-anchor"
               : `timeline-node-${shortSha}`;
             const headOffset = isHead ? 2 : 0;
-            const effectiveDotR = DOT_RADIUS + headOffset + (isHovered ? 1 : 0);
+            // User diamonds slightly smaller than dex circles, but big
+            // enough to read as their own shape. All commits are jump
+            // targets, so hover-grow applies uniformly.
+            const baseR = isUser ? 5 : DOT_RADIUS;
+            const effectiveDotR = baseR + headOffset + (isHovered ? 1 : 0);
+            // Diamond points: top, right, bottom, left (rotated square).
+            const diamondPoints = `0,${-effectiveDotR} ${effectiveDotR},0 0,${effectiveDotR} ${-effectiveDotR},0`;
             return (
               <g
                 key={n.id}
@@ -414,7 +473,7 @@ export function TimelineGraph({
                     />
                   </>
                 )}
-                {ring && (
+                {ring && !isUser && (
                   <circle
                     r={effectiveDotR + (isHead ? 9 : 3)}
                     fill="transparent"
@@ -422,9 +481,21 @@ export function TimelineGraph({
                     strokeWidth={2}
                   />
                 )}
-                {n.isMerge ? (
-                  // Merge commit — hollow circle with the lane's stroke color
-                  // so the merge structure pops against solid commits.
+                {isUser ? (
+                  // Diamond. Hollow when this user commit is a merge
+                  // (e.g. a `Merge pull request #N`); filled otherwise.
+                  n.isMerge ? (
+                    <polygon
+                      points={diamondPoints}
+                      fill={SURFACE_COLOR}
+                      stroke={dotColor}
+                      strokeWidth={2}
+                    />
+                  ) : (
+                    <polygon points={diamondPoints} fill={dotColor} />
+                  )
+                ) : n.isMerge ? (
+                  // Dex merge — hollow circle, lane stroke.
                   <circle
                     r={effectiveDotR}
                     fill={SURFACE_COLOR}
@@ -439,8 +510,21 @@ export function TimelineGraph({
                     strokeWidth={isHead ? 2.5 : 0}
                   />
                 )}
-                {(n.colorState === "selected" || n.colorState === "selected+kept") && !n.isMerge && (
-                  <circle r={Math.max(2, effectiveDotR - 1.5)} fill="#ff0000" />
+                {/*
+                  Red "you are here" / "on path" inner marker.
+                  Fires for any of:
+                    • step-commit on the selected path (`colorState`)
+                    • the actual HEAD commit, regardless of kind — so a
+                      promote merge or a user-commit HEAD also reads as
+                      red, matching the halo's "you are here" intent.
+                  Inner radius shrinks for hollow merges so the red dot
+                  lands inside the empty center of the ring.
+                */}
+                {(n.colorState === "selected" || n.colorState === "selected+kept" || isHead) && (
+                  <circle
+                    r={n.isMerge ? Math.max(1.5, effectiveDotR - 4) : Math.max(2, effectiveDotR - 1.5)}
+                    fill="#ff0000"
+                  />
                 )}
               </g>
             );
@@ -452,12 +536,21 @@ export function TimelineGraph({
             .map((n) => {
               const c = n.node.data as TimelineCommit;
               const isHead = headSha === c.sha;
+              const isUser = n.commitKind === "user";
+              const baseOpacity = isUser ? 0.55 : 1;
+              // User commits read as background context: lighter weight,
+              // truncated subject in place of the dex step/cycle suffix.
+              const userSubject = isUser
+                ? c.subject.length > 48
+                  ? `${c.subject.slice(0, 45)}…`
+                  : c.subject
+                : null;
               return (
                 <g
                   key={`label-${n.id}`}
                   transform={`translate(${layout.labelGutterX}, ${n.y})`}
                   style={{ pointerEvents: "none" }}
-                  opacity={displayOpacity(n.branch, focused, 1)}
+                  opacity={displayOpacity(n.branch, focused, baseOpacity)}
                 >
                   <text
                     fontSize={11}
@@ -468,9 +561,9 @@ export function TimelineGraph({
                   >
                     {c.shortSha}
                     <tspan fill="var(--foreground-dim, #64748b)" fontFamily="var(--font, sans-serif)">
-                      {"  "}
-                      {c.step}
-                      {c.cycleNumber > 0 ? ` · cycle ${c.cycleNumber}` : ""}
+                      {isUser
+                        ? `  ${userSubject}`
+                        : `  ${c.step ?? ""}${c.cycleNumber > 0 ? ` · cycle ${c.cycleNumber}` : ""}`}
                     </tspan>
                   </text>
                 </g>

@@ -232,8 +232,6 @@ export default function App() {
 
   const handleStartLoop = (loopConfig: {
     descriptionFile?: string;
-    maxLoopCycles?: number;
-    maxBudgetUsd?: number;
     autoClarification?: boolean;
     resume?: boolean;
   }) => {
@@ -469,10 +467,16 @@ export default function App() {
   // of whichever sub-view currentView points at. Spec / trace / subagent
   // detail views remain reachable from inside the dashboard via spec-card
   // clicks; they don't belong on the top-level "Steps" tab.
+  //
+  // 014 — `dexStatus === null` means there's no `.dex/state.json` on disk:
+  // either a fresh project OR a project whose last run was just promoted to
+  // main (the squash-merge IPC deletes state.json). In both cases the user
+  // wants the LoopStartPanel — pick a spec / toggle auto-clarification /
+  // start a new run — not the LoopDashboard's prerequisites view.
   const stepsTabContent =
     project.projectDir &&
-    project.specSummaries.length === 0 &&
-    !orchestrator.isRunning ? (
+    !orchestrator.isRunning &&
+    (project.specSummaries.length === 0 || project.dexStatus === null) ? (
       <LoopStartPanel
         projectDir={project.projectDir}
         isRunning={orchestrator.isRunning}
@@ -517,17 +521,14 @@ export default function App() {
         projectDir={project.projectDir}
         aggregate={project.aggregate}
         isRunning={orchestrator.isRunning}
-        isPausedLoop={
-          !orchestrator.isRunning &&
-          (orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0) &&
-          !orchestrator.loopTermination
-        }
+        isPausedLoop={!orchestrator.isRunning && project.dexStatus === "paused"}
         onOpenProject={handleOpenProject}
         onGoHome={handleGoHome}
         onRefreshProject={project.refreshProject}
         onDeselectSpec={handleDeselectSpec}
         onStart={handleStart}
         onStop={() => orchestratorService.stopRun()}
+        debugBadge={debugBadge}
         tabs={tabs}
         content={shellContent}
       />

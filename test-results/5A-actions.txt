@@ -1,6 +1,0 @@
---- step 1: copy.ts violations ---
-Step 1 hits:
-
---- step 2: other component files ---
-Step 2 hits:
-src/renderer/components/checkpoints/timelineLayout.ts:58:  kind: "within-column" | "fork" | "merge";

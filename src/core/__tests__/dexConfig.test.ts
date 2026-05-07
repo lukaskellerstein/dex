@@ -34,15 +34,61 @@ test("dexConfig: absent file returns default { agent: 'claude', conflictResolver
   }
 });
 
-test("dexConfig: valid file returns parsed agent + default conflictResolver", () => {
+test("dexConfig: empty object defaults agent to 'claude'", () => {
+  const dir = mkTmpProject();
+  try {
+    writeConfig(dir, "{}");
+    const cfg = loadDexConfig(dir);
+    assert.equal(cfg.agent, "claude");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("dexConfig: agent:'mock' is preserved", () => {
   const dir = mkTmpProject();
   try {
     writeConfig(dir, '{ "agent": "mock" }');
     const cfg = loadDexConfig(dir);
-    assert.deepEqual(cfg, {
-      agent: "mock",
-      conflictResolver: { ...DEFAULT_CONFLICT_RESOLVER_CONFIG },
+    assert.equal(cfg.agent, "mock");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("dexConfig: future agent names pass through unchanged (validated downstream)", () => {
+  // The loader doesn't gate the value against a known-runners list — that
+  // belongs to createAgentRunner so the message can list valid names. This
+  // also lets builds add new runners without changing the loader.
+  const dir = mkTmpProject();
+  try {
+    writeConfig(dir, '{ "agent": "codex" }');
+    const cfg = loadDexConfig(dir);
+    assert.equal(cfg.agent, "codex");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("dexConfig: non-string 'agent' throws DexConfigInvalidError", () => {
+  const dir = mkTmpProject();
+  try {
+    writeConfig(dir, '{ "agent": 42 }');
+    assert.throws(() => loadDexConfig(dir), (err: unknown) => {
+      assert.ok(err instanceof DexConfigInvalidError);
+      assert.match((err as Error).message, /'agent' must be a non-empty string/);
+      return true;
     });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("dexConfig: empty-string 'agent' throws DexConfigInvalidError", () => {
+  const dir = mkTmpProject();
+  try {
+    writeConfig(dir, '{ "agent": "" }');
+    assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -72,7 +118,7 @@ test("dexConfig: conflictResolver verifyCommand:null skips verification", () => 
   try {
     writeConfig(
       dir,
-      '{ "agent": "claude", "conflictResolver": { "verifyCommand": null } }',
+      '{ "conflictResolver": { "verifyCommand": null } }',
     );
     const cfg = loadDexConfig(dir);
     assert.equal(cfg.conflictResolver.verifyCommand, null);
@@ -86,7 +132,7 @@ test("dexConfig: conflictResolver empty-string verifyCommand normalises to null"
   try {
     writeConfig(
       dir,
-      '{ "agent": "claude", "conflictResolver": { "verifyCommand": "" } }',
+      '{ "conflictResolver": { "verifyCommand": "" } }',
     );
     const cfg = loadDexConfig(dir);
     assert.equal(cfg.conflictResolver.verifyCommand, null);
@@ -100,7 +146,7 @@ test("dexConfig: conflictResolver invalid maxIterations throws", () => {
   try {
     writeConfig(
       dir,
-      '{ "agent": "claude", "conflictResolver": { "maxIterations": 0 } }',
+      '{ "conflictResolver": { "maxIterations": 0 } }',
     );
     assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
@@ -113,7 +159,7 @@ test("dexConfig: conflictResolver negative costCapUsd throws", () => {
   try {
     writeConfig(
       dir,
-      '{ "agent": "claude", "conflictResolver": { "costCapUsd": -1 } }',
+      '{ "conflictResolver": { "costCapUsd": -1 } }',
     );
     assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
@@ -124,7 +170,7 @@ test("dexConfig: conflictResolver negative costCapUsd throws", () => {
 test("dexConfig: conflictResolver non-object throws", () => {
   const dir = mkTmpProject();
   try {
-    writeConfig(dir, '{ "agent": "claude", "conflictResolver": [] }');
+    writeConfig(dir, '{ "conflictResolver": [] }');
     assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -139,40 +185,6 @@ test("dexConfig: parse error throws DexConfigParseError", () => {
       assert.ok(err instanceof DexConfigParseError);
       return true;
     });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: missing 'agent' throws DexConfigInvalidError", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, "{}");
-    assert.throws(() => loadDexConfig(dir), (err: unknown) => {
-      assert.ok(err instanceof DexConfigInvalidError);
-      assert.match((err as Error).message, /'agent' field is required/);
-      return true;
-    });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: non-string 'agent' throws DexConfigInvalidError", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "agent": 42 }');
-    assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: empty-string 'agent' throws DexConfigInvalidError", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "agent": "" }');
-    assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

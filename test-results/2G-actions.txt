@@ -1,8 +1,0 @@
-[pristine] HEAD is now at 9e340e6 remove testing
-[pristine] pristine: main reset to 9e340e6; local test branches pruned
-[F6 with step-commit applied]
---- IPC mergeToMain (UI confirm flow would also fire) ---
-{
-  "ok": false,
-  "error": "main_in_active_run"
-}

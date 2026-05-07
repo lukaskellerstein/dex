@@ -4,6 +4,7 @@
  * Deps: runStage (../stages/run-stage.js — circular-via-orchestrator-but-call-time-safe), prompts.{buildManifestExtractionPrompt, MANIFEST_SCHEMA}, manifest.{loadManifest, saveManifest, checkSourceDrift, hashFile}.
  */
 
+import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
 import type { RunConfig } from "../types.js";
 import type { RunLogger } from "../log.js";
@@ -28,16 +29,30 @@ export async function ensureManifest(
   },
 ): Promise<{ manifest: FeatureManifest; cumulativeCost: number }> {
   const { config, runId, fullPlanPath, rlog, seedCumulativeCost } = deps;
+  const clarifiedName = path.basename(fullPlanPath);
   let cumulativeCost = seedCumulativeCost;
   const emit = ctx.emit;
 
   let manifest = loadManifest(config.projectDir);
   if (manifest) {
     if (checkSourceDrift(config.projectDir, manifest, fullPlanPath)) {
-      rlog.run("WARN", "GOAL_clarified.md has changed since manifest was created");
+      // The clarified-plan file content changed — typically because the
+      // user is starting a run for a different spec (e.g. 002-improvement
+      // after 001 was promoted to main, leaving the old manifest committed
+      // on the trunk). The stale manifest's feature list and statuses don't
+      // apply to the new plan; reusing it short-circuits the loop with
+      // `gaps_complete` against features that aren't in this spec at all.
+      // Re-extract from the new plan and overwrite — completion state for
+      // the OLD spec is preserved in `.dex/runs/<runId>.json` audit records.
+      rlog.run(
+        "WARN",
+        `${clarifiedName} has changed since manifest was created — re-extracting`,
+      );
       emit({ type: "manifest_drift_detected", runId });
+      manifest = null;
+    } else {
+      return { manifest, cumulativeCost };
     }
-    return { manifest, cumulativeCost };
   }
 
   type ManifestExtraction = { features: Array<{ id: number; title: string; description: string }> };
@@ -54,24 +69,25 @@ export async function ensureManifest(
       extracted = result.structuredOutput as ManifestExtraction | null;
       if (!extracted) {
         rlog.run("WARN", `Manifest extraction attempt ${attempt}: structured_output was null`);
-        if (attempt === 2) throw new Error("Manifest extraction failed after 2 attempts — structured output was null. Check GOAL_clarified.md format.");
+        if (attempt === 2) throw new Error(`Manifest extraction failed after 2 attempts — structured output was null. Check ${clarifiedName} format.`);
         continue;
       }
       if (!extracted.features?.length) {
         rlog.run("WARN", `Manifest extraction attempt ${attempt}: empty features array`);
-        if (attempt === 2) throw new Error("Manifest extraction failed after 2 attempts — extracted zero features. Check GOAL_clarified.md format.");
+        if (attempt === 2) throw new Error(`Manifest extraction failed after 2 attempts — extracted zero features. Check ${clarifiedName} format.`);
         continue;
       }
       break;
     } catch (err) {
       rlog.run("ERROR", `Manifest extraction attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`);
-      if (attempt === 2) throw new Error("Manifest extraction failed after 2 attempts — cannot proceed without a feature manifest. Check GOAL_clarified.md format.");
+      if (attempt === 2) throw new Error(`Manifest extraction failed after 2 attempts — cannot proceed without a feature manifest. Check ${clarifiedName} format.`);
     }
   }
 
   manifest = {
-    version: 1,
+    version: 2,
     sourceHash: hashManifestFile(fullPlanPath),
+    sourcePath: path.relative(config.projectDir, fullPlanPath),
     features: extracted!.features.map((f) => ({
       ...f,
       status: "pending" as const,

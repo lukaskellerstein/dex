@@ -70,7 +70,7 @@ Per-project (inside each opened project):
 <projectDir>/.dex/
 ├── state.json               gitignored (008 — runtime cache, local only)
 ├── state.lock               gitignored (PID)
-├── feature-manifest.json    committed
+├── feature-manifest.json    gitignored (runtime cache — regenerated from GOAL_clarified.md on drift)
 ├── learnings.md             committed
 ├── variant-groups/          gitignored — one <groupId>.json per in-flight Try N ways
 ├── worktrees/               gitignored — parallel-variant worktrees for spec-only stages

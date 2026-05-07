@@ -10,6 +10,9 @@ import {
   mergeToMain,
   computePromoteSummary,
   syncStateFromHead,
+  readPendingPromote,
+  clearPendingPromote,
+  ensureDexGitignore,
   type JumpToResult,
   type DeleteBranchResult,
   type DeleteBranchOpts,
@@ -20,8 +23,7 @@ import {
 } from "../../core/checkpoints.js";
 import { withLock } from "./lock-utils.js";
 import { createIpcLogger } from "./logger.js";
-import "../../core/agent/index.js"; // side-effect: register claude+mock
-import { createAgentRunner } from "../../core/agent/registry.js";
+import { createAgentRunner } from "../../core/agent/index.js";
 import { loadDexConfig } from "../../core/dexConfig.js";
 import type { RunConfig, OrchestratorEvent } from "../../core/types.js";
 import type { RunLogger } from "../../core/log.js";
@@ -72,6 +74,52 @@ function gitExecSilent(cmd: string, projectDir: string): string {
       message: err instanceof Error ? err.message : String(err),
     });
     return "";
+  }
+}
+
+/**
+ * Post-promote on-disk cleanup. After a successful squash-merge to main,
+ * the just-shipped run's `state.json` is no longer relevant — the Steps
+ * tab should fall back to the "no run yet" view. `state.json` is gitignored
+ * (runtime cache), so unlinking it doesn't affect `git status`.
+ *
+ * `.dex/feature-manifest.json` is handled separately: the merge flow drops
+ * it from the squash commit itself (`git rm -f --ignore-unmatch` before the
+ * `git commit`), so on success the file is gone from both `main` and the
+ * working tree without leaving an orphan "deleted" entry in `git status`.
+ *
+ * Audit trail in `.dex/runs/<runId>.json` and `.dex/learnings.md` are
+ * preserved — those are cumulative across specs.
+ *
+ * Best-effort: a missing file is fine; any other failure is logged but
+ * not surfaced (the merge itself already succeeded).
+ */
+function finalizePromoteOnDisk(projectDir: string): void {
+  const target = path.join(projectDir, ".dex", "state.json");
+  try {
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+  } catch (err) {
+    ipcLogger.run("WARN", "finalizePromoteOnDisk: unlink failed", {
+      target,
+      message: err instanceof Error ? err.message : String(err),
+      cwd: projectDir,
+    });
+  }
+}
+
+/**
+ * Push a `loop_reset` event back to the renderer that initiated the
+ * merge. `useLoopState` clears its in-memory loop state on this event so
+ * the Steps tab stops showing the just-completed run's "All Features
+ * Implemented" view.
+ */
+function emitLoopReset(senderWebContentsId: number): void {
+  const wc = BrowserWindow.getAllWindows()
+    .map((w) => w.webContents)
+    .find((c) => c.id === senderWebContentsId);
+  if (wc && !wc.isDestroyed()) {
+    const event: OrchestratorEvent = { type: "loop_reset", reason: "promoted" };
+    wc.send("orchestrator:event", event);
   }
 }
 
@@ -214,7 +262,12 @@ export function registerCheckpointsHandlers(): void {
     ): Promise<MergeToMainResult | { ok: false; error: "locked_by_other_instance" }> =>
       withLock(projectDir, async () => {
         const resolverDeps = buildResolverDeps(projectDir, e.sender.id);
-        return mergeToMain(projectDir, sourceBranch, opts, ipcLogger, resolverDeps);
+        const result = await mergeToMain(projectDir, sourceBranch, opts, ipcLogger, resolverDeps);
+        if (result.ok) {
+          finalizePromoteOnDisk(projectDir);
+          emitLoopReset(e.sender.id);
+        }
+        return result;
       }),
   );
 
@@ -222,43 +275,39 @@ export function registerCheckpointsHandlers(): void {
 
   ipcMain.handle(
     "checkpoints:acceptResolverResult",
-    async (_e, projectDir: string): Promise<{ ok: true; mergeSha: string } | { ok: false; error: string }> =>
+    async (e, projectDir: string): Promise<{ ok: true; mergeSha: string } | { ok: false; error: string }> =>
       withLock(projectDir, () => {
         try {
+          // Recover the in-flight squash-merge target from the sidecar
+          // `git merge --squash` doesn't write MERGE_MSG, so we stashed
+          // sourceBranch + primary at start; we need sourceBranch to build
+          // the canonical commit subject the timeline parser recognizes.
+          const pending = readPendingPromote(projectDir);
+          if (!pending) {
+            return {
+              ok: false as const,
+              error: "no in-flight promote to accept (sidecar missing)",
+            };
+          }
+          const subject = `dex: promoted ${pending.sourceBranch} to ${pending.primary}`;
           gitExec(`git add -A`, projectDir);
-          // --no-edit accepts the canonical merge subject `mergeToMain` set
-          // via `git merge --no-ff --no-commit -m "..."`.
-          gitExec(`git commit -q --no-edit`, projectDir);
-          const mergeSha = gitExec(`git rev-parse HEAD`, projectDir);
-          // Try to read MERGE_MSG to discover the source branch (best-effort —
-          // the post-merge cleanup needs to delete the source branch).
-          let sourceBranch: string | null = null;
+          // Drop `.dex/feature-manifest.json` from the commit — same reason
+          // as the clean-merge path in branchOps.mergeToMain: per-spec scratch
+          // that doesn't belong on `main`, and folding the removal in here
+          // means no orphan "deleted" entry in `git status` post-promote.
+          // `--ignore-unmatch` is no-op-safe when the file was never tracked.
           try {
-            const mergeMsgPath = path.join(projectDir, ".git", "MERGE_MSG");
-            if (fs.existsSync(mergeMsgPath)) {
-              const msg = fs.readFileSync(mergeMsgPath, "utf-8");
-              const m = msg.match(/^dex: promoted (\S+) to (?:main|master)/m);
-              if (m) sourceBranch = m[1];
-            }
+            gitExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json`, projectDir);
           } catch {
-            sourceBranch = null;
+            // best-effort — fall through to commit
           }
-          // MERGE_MSG is consumed by `git commit` so by now it's gone — we
-          // already captured the source branch before the commit. The above
-          // attempt is a no-op safety net.
-          if (!sourceBranch) {
-            // Fall back: parse the just-created merge commit's subject.
-            const subject = gitExec(`git log -1 --format=%s ${mergeSha}`, projectDir);
-            const m = subject.match(/^dex: promoted (\S+) to (?:main|master)/);
-            if (m) sourceBranch = m[1];
-          }
-          if (sourceBranch) {
-            try {
-              gitExec(`git branch -D ${sourceBranch}`, projectDir);
-            } catch {
-              // Best-effort cleanup — leftover branch is cosmetic.
-            }
-          }
+          gitExec(`git commit -q -m "${subject}"`, projectDir);
+          const mergeSha = gitExec(`git rev-parse HEAD`, projectDir);
+          // Source branch is intentionally kept — Timeline drill-down walks
+          // it to recover the version's full agent-step history.
+          clearPendingPromote(projectDir);
+          finalizePromoteOnDisk(projectDir);
+          emitLoopReset(e.sender.id);
           return { ok: true as const, mergeSha };
         } catch (err) {
           return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
@@ -271,13 +320,21 @@ export function registerCheckpointsHandlers(): void {
     async (_e, projectDir: string): Promise<{ ok: true } | { ok: false; error: string }> =>
       withLock(projectDir, () => {
         try {
-          gitExec(`git merge --abort`, projectDir);
+          // `git merge --squash` doesn't set MERGE_HEAD, so `git merge
+          // --abort` is unavailable. `git reset --merge` rolls the index
+          // and work-tree back to HEAD whether or not a merge is in
+          // progress.
+          gitExec(`git reset --merge`, projectDir);
+          clearPendingPromote(projectDir);
           return { ok: true as const };
         } catch (err) {
-          // If there's no merge in progress, treat as a no-op success — the
+          // Tolerate "no-op" cases where there's nothing to reset — the
           // user may have hit Cancel after the merge was already cleaned up.
           const msg = err instanceof Error ? err.message : String(err);
-          if (/no merge to abort/i.test(msg)) return { ok: true as const };
+          clearPendingPromote(projectDir);
+          if (/no merge to abort|no merge in progress/i.test(msg)) {
+            return { ok: true as const };
+          }
           return { ok: false as const, error: msg };
         }
       }),
@@ -334,30 +391,7 @@ export function registerCheckpointsHandlers(): void {
           if (!fs.existsSync(path.join(projectDir, ".git"))) {
             gitExec(`git init`, projectDir);
           }
-          const gi = path.join(projectDir, ".gitignore");
-          const entries = [
-            ".dex/state.json",
-            ".dex/state.lock",
-            ".dex/variant-groups/",
-            ".dex/worktrees/",
-          ];
-          const existing = fs.existsSync(gi) ? fs.readFileSync(gi, "utf-8") : "";
-          const missing = entries.filter((e) => !existing.split("\n").includes(e));
-          if (missing.length > 0) {
-            const appended =
-              (existing.endsWith("\n") || existing === "" ? existing : existing + "\n") +
-              (existing === "" ? "" : "\n") +
-              "# Dex runtime cache — local only, never committed\n" +
-              missing.join("\n") +
-              "\n";
-            fs.writeFileSync(gi, appended, "utf-8");
-          }
-          // If state.json was previously tracked, untrack it silently.
-          try {
-            gitExec(`git rm --cached .dex/state.json`, projectDir);
-          } catch {
-            // wasn't tracked — fine
-          }
+          ensureDexGitignore(projectDir);
           // Initial commit if repo is empty
           try {
             gitExecSilent(`git rev-parse HEAD`, projectDir);

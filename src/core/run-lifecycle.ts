@@ -1,7 +1,7 @@
 /**
  * What: Run-level setup and teardown helpers — `initRun` does the bootstrap (crash-recovery, branch resolution, runId/rlog, runs-table init, agent-runner resolution, state-lock acquisition, initial state file, ctx construction); `finalizeRun` does the teardown (status persistence, lock release, PR creation, run_completed emit). The mutable `runtimeState` bag holds the bridge globals (currentContext, abortController, releaseLock, …) so orchestrator.ts and other modules can read them without circular setters.
  * Not: Does not own the per-mode dispatch (run() in orchestrator.ts decides loop vs build). Does not run the actual phases (those are stages/*).
- * Deps: createContext (context.ts), runs.* (audit init/finalize), git.{getCurrentBranch, createBranch, createPullRequest}, state.{loadState, saveState, updateState, createInitialState, acquireStateLock}, agent.createAgentRunner, dexConfig.loadDexConfig, log.{RunLogger, fallbackLog}.
+ * Deps: createContext (context.ts), runs.* (audit init/finalize), git.{getCurrentBranch, createBranch, createPullRequest}, state.{loadState, saveState, updateState, createInitialState, acquireStateLock}, agent.createAgentRunner (named-runner dispatch), dexConfig.loadDexConfig, log.{RunLogger, fallbackLog}.
  */
 
 import crypto from "node:crypto";
@@ -25,7 +25,7 @@ import {
   updateState,
   acquireStateLock,
 } from "./state.js";
-import { commitCheckpoint } from "./checkpoints.js";
+import { commitCheckpoint, ensureDexGitignore } from "./checkpoints.js";
 
 // ── Mutable bridge state (single source of truth for the live run) ──────────
 
@@ -64,6 +64,13 @@ export async function initRun(
     runs.reconcileCrashedRuns(config.projectDir);
   } catch (e) {
     log("WARN", "reconcileCrashedRuns failed", { error: (e as Error).message });
+  }
+  // Idempotent — re-runs every start to pick up new runtime-cache entries
+  // for projects that were initialized before a given entry was added.
+  try {
+    ensureDexGitignore(config.projectDir);
+  } catch (e) {
+    log("WARN", "ensureDexGitignore failed", { error: (e as Error).message });
   }
   runtimeState.abortController = new AbortController();
 
@@ -130,7 +137,7 @@ export async function initRun(
   const agentName = config.agent ?? dexCfg.agent;
   rlog.run("INFO", `run: resolving agent backend`, {
     agent: agentName,
-    source: config.agent ? "RunConfig" : "dex-config.json",
+    source: config.agent !== undefined ? "RunConfig" : "dex-config.json",
   });
   runtimeState.currentRunner = createAgentRunner(agentName, config, config.projectDir);
 

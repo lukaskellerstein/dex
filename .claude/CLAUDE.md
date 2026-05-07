@@ -19,7 +19,7 @@ Execute these steps in order. Do NOT skip steps.
 These actions are pre-approved. Run them yourself when the situation calls for it.
 
 - **Start / restart `dev-setup.sh`** when the dev server (Vite + Electron + CDP on port 9333) is down or stale. Run it in the background and wait for the readiness lines in `~/.dex/dev-logs/{vite,electron}.log`. Details: `.claude/rules/06-testing.md` § Step 2.
-- **Run `scripts/reset-example-to.sh`** (any mode — `pristine`, `clean`, `<checkpoint>`) against the `dex-ecommerce` example project. **Only** authorized against that one repo.
+- **Run `scripts/reset-example-to.sh`** (any mode — `initial`, `pristine`, `clean`, `<checkpoint>`, `list`) against the `dex-ecommerce` example project. **Only** authorized against that one repo. Note: `initial` force-pushes `origin/main` back to the root commit and deletes all non-main branches on origin — only use it when the scenario calls for a true blank slate.
 - **Run `scripts/prune-example-branches.sh`** and **`scripts/promote-checkpoint.sh`** against `dex-ecommerce`.
 - **Drive the running app via CDP** (`scripts/test-014-cdp.mjs` or `mcp__electron-chrome__*`) including state-mutating clicks against the dex-ecommerce session.
 

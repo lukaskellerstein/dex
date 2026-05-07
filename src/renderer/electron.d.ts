@@ -81,6 +81,7 @@ export interface DexAPI {
   readFile(filePath: string): Promise<string | null>;
   writeFile(filePath: string, content: string): Promise<boolean>;
   pickFolder(): Promise<string | null>;
+  pickGoalFile(defaultDir: string): Promise<string | null>;
   createProject(parentDir: string, name: string): Promise<{ path: string } | { error: string }>;
   openProjectPath(projectPath: string): Promise<{ path: string } | { error: string }>;
   pathExists(targetPath: string): Promise<boolean>;

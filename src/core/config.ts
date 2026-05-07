@@ -28,7 +28,8 @@ export interface RunConfig {
   // user Keep/Try again/Try N ways decision. Distinct from user_abort.
   stepMode?: boolean;
 
-  // Agent backend override (009). When set, wins over .dex/dex-config.json.
-  // Must match a name registered in AGENT_REGISTRY ("claude" | "mock" | future providers).
+  // Agent backend override. When set, wins over .dex/dex-config.json's
+  // `agent` field. Must match a name `createAgentRunner` knows about
+  // ("claude", "mock"; later "codex", "copilot").
   agent?: string;
 }

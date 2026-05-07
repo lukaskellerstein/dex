@@ -22,8 +22,6 @@ function writeConfig(projectDir: string, contents: string): void {
 }
 
 const VALID_CONFIG = {
-  enabled: true,
-  fixtureDir: "/abs/fixtures",
   prerequisites: { prerequisites: { delay: 0 } },
   clarification: {
     clarification_product: { delay: 0 },
@@ -56,8 +54,6 @@ test("MockConfig: loads a valid minimal config", () => {
   try {
     writeConfig(dir, JSON.stringify(VALID_CONFIG));
     const cfg = loadMockConfig(dir);
-    assert.equal(cfg.enabled, true);
-    assert.equal(cfg.fixtureDir, "/abs/fixtures");
     assert.equal(cfg.dex_loop.cycles.length, 1);
     assert.equal(cfg.dex_loop.cycles[0].feature.id, "f-001");
   } finally {
@@ -79,28 +75,6 @@ test("MockConfig: invalid JSON throws MockConfigParseError", () => {
   try {
     writeConfig(dir, "{ not json");
     assert.throws(() => loadMockConfig(dir), MockConfigParseError);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("MockConfig: missing 'enabled' throws MockConfigInvalidError", () => {
-  const dir = mkProject();
-  try {
-    const bad = { ...VALID_CONFIG };
-    delete (bad as Record<string, unknown>).enabled;
-    writeConfig(dir, JSON.stringify(bad));
-    assert.throws(() => loadMockConfig(dir), /missing required top-level key 'enabled'/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("MockConfig: non-boolean 'enabled' throws", () => {
-  const dir = mkProject();
-  try {
-    writeConfig(dir, JSON.stringify({ ...VALID_CONFIG, enabled: "yes" }));
-    assert.throws(() => loadMockConfig(dir), /'enabled' must be a boolean/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -128,21 +102,7 @@ test("MockConfig: cycle missing required stage throws", () => {
   }
 });
 
-test("MockConfig: writes entry with both 'from' and 'content' throws", () => {
-  const dir = mkProject();
-  try {
-    const bad = structuredClone(VALID_CONFIG);
-    (bad.dex_loop.cycles[0].stages.specify as Record<string, unknown>).writes = [
-      { path: "x.md", from: "y.md", content: "z" },
-    ];
-    writeConfig(dir, JSON.stringify(bad));
-    assert.throws(() => loadMockConfig(dir), /exactly one of 'from' or 'content'/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("MockConfig: writes entry with neither 'from' nor 'content' throws", () => {
+test("MockConfig: writes entry without 'content' throws", () => {
   const dir = mkProject();
   try {
     const bad = structuredClone(VALID_CONFIG);
@@ -150,7 +110,7 @@ test("MockConfig: writes entry with neither 'from' nor 'content' throws", () => 
       { path: "x.md" },
     ];
     writeConfig(dir, JSON.stringify(bad));
-    assert.throws(() => loadMockConfig(dir), /exactly one of 'from' or 'content'/);
+    assert.throws(() => loadMockConfig(dir), /\.content must be a string/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

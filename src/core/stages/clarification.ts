@@ -1,5 +1,5 @@
 /**
- * What: Phase A clarification — runs the 4-step interactive clarification flow (product → technical → synthesis → constitution) producing GOAL_clarified.md and a filled constitution. Skips entirely when prior specs already exist alongside a clarified plan.
+ * What: Phase A clarification — runs the 4-step interactive clarification flow (product → technical → synthesis → constitution) producing the clarified plan and a filled constitution. Caller supplies the four artefact paths (goal + 3 derivatives) so the basename `GOAL` is not hardcoded. Skips entirely when prior specs already exist alongside a clarified plan.
  * Not: Does not run gap-analysis or the per-feature implement loop. Does not own runStage — that lives in orchestrator.ts and is imported. Does not extract clarification questions; auto-clarification is signaled via `config.autoClarification` and consumed by the prompt builders, not here.
  * Deps: OrchestrationContext, RunConfig (for descriptionFile / autoClarification / model), runStage (from ../orchestrator.js — circular but call-time-safe), prompts.ts builders, phase-lifecycle.emitSkippedStep for synthetic skipped-step audit records.
  */
@@ -40,12 +40,21 @@ export async function runClarificationPhase(
     runId: string;
     goalPath: string;
     clarifiedPath: string;
+    productDomainPath: string;
+    technicalDomainPath: string;
     existingSpecsAtStart: string[];
     seedCumulativeCost: number;
   },
 ): Promise<{ fullPlanPath: string; cumulativeCost: number }> {
-  const { config, runId, goalPath, clarifiedPath, existingSpecsAtStart, seedCumulativeCost } = deps;
+  const {
+    config, runId, goalPath, clarifiedPath,
+    productDomainPath, technicalDomainPath,
+    existingSpecsAtStart, seedCumulativeCost,
+  } = deps;
   const { projectDir, emit, rlog } = ctx;
+  const productDomainName = path.basename(productDomainPath);
+  const technicalDomainName = path.basename(technicalDomainPath);
+  const clarifiedName = path.basename(clarifiedPath);
   let cumulativeCost = seedCumulativeCost;
   let fullPlanPath = "";
 
@@ -74,43 +83,43 @@ export async function runClarificationPhase(
   ctx.state.isClarifying = true;
 
   // Step 1: Product domain clarification
-  const productDomainPath = path.join(projectDir, "GOAL_product_domain.md");
   if (!fs.existsSync(productDomainPath)) {
     rlog.run("INFO", "runLoop: starting product domain clarification");
-    const prompt = buildProductClarificationPrompt(goalPath);
+    const prompt = buildProductClarificationPrompt(goalPath, productDomainPath);
     const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_product");
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
     if (!fs.existsSync(productDomainPath)) {
-      throw new Error("Product clarification completed but GOAL_product_domain.md not found");
+      throw new Error(`Product clarification completed but ${productDomainName} not found`);
     }
   } else {
-    rlog.run("INFO", "runLoop: GOAL_product_domain.md exists, skipping product clarification");
+    rlog.run("INFO", `runLoop: ${productDomainName} exists, skipping product clarification`);
     emitSkippedStep("clarification_product");
   }
 
   // Step 2: Technical domain clarification
   if (ctx.abort.signal.aborted) throw new AbortError();
-  const technicalDomainPath = path.join(projectDir, "GOAL_technical_domain.md");
   if (!fs.existsSync(technicalDomainPath)) {
     rlog.run("INFO", "runLoop: starting technical domain clarification");
-    const prompt = buildTechnicalClarificationPrompt(goalPath, productDomainPath);
+    const prompt = buildTechnicalClarificationPrompt(goalPath, productDomainPath, technicalDomainPath);
     const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_technical");
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
     if (!fs.existsSync(technicalDomainPath)) {
-      throw new Error("Technical clarification completed but GOAL_technical_domain.md not found");
+      throw new Error(`Technical clarification completed but ${technicalDomainName} not found`);
     }
   } else {
-    rlog.run("INFO", "runLoop: GOAL_technical_domain.md exists, skipping technical clarification");
+    rlog.run("INFO", `runLoop: ${technicalDomainName} exists, skipping technical clarification`);
     emitSkippedStep("clarification_technical");
   }
 
-  // Step 3: Synthesis → GOAL_clarified.md (with structured-output confirmation)
+  // Step 3: Synthesis → <stem>_clarified.md (with structured-output confirmation)
   if (ctx.abort.signal.aborted) throw new AbortError();
   if (!fs.existsSync(clarifiedPath)) {
     rlog.run("INFO", "runLoop: starting clarification synthesis");
-    const prompt = buildClarificationSynthesisPrompt(goalPath, productDomainPath, technicalDomainPath);
+    const prompt = buildClarificationSynthesisPrompt(
+      goalPath, productDomainPath, technicalDomainPath, clarifiedPath,
+    );
     const result = await runStage(
       config, prompt, emit, rlog, runId, 0, "clarification_synthesis", undefined,
       { type: "json_schema", schema: SYNTHESIS_SCHEMA as unknown as Record<string, unknown> },
@@ -130,10 +139,10 @@ export async function runClarificationPhase(
     }
 
     if (!fs.existsSync(clarifiedPath)) {
-      throw new Error("Synthesis completed but GOAL_clarified.md not found");
+      throw new Error(`Synthesis completed but ${clarifiedName} not found`);
     }
   } else {
-    rlog.run("INFO", "runLoop: GOAL_clarified.md exists, skipping synthesis");
+    rlog.run("INFO", `runLoop: ${clarifiedName} exists, skipping synthesis`);
     emitSkippedStep("clarification_synthesis");
   }
 
