@@ -2,6 +2,9 @@ node_modules
 dist
 .vite
 
+.playwright-mcp
+
+
 # Dex runtime cache — local only, never committed
 .dex/state.json
 .dex/state.lock

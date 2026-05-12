@@ -27,6 +27,13 @@ git branch -r | grep 'origin/dex/' # should list the same branches under origin/
 - [ ] After the action, `git branch -r` still lists it as `origin/dex/...` — the deletion did **not** propagate to the remote.
 - [ ] No other branch was affected — `main` is intact, and any other `dex/*` branches still exist both locally and on `origin`.
 
+## Pass / Fail criteria
+
+- **PASS** — every Definition-of-Done item above is satisfied AND no failure mode called out in step 3 was observed.
+- **FAIL** — any DoD item is unsatisfied, OR any failure mode triggered (UI silent failure, accidental remote deletion, wrong branch deleted), OR execution was aborted before verification completed.
+
+The Reporting section below MUST conclude with an explicit `PASS` or `FAIL` verdict on its own line. Do not omit the verdict, even if the run ended early — in that case report `FAIL` and explain where it stopped.
+
 ## Steps
 
 ### 1. Identify the branch to delete
@@ -80,3 +87,4 @@ Capture:
 - `git branch -a` output **before** and **after** the deletion (so the local-vs-origin state is visible side-by-side).
 - Any UI feedback shown after the delete (toast, confirmation, error).
 - Pass/fail status against each DoD item, with pointers to logs or screenshots backing each claim.
+- An explicit `PASS` or `FAIL` verdict on its own line at the end of the report, per the Pass / Fail criteria above.

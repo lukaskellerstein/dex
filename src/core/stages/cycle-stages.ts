@@ -12,7 +12,7 @@ import type { RunLogger } from "../log.js";
 import * as runs from "../runs.js";
 import { updateState } from "../state.js";
 import { parseTasksFile } from "../parser.js";
-import { appendLearnings } from "../manifest.js";
+import { appendLearnings, loadManifest, updateFeatureStatus } from "../manifest.js";
 import {
   buildVerifyPrompt,
   buildVerifyFixPrompt,
@@ -302,6 +302,17 @@ export async function runImplementVerifyLearnings(
   }
 
   if (abort.signal.aborted) throw new AbortError();
+
+  // Flip the manifest BEFORE the learnings checkpoint commit so the commit at
+  // [checkpoint:learnings:N] captures the feature as `completed`. If we wait
+  // until after IVL returns, fork-from-learnings sees an `active` feature with
+  // a specDir, gap_analysis takes the LLM/RESUME_FEATURE branch, and the
+  // resumed run re-iterates implement→verify→learnings.
+  if (verification.passed) {
+    const manifest = loadManifest(projectDir);
+    const entry = manifest?.features.find((f) => f.specDir === specDir);
+    if (entry) updateFeatureStatus(projectDir, entry.id, "completed");
+  }
 
   // ── Learnings ───────────────────────────────────────────────────────────
   state.currentStep = "learnings";

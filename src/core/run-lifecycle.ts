@@ -124,6 +124,11 @@ export async function initRun(
       status: "running",
       writerPid: process.pid,
       description: null,
+      descriptionFile: config.descriptionFile
+        ? path.isAbsolute(config.descriptionFile)
+          ? config.descriptionFile
+          : path.join(config.projectDir, config.descriptionFile)
+        : null,
       fullPlanPath: null,
       maxLoopCycles: config.maxLoopCycles ?? null,
       maxBudgetUsd: config.maxBudgetUsd ?? null,
@@ -243,16 +248,34 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
   // dirty-tree guard and pops the "Uncommitted changes" modal. Only emitted
   // for clean completion; stopped/aborted runs intentionally leave the tree
   // dirty so the user can inspect.
+  //
+  // Skip when the run made no progress (errored before any phase ran). Without
+  // this guard, a fast-fail run (missing goal file, resume on a stale branch,
+  // etc.) commits a "[checkpoint:completion:0] [feature:-]" commit on whatever
+  // branch HEAD happens to be — including main — leaving an orphan checkpoint
+  // in the tree that has to be hand-rolled back. The skeleton runs/<runId>.json
+  // stays in the working tree as untracked dirt; the next legitimate phase
+  // commit picks it up cleanly.
   if (!wasStopped && runtimeState.activeProjectDir) {
     try {
       const finalState = await loadState(config.projectDir);
       const cycle = finalState?.cyclesCompleted ?? 0;
       const specDir = finalState?.currentSpecDir ?? null;
-      const sha = commitCheckpoint(config.projectDir, "completion", cycle, specDir);
-      await updateState(config.projectDir, {
-        lastCommit: { sha, timestamp: new Date().toISOString() },
-      });
-      rlog.run("INFO", `run: completion checkpoint committed`, { sha, cycle });
+      const madeProgress =
+        taskPhasesCompleted > 0 ||
+        cycle > 0 ||
+        (finalState?.lastCompletedStep ?? null) !== null;
+      if (!madeProgress) {
+        rlog.run("INFO", "run: skipping completion checkpoint — no progress to commit");
+      } else {
+        const sha = commitCheckpoint(config.projectDir, "completion", cycle, specDir);
+        // Intentional: do NOT write state.lastCommit here. The commit already
+        // captured state.json (with lastCommit = prior stage's sha); writing
+        // the completion sha now would re-dirty the working tree that this
+        // very commit was added to clean up. checkGitDrift() forwards
+        // lastCommit to HEAD on next load — see state.ts:482-498.
+        rlog.run("INFO", `run: completion checkpoint committed`, { sha, cycle });
+      }
     } catch (e) {
       rlog.run("WARN", "run: completion checkpoint commit failed", {
         error: (e as Error).message,

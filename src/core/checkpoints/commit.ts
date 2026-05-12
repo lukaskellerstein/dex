@@ -1,12 +1,12 @@
 /**
- * What: commitCheckpoint — produces a structured-message --allow-empty commit for one stage; readPauseAfterStage — reads the per-project step-mode flag from .dex/state.json.
+ * What: commitCheckpoint — produces a structured-message --allow-empty commit for one stage; readPauseAfterStage — reads the per-developer step-mode flag from .dex/ui.json.
  * Not: Does not tag the commit. Does not auto-promote. Does not decide whether to commit; that's the orchestrator's call.
- * Deps: node:child_process (raw execSync — both for stdin pipe on commit and for stderr-silenced `git add`), ../git.js (getHeadSha), ../state.js (loadState).
+ * Deps: node:child_process (raw execSync — both for stdin pipe on commit and for stderr-silenced `git add`), ../git.js (getHeadSha), ../uiPrefs.js (loadUiPrefs).
  */
 
 import { execSync } from "node:child_process";
 import { getHeadSha } from "../git.js";
-import { loadState } from "../state.js";
+import { loadUiPrefs } from "../uiPrefs.js";
 
 /**
  * Stage one pathspec, tolerating "did not match any files" without leaking
@@ -42,10 +42,13 @@ export function commitCheckpoint(
     `[checkpoint:${stage}:${cycleNumber}]`;
 
   // Explicit allow-list of committable Dex artifacts. Anything else under
-  // `.dex/` (state.json, state.lock, feature-manifest.json, dex-config.json,
-  // mock-config.json) is per-developer / runtime and stays out of git via
-  // `.gitignore` (managed by `initRepo`). Add to this list when introducing
-  // a new committable artifact.
+  // `.dex/` (state.lock, ui.json, dex-config.json, mock-config.json) is
+  // per-developer / runtime and stays out of git via `.gitignore` (managed by
+  // `ensureDexGitignore`). state.json + feature-manifest.json travel with
+  // the branch so `git checkout` restores them on Timeline-driven jumps.
+  // Add to this list when introducing a new committable artifact.
+  tryStage(projectDir, ".dex/state.json");
+  tryStage(projectDir, ".dex/feature-manifest.json");
   tryStage(projectDir, ".dex/learnings.md");
   tryStage(projectDir, ".dex/runs/");
 
@@ -65,14 +68,15 @@ export function commitCheckpoint(
 }
 
 /**
- * Read the per-project step-mode flag (`.dex/state.json` `ui.pauseAfterStage`).
+ * Read the per-developer step-mode flag (`.dex/ui.json` `pauseAfterStage`).
  * Returns false on any IO error. The orchestrator pauses after each stage when
- * either this flag or `RunConfig.stepMode` is true.
+ * either this flag or `RunConfig.stepMode` is true. Lives in ui.json (gitignored)
+ * rather than state.json (now committed) so the toggle stays per-machine.
  */
 export async function readPauseAfterStage(projectDir: string): Promise<boolean> {
   try {
-    const s = await loadState(projectDir);
-    return Boolean(s?.ui?.pauseAfterStage);
+    const prefs = await loadUiPrefs(projectDir);
+    return Boolean(prefs.pauseAfterStage);
   } catch {
     return false;
   }

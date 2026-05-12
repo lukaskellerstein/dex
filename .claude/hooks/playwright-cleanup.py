@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-SessionEnd hook: Close all chrome-devtools-mcp browser windows.
+SessionEnd hook: Close all Playwright browser windows.
 
-Finds all MCP-spawned browser windows (via process tree verification)
+Finds all Playwright-spawned browser windows (via process tree verification)
 and closes them. User-opened browsers are left untouched.
 """
 
@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Optional
 
 # Browser window classes to track
-BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome", "Electron")
+BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome")
 
-# Process names that indicate a chrome-devtools-mcp-spawned browser
-MCP_PROCESS_INDICATORS = ["chrome-devtools", "playwright", "npx", "node", "npm"]
+# Process names that indicate a Playwright-spawned browser
+PLAYWRIGHT_PROCESS_INDICATORS = ["playwright", "npx", "node", "npm"]
 
 
 def get_pid_from_window_id(window_id: int) -> Optional[int]:
@@ -97,15 +97,15 @@ def get_process_ancestors(pid: int) -> list[str]:
     return ancestors
 
 
-def is_mcp_browser(pid: int) -> bool:
-    """Check if a Chrome/Chromium process was spawned by chrome-devtools-mcp."""
+def is_playwright_browser(pid: int) -> bool:
+    """Check if a Chrome/Chromium process was spawned by Playwright."""
     if not pid:
         return False
 
     ancestors = get_process_ancestors(pid)
 
     for ancestor in ancestors:
-        for indicator in MCP_PROCESS_INDICATORS:
+        for indicator in PLAYWRIGHT_PROCESS_INDICATORS:
             if indicator in ancestor:
                 return True
 
@@ -134,9 +134,9 @@ def main():
     # Get all browser windows
     windows = get_all_browser_windows()
 
-    # Close all MCP-spawned browsers
+    # Close all Playwright-spawned browsers
     for window in windows:
-        if is_mcp_browser(window["pid"]):
+        if is_playwright_browser(window["pid"]):
             close_container(window["con_id"])
 
     sys.exit(0)

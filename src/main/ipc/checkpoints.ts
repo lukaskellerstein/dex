@@ -78,15 +78,16 @@ function gitExecSilent(cmd: string, projectDir: string): string {
 }
 
 /**
- * Post-promote on-disk cleanup. After a successful squash-merge to main,
- * the just-shipped run's `state.json` is no longer relevant — the Steps
- * tab should fall back to the "no run yet" view. `state.json` is gitignored
- * (runtime cache), so unlinking it doesn't affect `git status`.
+ * Post-promote on-disk cleanup. The squash-merge flow drops both
+ * `.dex/state.json` and `.dex/feature-manifest.json` from the merge commit
+ * itself (`git rm -f --ignore-unmatch` before `git commit`), so on success
+ * both files are gone from the working tree post-merge — Steps tab falls
+ * back to "no run yet" naturally.
  *
- * `.dex/feature-manifest.json` is handled separately: the merge flow drops
- * it from the squash commit itself (`git rm -f --ignore-unmatch` before the
- * `git commit`), so on success the file is gone from both `main` and the
- * working tree without leaving an orphan "deleted" entry in `git status`.
+ * This function is the safety net for the edge case where state.json existed
+ * in the working tree but wasn't tracked at squash time (fresh project, no
+ * checkpoint commit yet) — `git rm --ignore-unmatch` skips untracked paths,
+ * so we may need to fs.unlink the leftover working-tree copy.
  *
  * Audit trail in `.dex/runs/<runId>.json` and `.dex/learnings.md` are
  * preserved — those are cumulative across specs.
@@ -291,13 +292,12 @@ export function registerCheckpointsHandlers(): void {
           }
           const subject = `dex: promoted ${pending.sourceBranch} to ${pending.primary}`;
           gitExec(`git add -A`, projectDir);
-          // Drop `.dex/feature-manifest.json` from the commit — same reason
-          // as the clean-merge path in branchOps.mergeToMain: per-spec scratch
-          // that doesn't belong on `main`, and folding the removal in here
-          // means no orphan "deleted" entry in `git status` post-promote.
-          // `--ignore-unmatch` is no-op-safe when the file was never tracked.
+          // Drop per-spec runtime files from the commit — same reason as the
+          // clean-merge path in branchOps.mergeToMain: per-spec scratch that
+          // doesn't belong on `main`. `--ignore-unmatch` is no-op-safe when
+          // a file was never tracked (legacy-branch safety net).
           try {
-            gitExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json`, projectDir);
+            gitExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`, projectDir);
           } catch {
             // best-effort — fall through to commit
           }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PreToolUse hook: Record existing Chrome/Chromium windows before navigate_page.
+PreToolUse hook: Record existing Chrome/Chromium windows before browser_navigate.
 
 Stores the list of con_ids in a temp file keyed by tool_use_id.
 The PostToolUse hook will use this to identify the new window.
@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-TEMP_DIR = Path("/tmp/chrome-mcp-hooks")
+TEMP_DIR = Path("/tmp/playwright-hooks")
 
 # Browser window classes to track
 BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome", "Electron")

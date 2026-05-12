@@ -34,6 +34,7 @@ import {
   reconcileState,
   updateState,
 } from "./state.js";
+import * as runs from "./runs.js";
 
 // Re-exports for IPC + stage modules. Keeps "./orchestrator.js" as the single
 // import point for external consumers — extracted modules can move freely
@@ -131,16 +132,80 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
 
 // ── Loop Mode Runner ───────────────────────────────────────────────────────
 
+/**
+ * Resolve the loop's goal file. Precedence:
+ *   1. config.descriptionFile (resolved against projectDir if relative)
+ *   2. state.json's persisted `config.descriptionFile` — committed alongside
+ *      step checkpoints (014 fork-resume reconciliation), so a Timeline jump
+ *      restores the goal that was active at the fork point. Critical for
+ *      preventing cross-goal contamination when prior runs used different
+ *      goals.
+ *   3. <projectDir>/GOAL.md
+ *   4. The descriptionFile of the most recent prior run record on disk —
+ *      last-resort safety net when state.json is absent (fresh project, no
+ *      prior run on this branch).
+ *
+ * Throws a clear error listing all probed paths if nothing resolves.
+ */
+function resolveGoalPath(config: RunConfig, rlog: import("./log.js").RunLogger): string {
+  const tried: string[] = [];
+
+  if (config.descriptionFile) {
+    const explicit = path.isAbsolute(config.descriptionFile)
+      ? config.descriptionFile
+      : path.join(config.projectDir, config.descriptionFile);
+    tried.push(explicit);
+    if (fs.existsSync(explicit)) return explicit;
+  }
+
+  // state.json now travels with the branch (post-014). Prefer its persisted
+  // descriptionFile over GOAL.md / prior runs so fork-resume picks up the
+  // correct goal even when other goals exist in the repo. Mirrors the raw
+  // read pattern in src/renderer/hooks/useLoopStartForm.ts.
+  const stateFile = path.join(config.projectDir, ".dex", "state.json");
+  if (fs.existsSync(stateFile)) {
+    try {
+      const persisted = JSON.parse(fs.readFileSync(stateFile, "utf-8"))?.config?.descriptionFile;
+      if (typeof persisted === "string" && persisted.length > 0) {
+        const abs = path.isAbsolute(persisted) ? persisted : path.join(config.projectDir, persisted);
+        tried.push(abs);
+        if (fs.existsSync(abs)) {
+          rlog.run("INFO", "runLoop: using goal from state.json", { goal: abs });
+          return abs;
+        }
+      }
+    } catch {
+      // malformed state.json — fall through to remaining fallbacks
+    }
+  }
+
+  const defaultGoal = path.join(config.projectDir, "GOAL.md");
+  tried.push(defaultGoal);
+  if (fs.existsSync(defaultGoal)) return defaultGoal;
+
+  const recovered = runs
+    .listRuns(config.projectDir)
+    .map((r) => r.descriptionFile)
+    .find((p): p is string => !!p && fs.existsSync(p));
+  if (recovered) {
+    rlog.run("INFO", "runLoop: recovered goal file from prior run record", { recovered });
+    return recovered;
+  }
+
+  throw new Error(
+    `Loop mode requires a goal file. Probed: ${tried.join(", ")}. ` +
+      `Set config.descriptionFile, place GOAL.md in ${config.projectDir}, ` +
+      `or run again on a project with prior run history.`,
+  );
+}
+
 async function runLoop(
   config: RunConfig,
   emit: EmitFn,
   runId: string,
   rlog: import("./log.js").RunLogger,
 ): Promise<{ taskPhasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
-  const goalPath = config.descriptionFile ?? path.join(config.projectDir, "GOAL.md");
-  if (!fs.existsSync(goalPath)) {
-    throw new Error(`Loop mode requires goal file at ${goalPath}`);
-  }
+  const goalPath = resolveGoalPath(config, rlog);
   const goalPaths = deriveGoalPaths(goalPath);
 
   // Detect stale state from a different branch or completed run.

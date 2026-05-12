@@ -21,10 +21,6 @@ type DeepPartial<T> = {
 
 type PauseReason = "user_abort" | "step_mode" | "budget" | "failure";
 
-interface DexUiPrefs {
-  pauseAfterStage?: boolean;
-}
-
 export interface DexState {
   version: 1;
   runId: string;
@@ -67,9 +63,6 @@ export interface DexState {
 
   // Reason for status === "paused" (typed; present iff paused).
   pauseReason?: PauseReason;
-
-  // Session UI preferences — Record mode, Pause-after-stage toggles.
-  ui?: DexUiPrefs;
 
   // Timestamps
   startedAt: string;
@@ -310,6 +303,10 @@ function stripRemovedFields(raw: Record<string, unknown>): DexState | null {
     raw.currentTaskPhaseNumber = raw.currentPhaseNumber;
     delete raw.currentPhaseNumber;
   }
+  // Post-014 (this fix): UI prefs moved to `<projectDir>/.dex/ui.json` so
+  // state.json can be committed without leaking machine-specific toggles.
+  // Drop the legacy `ui` field silently from older payloads.
+  delete raw.ui;
   return raw as unknown as DexState;
 }
 

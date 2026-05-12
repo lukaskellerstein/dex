@@ -44,10 +44,21 @@ cat /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce/.dex/dex-config.j
 
 - [ ] Agent backend is confirmed with the user and `.dex/dex-config.json` reflects the choice before the loop runs.
 - [ ] Clicking a **historical** commit (not the branch tip) in the Timeline creates a new `selected-<ts>` branch locally, with HEAD checked out at the chosen commit.
+- [ ] After the fork, the **Timeline tab** displays the new `selected-<ts>` branch in the graph (visually distinct from the original `dex/*` branch).
+- [ ] After the fork, the **Steps tab** reflects the orchestrator state **at the fork-point commit** — correct phase, correct step, matching the `[checkpoint:<stage>:<cycle>]` stamp on that commit. It must not still be showing the state at the original branch tip.
 - [ ] Clicking **Start** on the loop dashboard kicks off a run on the `selected-<ts>` branch.
+- [ ] While the continuation run is in progress, clicking **Pause** transitions the Steps tab into a coherent paused state: **exactly one** step (the one currently running) shows the paused indicator; no steps are rendered with strikethrough/crossed-out styling; previously-completed steps remain green; not-yet-started steps remain unstyled grey. No step before the currently-running one may be drawn as skipped.
 - [ ] New commits produced by the loop land on the `selected-<ts>` branch.
 - [ ] The **original** `dex/*` branch tip is unchanged — `git rev-parse <original-dex-branch>` returns the same SHA before and after the run.
 - [ ] `git status` is clean after the run completes (no orphaned working-tree changes).
+- [ ] After fully closing and reopening the Dex app on the same project, the app restores into the `selected-<ts>` branch context: the **Resume** button is visible in the loop dashboard header, the **Steps tab** reflects the persisted phase/step state (same content as before the close), and the **Timeline tab** still draws the `selected-<ts>` branch in the graph. The Steps tab must NOT regress to the "Autonomous Loop / Start Autonomous Loop" empty-run screen.
+
+## Pass / Fail criteria
+
+- **PASS** — every Definition-of-Done item above is satisfied AND no failure mode called out in steps 2–4 was observed.
+- **FAIL** — any DoD item is unsatisfied, OR any failure mode triggered (no fork, HEAD didn't move, Steps tab didn't update, commits on wrong branch, loop refused to start with state-mismatch), OR execution was aborted before verification completed.
+
+The Reporting section below MUST conclude with an explicit `PASS` or `FAIL` verdict on its own line. Do not omit the verdict, even if the run ended early — in that case report `FAIL` and explain where it stopped.
 
 ## Steps
 
@@ -73,7 +84,19 @@ Make sure the dev server is running (06-testing.md § 4c Step 2). Open the app, 
 
 Navigate to the **Timeline** view. Locate the original `dex/*` branch in the graph and click the historical commit you picked in step 1. The 010-interactive-timeline behavior must mint a `selected-<ts>` branch at that commit and switch HEAD to it.
 
-Verify immediately, without leaving the UI:
+**Before** clicking Start, verify the UI reflects the fork — both tabs:
+
+1. **Timeline tab** — the graph now shows a new `selected-<ts>` branch diverging from the original `dex/*` branch at the chosen commit. The original `dex/*` branch is still drawn (unchanged); the new branch is visually distinct (own color / lane / label). Capture a snapshot.
+
+2. **Steps tab** — the phase/step view now shows the orchestrator state **at the fork-point commit**, not at the original branch tip. Cross-check by reading the `[checkpoint:<stage>:<cycle>]` stamp on the fork-point commit (substitute the SHA you recorded in step 1):
+
+   ```bash
+   git log -1 --pretty=%B <fork-point-sha> | grep -E '^\[checkpoint:'
+   ```
+
+   The Steps tab must show that same `<stage>` as the most recent completed step in `<cycle>`, with subsequent steps unmarked. If the Steps tab is still showing the original branch tip's state (a later stage / later cycle), the fork did not propagate to the orchestrator state — flag this as a bug and capture a screenshot.
+
+Then verify at the git level:
 
 ```bash
 cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
@@ -82,13 +105,31 @@ git rev-parse HEAD                      # should equal the fork-point commit SHA
 git branch | grep '^[[:space:]]*selected-'   # should list exactly one selected-* branch
 ```
 
-Capture a snapshot of the Timeline UI showing the new branch.
-
 ### 3. Continue the loop from the selected branch
 
 On the loop dashboard, click **Start** (or **Resume** — whichever label the UI shows for the selected-* branch state).
 
 Observe via UI snapshots, `~/.dex/dev-logs/electron.log`, and `~/.dex/logs/dex-ecommerce/<runId>/` until the loop reaches a terminal stage. Confirm `status: succeeded` via the DEBUG badge or `<projectDir>/.dex/runs/<runId>.json`.
+
+### 3a. Exercise Pause mid-run and verify the Steps tab
+
+**While the continuation run is still in progress** (i.e. before the loop terminates in step 3), click the **Pause** button in the loop dashboard. Capture a snapshot of the Steps tab while paused.
+
+Verify the rendering rules:
+
+- **Exactly one** step displays the paused indicator — the step the orchestrator was executing when Pause was hit. Reading `<projectDir>/.dex/state.json` (`currentStage`, `currentCycle`) tells you which step that should be.
+- No step in the Steps tab is rendered with strikethrough or crossed-out styling. Skipped/strikethrough state is not a valid visual for a paused run — steps that have not yet started must render as plain unstyled grey items.
+- All steps **before** the paused step are green/completed.
+- All steps **after** the paused step are unstyled grey (not started).
+- The cycle headers above the paused cycle are all green; the paused cycle's header shows the in-progress indicator.
+
+Failure modes to flag explicitly:
+
+- Two or more steps show the paused indicator (e.g. both `Implement` and `Verify` paused at the same time) → state machine is reporting multiple in-flight steps; bug in pause-stage broadcast or in the Steps-tab reducer.
+- A step earlier than the paused step is rendered as strikethrough/crossed-out → Steps tab is misclassifying a completed step as skipped.
+- The paused indicator lands on a step that does not match `state.json::currentStage` → renderer is inferring stage from a stale event.
+
+Then click **Resume** and let the run finish before moving to step 4. Re-snapshot the Steps tab once the run completes; all steps and cycles up to the terminal stage must be green, none crossed.
 
 ### 4. Verify the new commits landed on the selected branch
 
@@ -117,6 +158,26 @@ Failure modes to flag explicitly:
 - New commits landed on the original `dex/*` branch (its SHA changed) → the orchestrator did not honour the selected branch; bug in the resume-on-selected-* path.
 - Loop refused to start with an empty-branch / state mismatch error → orchestrator state reconciliation didn't pick up the fork; check `~/.dex/logs/.../run.log` for the relevant detection lines.
 
+### 5. Close and reopen the app — verify state restoration on the selected branch
+
+Fully close the Dex app (window close, not just minimize). Confirm via `pgrep -fa "electron .*dex"` that the main process has exited. Then re-launch via `dev-setup.sh` (per 06-testing.md § 4c Step 2) and re-open the `dex-ecommerce` project from the welcome screen.
+
+Verify on landing:
+
+- The breadcrumb / branch indicator at the top of the loop dashboard reads `selected-<ts>` (the same branch you forked onto in step 2). `git -C /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce branch --show-current` independently confirms HEAD.
+- The loop dashboard header shows a **Resume** button (purple, top-right). It must NOT show the "Autonomous Loop / Start Autonomous Loop" empty-run kickoff screen.
+- The **Steps tab** shows the same persisted phase/step structure that was visible before the close — the same cycle expansion state, the same completed/in-progress/paused markers, the same cycle count. An empty Steps tab pointing at the "Start Autonomous Loop" form is a regression.
+- The **Timeline tab** still draws the `selected-<ts>` branch in the graph at the fork-point commit.
+
+Capture snapshots of (1) the loop dashboard header showing Resume, (2) the Steps tab, (3) the Timeline tab.
+
+Failure modes to flag explicitly:
+
+- After reopen, the Steps tab shows the "Autonomous Loop / Start Autonomous Loop" kickoff form → state.json/runs/<runId>.json was not rehydrated for the `selected-<ts>` branch; check `<projectDir>/.dex/state.json` and `<projectDir>/.dex/runs/` on disk to confirm the artifacts still exist, then walk the renderer's project-load path.
+- After reopen, the Resume button is missing but the Steps tab does show data → header is not reading the persisted run state; bug in the loop-dashboard header logic.
+- After reopen, HEAD is on `main` or on the original `dex/*` branch instead of `selected-<ts>` → app restoration is checking out a different branch than the one in use at close. Compare against the value the DEBUG badge reported just before close.
+- After reopen, `selected-<ts>` no longer exists locally (`git branch | grep selected-` is empty) → branch was pruned on shutdown; check the timeline-fork lifecycle code in `src/core/checkpoints/branchOps.ts` for any auto-cleanup paths that fire on app close.
+
 ## Reporting
 
 Capture:
@@ -126,5 +187,11 @@ Capture:
 - New `selected-<ts>` branch name.
 - New commits the loop produced on the selected branch (`git log --oneline $SELECTED ^$LATEST_DEX`).
 - Run id, terminal stage, run status for the continuation run.
-- UI snapshots: Timeline at fork moment, post-run state.
+- UI snapshots:
+  - **Timeline tab** immediately after the fork — showing the new `selected-<ts>` branch alongside the original `dex/*` branch.
+  - **Steps tab** immediately after the fork — showing the phase/step state at the fork-point commit.
+  - **Steps tab while paused** during the continuation run (step 3a) — showing exactly one paused step and no crossed-out steps.
+  - Timeline tab post-run — showing the new commits stacked on `selected-<ts>`.
+  - Loop dashboard header + Steps tab + Timeline tab **after close/reopen** (step 5) — showing Resume button, persisted step state, and `selected-<ts>` still drawn.
 - Pass/fail status against each DoD item, with pointers to logs / screenshots backing each claim.
+- An explicit `PASS` or `FAIL` verdict on its own line at the end of the report, per the Pass / Fail criteria above.

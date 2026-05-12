@@ -23,7 +23,7 @@
       "WebSearch",
       "Write",
       "Monitor",
-      "mcp__electron-chrome",
+      "mcp__electron-playwright",
       "mcp__plugin_media-plugin_media-mcp",                                                                                                        
       "mcp__plugin_media-plugin_ElevenLabs",                                                                                                       
       "mcp__plugin_media-plugin_mermaid",                                                                                                          
@@ -202,7 +202,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__electron-chrome__navigate_page",
+        "matcher": "mcp__electron-playwright__browser_navigate",
         "hooks": [
           {
             "type": "command",
@@ -211,11 +211,11 @@
         ]
       },
       {
-        "matcher": "mcp__electron-chrome__(navigate_page|evaluate_script|take_snapshot)",
+        "matcher": "mcp__electron-playwright__browser_(navigate|run_code|snapshot)",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/chrome-pre-navigate.py\"",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/playwright-pre-navigate.py\"",
             "timeout": 5
           }
         ]
@@ -223,11 +223,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__electron-chrome__(navigate_page|evaluate_script|take_snapshot)",
+        "matcher": "mcp__electron-playwright__browser_(navigate|run_code|snapshot)",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/chrome-post-navigate.py\"",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/playwright-post-navigate.py\"",
             "timeout": 10
           }
         ]
@@ -238,7 +238,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/chrome-cleanup.py\"",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/playwright-cleanup.py\"",
             "timeout": 10
           }
         ]

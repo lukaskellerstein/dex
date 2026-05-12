@@ -30,6 +30,13 @@ Before kicking off the run, the executing agent **must**:
 - [ ] The `dex/*` branch from spec 002 is merged into `main` via the in-app merge UI.
 - [ ] After both merges, `main` contains the implementation of both specs, with no orphaned working-tree changes and no unresolved conflicts.
 
+## Pass / Fail criteria
+
+- **PASS** — every Definition-of-Done item above is satisfied AND no failure mode called out in the Steps section was observed.
+- **FAIL** — any DoD item is unsatisfied, OR any failure mode triggered, OR execution was aborted before all steps completed.
+
+The Reporting section below MUST conclude with an explicit `PASS` or `FAIL` verdict on its own line. Do not omit the verdict, even if the run ended early — in that case report `FAIL` and explain where it stopped.
+
 ## Reset
 
 Use the `initial` mode — this scenario needs a fully clean slate including `origin`:
@@ -115,4 +122,4 @@ For each step, capture:
 - Any failures, retries, or surprising behaviour observed (with log paths).
 - Confirmation that the DoD item for that step is satisfied.
 
-At the end, report which DoD items pass and which (if any) fail, with pointers to the specific log files or UI screenshots that support each claim.
+At the end, report which DoD items pass and which (if any) fail, with pointers to the specific log files or UI screenshots that support each claim. Conclude with an explicit `PASS` or `FAIL` verdict on its own line, per the Pass / Fail criteria above.

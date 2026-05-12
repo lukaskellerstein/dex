@@ -391,12 +391,12 @@ export class MockAgentRunner implements AgentRunner {
 
     // Mirror what a real agent does at the end of its work — stage everything
     // so the orchestrator's next commitCheckpoint captures the files the mock
-    // just wrote. commitCheckpoint itself only git-adds .dex/feature-manifest.json
-    // and .dex/learnings.md, so without this the spec files (spec.md/plan.md/
-    // tasks.md) and implement outputs (src/mock/*.ts) would sit uncommitted in
-    // the working tree and every checkpoint commit after specify would be empty.
-    // gitignored files (.dex/state.json, .dex/state.lock, etc.) are skipped
-    // automatically by `git add -A`.
+    // just wrote. commitCheckpoint git-adds .dex/state.json,
+    // .dex/feature-manifest.json, .dex/learnings.md, and .dex/runs/, so
+    // without this `git add -A` the spec files (spec.md/plan.md/tasks.md)
+    // and implement outputs (src/mock/*.ts) would sit uncommitted in the
+    // working tree and every checkpoint commit after specify would be empty.
+    // Per-developer files (.dex/state.lock, .dex/ui.json) stay gitignored.
     if ((descriptor.writes && descriptor.writes.length) || (descriptor.appends && descriptor.appends.length)) {
       try {
         execSync("git add -A", { cwd: this.projectDir, stdio: "pipe" });

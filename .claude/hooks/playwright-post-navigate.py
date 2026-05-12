@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-PostToolUse hook: Move chrome-devtools-mcp browser windows to workspace 100+.
+PostToolUse hook: Move Playwright browser windows to workspace 100+.
 
-Finds all MCP-spawned browser windows (via process tree verification)
+Finds all Playwright-spawned browser windows (via process tree verification)
 and moves any that are NOT already on workspace 100-120.
-This ensures both new and existing MCP windows get moved,
+This ensures both new and existing Playwright windows get moved,
 while leaving user-opened browsers untouched.
 """
 
@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-TEMP_DIR = Path("/tmp/chrome-mcp-hooks")
+TEMP_DIR = Path("/tmp/playwright-hooks")
 WORKSPACE_MIN = 100
 WORKSPACE_MAX = 120
 WINDOW_APPEAR_DELAY = 0.5  # seconds to wait for window to appear
@@ -23,8 +23,8 @@ WINDOW_APPEAR_DELAY = 0.5  # seconds to wait for window to appear
 # Browser window classes to track
 BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome", "Electron")
 
-# Process names that indicate a chrome-devtools-mcp-spawned browser
-MCP_PROCESS_INDICATORS = ["chrome-devtools", "playwright", "npx", "node", "npm"]
+# Process names that indicate a Playwright-spawned browser
+PLAYWRIGHT_PROCESS_INDICATORS = ["playwright", "npx", "node", "npm"]
 
 
 def get_pid_from_window_id(window_id: int) -> Optional[int]:
@@ -116,24 +116,24 @@ def get_process_ancestors(pid: int) -> list[str]:
     return ancestors
 
 
-def is_mcp_browser(pid: int) -> bool:
-    """Check if a Chrome/Chromium process was spawned by chrome-devtools-mcp."""
+def is_playwright_browser(pid: int) -> bool:
+    """Check if a Chrome/Chromium process was spawned by Playwright."""
     if not pid:
         return False
 
     ancestors = get_process_ancestors(pid)
 
-    # Check if any ancestor is an MCP-related process
+    # Check if any ancestor is a Playwright-related process
     for ancestor in ancestors:
-        for indicator in MCP_PROCESS_INDICATORS:
+        for indicator in PLAYWRIGHT_PROCESS_INDICATORS:
             if indicator in ancestor:
                 return True
 
     return False
 
 
-def is_on_mcp_workspace(workspace: Optional[int]) -> bool:
-    """Check if a workspace number is in the MCP workspace range (100-120)."""
+def is_on_playwright_workspace(workspace: Optional[int]) -> bool:
+    """Check if a workspace number is in the Playwright workspace range (100-120)."""
     if workspace is None:
         return False
     return WORKSPACE_MIN <= workspace <= WORKSPACE_MAX
@@ -219,20 +219,21 @@ def main():
     # Get current browser windows (with PIDs and workspaces)
     current_windows = get_all_browser_windows()
 
-    # Find MCP browser windows that are NOT already on workspace 100+
+    # Find Playwright browser windows that are NOT already on workspace 100+
     windows_to_move = []
     for window in current_windows:
-        # Skip windows already on MCP workspace (100-120)
-        if is_on_mcp_workspace(window.get("workspace")):
+        # Skip windows already on Playwright workspace (100-120)
+        if is_on_playwright_workspace(window.get("workspace")):
             continue
-        # Only move windows that are MCP-spawned (not user-opened browsers)
-        if is_mcp_browser(window["pid"]):
+        # Only move windows that are Playwright-spawned (not user-opened browsers)
+        if is_playwright_browser(window["pid"]):
             windows_to_move.append(window["con_id"])
 
     if not windows_to_move:
+        # No Playwright windows need moving
         sys.exit(0)
 
-    # Move MCP windows to available workspace in 100-120 range
+    # Move Playwright windows to available workspace in 100-120 range
     target_ws = get_available_workspace()
     for con_id in windows_to_move:
         move_container(con_id, target_ws)

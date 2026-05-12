@@ -109,7 +109,8 @@ export type TerminationReason =
   | "gaps_complete"
   | "budget_exceeded"
   | "max_cycles_reached"
-  | "user_abort";
+  | "user_abort"
+  | "consecutive_failures";
 
 export interface LoopTermination {
   reason: TerminationReason;

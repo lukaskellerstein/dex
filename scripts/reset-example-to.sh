@@ -62,9 +62,13 @@ case "$ARG" in
       echo "$LOCAL_BRANCHES" | xargs git branch -D
     fi
 
+    # `git for-each-ref refs/remotes/origin` includes the symbolic `origin/HEAD`,
+    # which becomes the literal short-name `origin` after stripping `origin/` —
+    # filter it out alongside HEAD/main so we don't try to `git push origin --delete origin`
+    # (which aborts the entire delete batch).
     REMOTE_BRANCHES=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin \
       | sed 's|^origin/||' \
-      | grep -Ev '^(HEAD|main)$' || true)
+      | grep -Ev '^(HEAD|main|origin)$' || true)
     if [ -n "$REMOTE_BRANCHES" ]; then
       echo "deleting remote branches:"
       echo "$REMOTE_BRANCHES"

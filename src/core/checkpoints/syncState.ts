@@ -1,5 +1,5 @@
 /**
- * What: Post-jumpTo state.json reconciliation from HEAD's step-commit subject. Reads HEAD's commit subject; if it's a canonical `[cycle:N]` step-commit, writes the derived position cursor (lastCompletedStep, currentCycleNumber, cyclesCompleted, currentSpecDir, status=paused) into `<projectDir>/.dex/state.json` so the orchestrator's existing Resume flow picks up wherever the user navigated.
+ * What: Post-jumpTo state.json reconciliation. Forces `status=paused` and overrides `currentSpecDir` when HEAD's commit subject names a different feature than the loaded state. Most cursor fields (lastCompletedStep, currentCycleNumber, cyclesCompleted) now ride the committed state.json restored by `git checkout`, so this function only touches the slice that can still drift across the jump.
  * Not: Does not commit. Does not own subject parsing for any other consumer (timeline.ts has its own pending-candidate regex). Does not migrate state.
  * Deps: _helpers (gitExec, log, RunLoggerLike), ../state.js (loadState, updateState, DexState), ../types.js (StepType).
  */
@@ -10,11 +10,22 @@ import type { DexState } from "../state.js";
 import type { StepType } from "../types.js";
 
 /**
- * Read HEAD's commit subject; if it's a canonical step-commit, write the
- * derived position cursor into `<projectDir>/.dex/state.json`. After a
- * Timeline-driven jumpTo + this sync, the orchestrator's existing Resume
- * flow picks up from wherever the user navigated rather than where state.json
- * was last frozen. No-op when HEAD isn't on a step-commit (e.g., main's tip).
+ * Force the loaded state into the `paused` status so the orchestrator's
+ * Resume flow takes the resume path. If HEAD is on a step-commit and its
+ * `[feature:<slug>]` differs from the loaded state's `currentSpecDir`,
+ * override that field too — this catches the rare edge case where HEAD
+ * lands on a step-commit mid-feature-transition where the committed state
+ * snapshot trails the commit subject by one step.
+ *
+ * Pre-014 fork-resume reconciliation, this function patched 5 fields
+ * (lastCompletedStep, currentCycleNumber, cyclesCompleted, currentSpecDir,
+ * status). Now state.json is committed alongside checkpoint commits and
+ * `git checkout -B selected-<ts> <sha>` restores it directly — those fields
+ * arrive correct. Only `status` (committed state may have been "running" or
+ * "completed") and the rare currentSpecDir drift still need patching.
+ *
+ * No-op when HEAD isn't on a step-commit (e.g., main's tip). Returns
+ * `step` and `cycle` for backward-compatible callers (renderer test fixtures).
  */
 export async function syncStateFromHead(
   projectDir: string,
@@ -40,28 +51,18 @@ export async function syncStateFromHead(
   const cycleNumber = Number(m[2]);
   const featureSlug = m[3] ?? "-";
 
-  // Snapshot the pre-sync state so the log records what we preserved vs
-  // overwrote. Without this, a stale `currentSpecDir` (or `featuresCompleted`,
-  // `failureCounts`, etc.) silently carrying over from a prior run is
-  // invisible — it manifests downstream as "cycle 1 was burned on a
-  // phantom feature", which is exactly the failure mode that bit us when
-  // jumping back to clarification_synthesis. See
-  // docs/my-specs/011-refactoring/ for the diagnostic plan.
   const preState = await loadState(projectDir);
   const preSnapshot = preState ? snapshotResumeFields(preState) : null;
 
   const patch: Parameters<typeof updateState>[1] = {
-    lastCompletedStep: step,
-    currentCycleNumber: cycleNumber,
-    cyclesCompleted:
-      step === "learnings" || step === "completion"
-        ? cycleNumber
-        : Math.max(0, cycleNumber - 1),
-    // Pause the run so the orchestrator's resume flow takes the resume path.
     status: "paused",
     pausedAt: new Date().toISOString(),
   };
-  if (featureSlug && featureSlug !== "-") {
+
+  // Only override currentSpecDir when the parsed slug differs from the
+  // committed state's value. The committed state.json is now authoritative
+  // for cursor position; touch it only when HEAD's subject says otherwise.
+  if (featureSlug && featureSlug !== "-" && preState && preState.currentSpecDir !== featureSlug) {
     patch.currentSpecDir = featureSlug;
   }
 
@@ -73,17 +74,6 @@ export async function syncStateFromHead(
       patchedFields: Object.keys(patch),
       pre: preSnapshot,
       post: postSnapshot,
-      // Fields that the patch did NOT touch but which influence the resume
-      // cursor — call them out explicitly so a stale value is loud in logs.
-      preservedAfterSync: postSnapshot
-        ? {
-            currentSpecDir: postSnapshot.currentSpecDir,
-            featuresCompleted: postSnapshot.featuresCompleted,
-            featuresSkipped: postSnapshot.featuresSkipped,
-            failureCountsKeys: postSnapshot.failureCountsKeys,
-            featureArtifactsKeys: postSnapshot.featureArtifactsKeys,
-          }
-        : null,
     });
     return { ok: true, updated: true, step, cycle: cycleNumber };
   } catch (err) {

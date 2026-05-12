@@ -443,7 +443,8 @@ export async function mergeToMain(
   const unmergedClassified = classifyUnmergedPaths(projectDir);
 
   if (unmergedClassified.contentConflicts.length === 0 && unmergedClassified.nonContentKinds.length === 0) {
-    safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json`, projectDir); // legacy-branch safety net (pre-gitignore-migration)
+    // Drop per-spec runtime files from the squash — both ride dex/* branches but don't belong on main.
+    safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`, projectDir);
     try {
       gitExec(`git commit -q -m "${subject}"`, projectDir);
     } catch (err) {
@@ -519,7 +520,7 @@ export async function mergeToMain(
 
   try {
     gitExec(`git add -A`, projectDir);
-    safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json`, projectDir); // see clean-path note
+    safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`, projectDir); // see clean-path note
     gitExec(`git commit -q -m "${subject}"`, projectDir);
   } catch (err) {
     safeExec(`git reset --merge`, projectDir);
