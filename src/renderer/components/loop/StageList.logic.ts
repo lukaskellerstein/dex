@@ -46,12 +46,19 @@ export type StageStatus =
 
 export function getStageVisibility(stageType: StepType, decision: string | null): "show" | "skip" {
   if (!decision) return "show";
+  // `decision` on UiLoopCycle is overloaded: it carries gap-analysis values
+  // (NEXT_FEATURE / RESUME_FEATURE / REPLAN_FEATURE / RESUME_AT_STEP) for
+  // active cycles, and cycle-outcome strings ("stopped", "skipped",
+  // "completed") emitted by `loop_cycle_completed`. Only the explicit
+  // gap-analysis skip cases actually mean "this stage will not run" —
+  // anything else (including cycle outcomes) must keep the stage visible
+  // so its real `actual.status` (e.g. "stopped" → paused) can drive the icon.
   switch (stageType) {
     case "specify":
-      return decision === "NEXT_FEATURE" ? "show" : "skip";
+      return decision === "RESUME_FEATURE" || decision === "REPLAN_FEATURE" ? "skip" : "show";
     case "plan":
     case "tasks":
-      return decision === "NEXT_FEATURE" || decision === "REPLAN_FEATURE" ? "show" : "skip";
+      return decision === "RESUME_FEATURE" ? "skip" : "show";
     default:
       return "show";
   }
@@ -74,8 +81,6 @@ export function deriveStageStatus(
 ): StageStatus {
   // Path commits are the source of truth: a step-commit means the stage finished.
   if (pathStages.has(stageType)) return "completed";
-
-  if (getStageVisibility(stageType, decision) === "skip") return "skipped";
 
   // The orchestrator can advance currentStage before publishing a UiLoopStage
   // record (warmup window after Resume — step_started fires before the first
@@ -100,12 +105,18 @@ export function deriveStageStatus(
     return "pending";
   }
 
+  // Actual data wins over the abstract visibility rule — if a stage has a
+  // record, it ran (or is running) and its real status drives the icon.
+  // Without this, stopping mid-plan (cycle.decision becomes "stopped") would
+  // render plan as dimmed "skipped" instead of "paused".
   if (actual) {
     if (actual.status === "completed") return "completed";
     if (actual.status === "stopped") return "paused";
     if (actual.status === "failed") return isRunning ? "failed" : "paused";
     return "running";
   }
+
+  if (getStageVisibility(stageType, decision) === "skip") return "skipped";
 
   if (pausePendingStage === stageType) return "paused";
 
@@ -116,7 +127,7 @@ export function deriveStageStatus(
  * Resolves which visible stage is the single "paused" resume target, or null
  * if this cycle isn't paused or warming up. Pure — no React.
  *
- * Fires in two cases:
+ * Fires in three cases:
  *  1. Paused cycle (live run inactive, cycle.status === "running"). The first
  *     visible stage with no commit on path and no orchestrator record is where
  *     resume will pick up.
@@ -126,6 +137,12 @@ export function deriveStageStatus(
  *     "prerequisites"). Without this, the dashboard shows the about-to-run
  *     stage as plain "pending" right after Resume — no signal that the user's
  *     click took effect.
+ *  3. Navigated mid-cycle (live run inactive, HEAD sits on a checkpoint
+ *     between two stages of this cycle). The merged cycle.status can still
+ *     read "completed" — it's pulled from the original run that pushed past
+ *     these commits — so isPausedCycle is false. The active path is the
+ *     source of truth: when only *some* visible stages have step-commits on
+ *     path, Resume will pick up from the first missing one.
  */
 export function resolvePausePendingStage(
   visibleStages: StepType[],
@@ -140,10 +157,20 @@ export function resolvePausePendingStage(
     isRunning &&
     isActiveCycle &&
     (currentStage === null || !visibleStages.includes(currentStage));
-  if (!isPausedCycle && !inWarmup) return null;
+  const inNavigatedMidCycle =
+    !isRunning &&
+    visibleStages.some((st) => pathStages.has(st)) &&
+    visibleStages.some((st) => !pathStages.has(st));
+  if (!isPausedCycle && !inWarmup && !inNavigatedMidCycle) return null;
   for (const st of visibleStages) {
-    const hasActual = stages.some((s) => s.type === st);
-    if (hasActual) continue;
+    const a = stages.find((s) => s.type === st);
+    if (a) {
+      // A stopped/failed actual is itself the resume target — it already
+      // renders as paused via its own status. Returning a *later* stage here
+      // would double-mark (e.g. plan paused AND implement paused).
+      if (a.status === "stopped" || a.status === "failed") return null;
+      continue;
+    }
     if (pathStages.has(st)) continue;
     return st;
   }

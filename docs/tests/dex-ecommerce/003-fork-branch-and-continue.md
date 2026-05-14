@@ -115,21 +115,24 @@ Observe via UI snapshots, `~/.dex/dev-logs/electron.log`, and `~/.dex/logs/dex-e
 
 **While the continuation run is still in progress** (i.e. before the loop terminates in step 3), click the **Pause** button in the loop dashboard. Capture a snapshot of the Steps tab while paused.
 
-Verify the rendering rules:
+Verify the rendering rules — every bullet below is a hard pass/fail:
 
-- **Exactly one** step displays the paused indicator — the step the orchestrator was executing when Pause was hit. Reading `<projectDir>/.dex/state.json` (`currentStage`, `currentCycle`) tells you which step that should be.
-- No step in the Steps tab is rendered with strikethrough or crossed-out styling. Skipped/strikethrough state is not a valid visual for a paused run — steps that have not yet started must render as plain unstyled grey items.
-- All steps **before** the paused step are green/completed.
-- All steps **after** the paused step are unstyled grey (not started).
-- The cycle headers above the paused cycle are all green; the paused cycle's header shows the in-progress indicator.
+- **Exactly one** step row displays the paused indicator (orange filled Pause icon inside an orange ring, label bold orange, `paused` badge on the right). Cross-check the identity of that step against `<projectDir>/.dex/state.json::currentStage` and `currentCycle`.
+- The paused indicator lands on the step the orchestrator was actually executing — never on the *next* not-yet-started step (e.g. if Pause hit during `plan`, `Implement` must remain plain pending, not paused).
+- All steps **before** the paused step are green ✓ completed.
+- All steps **after** the paused step are plain pending — light-grey empty circle, **no icon inside**. They must not be drawn with the dimmed grey minus (`skipped`) icon, and they must not be drawn with strikethrough/crossed-out text.
+- Steps that gap-analysis would normally hide on a `RESUME_FEATURE` cycle (`Specify`, `Tasks`, sometimes `Plan`) must remain **visible** in the list throughout the pause. Pause must not change the visible-stages set — disappearing rows when the user pauses is a regression of `getStageVisibility` conflating `cycle.decision === "stopped"` with a gap-analysis skip.
+- The cycle headers above the paused cycle are all green; the paused cycle's header shows the in-progress indicator. The top `Dex Loop` phase chip shows the orange paused (⏸) icon; no other phase chip is paused.
 
 Failure modes to flag explicitly:
 
-- Two or more steps show the paused indicator (e.g. both `Implement` and `Verify` paused at the same time) → state machine is reporting multiple in-flight steps; bug in pause-stage broadcast or in the Steps-tab reducer.
-- A step earlier than the paused step is rendered as strikethrough/crossed-out → Steps tab is misclassifying a completed step as skipped.
+- Two or more step rows show the paused indicator simultaneously (e.g. both `Plan` and `Implement` paused) → either the state machine is reporting multiple in-flight steps, OR `resolvePausePendingStage` is firing alongside an `actual.status === "stopped"` record (regression of the StageList.logic.ts fix).
+- A step earlier than the paused step renders with strikethrough/crossed-out → Steps tab is misclassifying a completed step as skipped.
+- The currently-executing step renders with the dimmed grey minus icon (`StatusDot status="skipped"`) instead of the orange paused indicator → `deriveStageStatus` is short-circuiting on `getStageVisibility === "skip"` before the `actual` block (regression of the same fix).
+- `Tasks` (or `Specify` on a `RESUME_FEATURE` cycle) disappears from the list when Pause is clicked → `getStageVisibility` is treating `cycle.decision === "stopped"` like a gap-analysis skip.
 - The paused indicator lands on a step that does not match `state.json::currentStage` → renderer is inferring stage from a stale event.
 
-Then click **Resume** and let the run finish before moving to step 4. Re-snapshot the Steps tab once the run completes; all steps and cycles up to the terminal stage must be green, none crossed.
+Then click **Resume** and let the run finish before moving to step 4. Re-snapshot the Steps tab once the run completes; all steps and cycles up to the terminal stage must be green, none crossed, none drawn as skipped.
 
 ### 4. Verify the new commits landed on the selected branch
 

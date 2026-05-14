@@ -47,7 +47,8 @@ export function useProject() {
         evt.type === "run_started" ||
         evt.type === "run_completed" ||
         evt.type === "paused" ||
-        evt.type === "loop_reset"
+        evt.type === "loop_reset" ||
+        evt.type === "head_changed"
       ) {
         void refreshDexStatus(projectDir);
       }

@@ -125,6 +125,33 @@ function emitLoopReset(senderWebContentsId: number): void {
 }
 
 /**
+ * Push a `head_changed` event back to the renderer that initiated a
+ * non-noop `jumpTo`. Lets `useProject` re-read state.json (restored from
+ * the fork-point commit) and `useOrchestrator` rehydrate loop cycles, so
+ * the Steps tab reflects the orchestrator state at the new HEAD instead of
+ * regressing to the kickoff form (state.json may have been null pre-jump
+ * after a squash-merge).
+ */
+function emitHeadChanged(
+  senderWebContentsId: number,
+  branch: string,
+  sha: string,
+): void {
+  const wc = BrowserWindow.getAllWindows()
+    .map((w) => w.webContents)
+    .find((c) => c.id === senderWebContentsId);
+  if (wc && !wc.isDestroyed()) {
+    const event: OrchestratorEvent = {
+      type: "head_changed",
+      reason: "jump",
+      branch,
+      sha,
+    };
+    wc.send("orchestrator:event", event);
+  }
+}
+
+/**
  * Build the resolver dependency bundle for a single `mergeToMain` invocation.
  * Loads DexConfig, picks the right agent runner, constructs a minimal
  * `RunConfig`, and routes resolver progress events to the calling renderer
@@ -375,12 +402,34 @@ export function registerCheckpointsHandlers(): void {
   ipcMain.handle(
     "checkpoints:jumpTo",
     async (
-      _e,
+      e,
       projectDir: string,
       targetSha: string,
       options?: { force?: "save" | "discard" },
-    ): Promise<JumpToResult | { ok: false; error: "locked_by_other_instance" }> =>
-      withLock(projectDir, () => jumpTo(projectDir, targetSha, options, ipcLogger)),
+    ): Promise<JumpToResult | { ok: false; error: "locked_by_other_instance" }> => {
+      const result = await withLock(projectDir, () =>
+        jumpTo(projectDir, targetSha, options, ipcLogger),
+      );
+      // After a non-noop fork/checkout, state.json on disk has been restored
+      // from the new HEAD's tracked snapshot — but the renderer doesn't know
+      // unless we tell it. Emit `head_changed` so useProject re-reads
+      // dexStatus and useOrchestrator rehydrates loop cycles, otherwise the
+      // Steps tab still routes to LoopStartPanel (kickoff form) per
+      // App.tsx's `dexStatus === null` branch when state.json was cleared
+      // before the jump (e.g. by a prior squash-merge).
+      if (result.ok && (result.action === "fork" || result.action === "checkout")) {
+        try {
+          const sha = gitExec(`git rev-parse HEAD`, projectDir);
+          emitHeadChanged(e.sender.id, result.branch, sha);
+        } catch (err) {
+          ipcLogger.run("WARN", "emitHeadChanged: rev-parse HEAD failed", {
+            message: err instanceof Error ? err.message : String(err),
+            cwd: projectDir,
+          });
+        }
+      }
+      return result;
+    },
   );
 
   ipcMain.handle(

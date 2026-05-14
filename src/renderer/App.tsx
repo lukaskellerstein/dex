@@ -221,6 +221,21 @@ export default function App() {
     }
   }, [orchestrator.loopTermination, orchestrator.isRunning]);
 
+  // 014/test-003 — After a Timeline click-to-jump fork, the HEAD moves to a
+  // step-commit on a `selected-*` branch. state.json on disk is restored
+  // automatically (tracked since 014) but the renderer's in-memory loop
+  // cycles array is stale from the prior run's tip. Rehydrate from the
+  // latest run record so the Steps tab reflects the orchestrator state at
+  // the fork point instead of regressing to the kickoff form.
+  useEffect(() => {
+    const unsub = orchestratorService.subscribeEvents((evt) => {
+      if (evt.type === "head_changed" && project.projectDir) {
+        void orchestrator.loadRunHistory(project.projectDir);
+      }
+    });
+    return unsub;
+  }, [project.projectDir, orchestrator.loadRunHistory]);
+
   // Auto-switch to loop dashboard when loop starts running
   useEffect(() => {
     if (orchestrator.isRunning && orchestrator.mode === "loop") {

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 # Browser window classes to track
-BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome")
+BROWSER_CLASSES = ("Chromium", "Google-chrome", "chromium", "google-chrome", "Electron")
 
 # Process names that indicate a Playwright-spawned browser
 PLAYWRIGHT_PROCESS_INDICATORS = ["playwright", "npx", "node", "npm"]
