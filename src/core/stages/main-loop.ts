@@ -91,6 +91,10 @@ export async function runMainLoop(
   const resumeLastStage = deps.resumeLastStage;
 
   const failureTracker = new Map<string, FailureRecord>();
+  // Specdir-independent failure cap — per-spec counters can't fire when
+  // specify throws before assigning a specDir, leaving the loop unbounded.
+  const MAX_CONSECUTIVE_FAILURES = 3;
+  let consecutiveFailures = 0;
 
   const getOrCreateFailureRecord = (specDir: string): FailureRecord => {
     let record = failureTracker.get(specDir);
@@ -359,31 +363,34 @@ export async function runMainLoop(
         }
         const knownSpecs = listSpecDirs(config.projectDir);
         const specifyPrompt = buildSpecifyPrompt(decision.name, decision.description);
-        const specifyResult = await runStage(config, specifyPrompt, emit, rlog, runId, cycleNumber, "specify");
+        // Pre-checkpoint hook lands the new spec dir's state writes (manifest +
+        // state.json) in the same commit as the specify checkpoint. Without
+        // this, mid-cycle resume from [checkpoint:specify:N] sees a stale
+        // currentSpecDir (cycle N-1's) and runs cycle N on the wrong feature.
+        // The hook fires unconditionally — even on abort — so a Stop click
+        // right after specify still persists the new dir for resume.
+        let newSpecDir: string | null = null;
+        const specifyResult = await runStage(
+          config, specifyPrompt, emit, rlog, runId, cycleNumber, "specify",
+          undefined,
+          undefined,
+          async () => {
+            newSpecDir = discoverNewSpecDir(config.projectDir, knownSpecs);
+            if (!newSpecDir) {
+              throw new Error("Specify completed but no new spec directory was created");
+            }
+            updateFeatureSpecDir(config.projectDir, decision.featureId, newSpecDir);
+            if (activeProjectDir) {
+              await updateState(activeProjectDir, {
+                currentSpecDir: newSpecDir,
+                artifacts: { features: { [newSpecDir]: { specDir: newSpecDir, status: "specifying", spec: null, plan: null, tasks: null, lastImplementedPhase: 0 } } },
+              } as never).catch(() => {});
+            }
+          },
+        );
         cycleCost += specifyResult.cost;
-
-        // IMPORTANT: do NOT abort-check here before persisting the new spec
-        // dir. If the user clicked Stop during specify, the dir exists on
-        // disk and the next resume needs currentSpecDir set to recover.
-        // Discover the newly created spec directory and link to manifest
-        specDir = discoverNewSpecDir(config.projectDir, knownSpecs);
-        if (!specDir) {
-          throw new Error("Specify completed but no new spec directory was created");
-        }
+        specDir = newSpecDir;
         rlog.run("INFO", `runLoop: new spec directory: ${specDir}`);
-        updateFeatureSpecDir(config.projectDir, decision.featureId, specDir);
-
-        // Persist the new spec directory to state immediately so a pause
-        // between specify and plan is recoverable — the emitter reads
-        // currentSpecDir on the next resume to pick RESUME_AT_STEP.
-        // Must run BEFORE the abort check below, otherwise a Stop click
-        // right after specify completes orphans the new spec dir.
-        if (activeProjectDir) {
-          await updateState(activeProjectDir, {
-            currentSpecDir: specDir,
-            artifacts: { features: { [specDir]: { specDir, status: "specifying", spec: null, plan: null, tasks: null, lastImplementedPhase: 0 } } },
-          } as never).catch(() => {});
-        }
 
         if (abortController?.signal.aborted) throw new AbortError();
       }
@@ -442,6 +449,7 @@ export async function runMainLoop(
       const verification = { passed: ivlResult.verifyPassed };
 
       // Success — reset failure counters and update manifest
+      consecutiveFailures = 0;
       if (implSpecDir) {
         const record = getOrCreateFailureRecord(implSpecDir);
         record.implFailures = 0;
@@ -484,6 +492,7 @@ export async function runMainLoop(
         rlog.run("INFO", `runLoop: cycle ${cycleNumber} aborted by user`);
       } else {
         cycleFailed = true;
+        consecutiveFailures++;
         // ── Stage failure handling (T040) ──
         const msg = err instanceof Error ? err.message : String(err);
         // Log everything we know about *why* this cycle blew up. Without
@@ -516,6 +525,46 @@ export async function runMainLoop(
             record.implFailures++;
           }
           persistFailure(specDir);
+        }
+
+        // Bug B fix: if a NEXT_FEATURE cycle failed during specify itself, no
+        // specDir was created, so getActiveFeature() returns the same active
+        // feature on the next cycle, gap_analysis dispatches the same
+        // NEXT_FEATURE path, and the same crash repeats. Mark the feature as
+        // skipped immediately so the loop advances instead of burning 3 cycles
+        // until the consecutive-failures gate fires.
+        if (
+          decision.type === "NEXT_FEATURE" &&
+          !specDir &&
+          currentRunState?.currentStep === "specify"
+        ) {
+          try {
+            updateFeatureStatus(config.projectDir, decision.featureId, "skipped");
+            featuresSkipped.push(decision.name);
+            rlog.run(
+              "WARN",
+              `runLoop: marking feature "${decision.name}" (id=${decision.featureId}) as skipped — specify failed without producing a spec dir`,
+            );
+            if (activeProjectDir) {
+              await updateState(activeProjectDir, {
+                featuresSkipped: [...featuresSkipped],
+              }).catch(() => {});
+            }
+            emit({
+              type: "loop_cycle_completed",
+              runId,
+              cycleNumber,
+              decision: "skipped",
+              featureName: decision.name,
+              specDir: null,
+              costUsd: 0,
+            });
+          } catch (e) {
+            rlog.run(
+              "WARN",
+              `runLoop: failed to mark feature as skipped: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
         }
 
         emit({ type: "error", message: `Cycle ${cycleNumber} failed: ${msg}` });
@@ -563,6 +612,7 @@ export async function runMainLoop(
     if (abortController?.signal.aborted) break;
     if (config.maxBudgetUsd && cumulativeCost >= config.maxBudgetUsd) break;
     if (config.maxLoopCycles && cyclesCompleted >= config.maxLoopCycles) break;
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) { rlog.run("ERROR", `runLoop: ${consecutiveFailures} consecutive cycle failures — aborting`); break; }
   }
 
   // ── Termination (T042) ──
@@ -573,6 +623,8 @@ export async function runMainLoop(
     terminationReason = "budget_exceeded";
   } else if (config.maxLoopCycles && cyclesCompleted >= config.maxLoopCycles) {
     terminationReason = "max_cycles_reached";
+  } else if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    terminationReason = "consecutive_failures";
   }
 
   const termination: LoopTermination = {

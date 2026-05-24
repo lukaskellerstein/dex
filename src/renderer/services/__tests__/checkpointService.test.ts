@@ -9,7 +9,12 @@ type CheckpointsApiMock = {
   listTimeline: ReturnType<typeof vi.fn>;
   checkIsRepo: ReturnType<typeof vi.fn>;
   checkIdentity: ReturnType<typeof vi.fn>;
-  unselect: ReturnType<typeof vi.fn>;
+  deleteBranch: ReturnType<typeof vi.fn>;
+  promoteSummary: ReturnType<typeof vi.fn>;
+  mergeToMain: ReturnType<typeof vi.fn>;
+  acceptResolverResult: ReturnType<typeof vi.fn>;
+  abortResolverMerge: ReturnType<typeof vi.fn>;
+  openInEditor: ReturnType<typeof vi.fn>;
   syncStateFromHead: ReturnType<typeof vi.fn>;
   jumpTo: ReturnType<typeof vi.fn>;
   initRepo: ReturnType<typeof vi.fn>;
@@ -21,7 +26,12 @@ function makeApi(): CheckpointsApiMock {
     listTimeline: vi.fn(),
     checkIsRepo: vi.fn(),
     checkIdentity: vi.fn(),
-    unselect: vi.fn(),
+    deleteBranch: vi.fn(),
+    promoteSummary: vi.fn(),
+    mergeToMain: vi.fn(),
+    acceptResolverResult: vi.fn(),
+    abortResolverMerge: vi.fn(),
+    openInEditor: vi.fn(),
     syncStateFromHead: vi.fn(),
     jumpTo: vi.fn(),
     initRepo: vi.fn(),
@@ -63,14 +73,16 @@ describe("checkpointService — IPC pass-through", () => {
     expect(api.jumpTo).toHaveBeenCalledWith("/proj", "abc123", { force: "discard" });
   });
 
-  it("unselect, syncStateFromHead pass projectDir + args through", async () => {
-    api.unselect.mockResolvedValue({ ok: true, switchedTo: "main", deleted: "x" });
+  it("deleteBranch, syncStateFromHead pass projectDir + args through", async () => {
+    api.deleteBranch.mockResolvedValue({ ok: true, switchedTo: "main", deleted: "x" });
     api.syncStateFromHead.mockResolvedValue({ ok: true, updated: false });
 
-    await checkpointService.unselect("/p", "branch");
+    await checkpointService.deleteBranch("/p", "dex/2026-05-04-abc");
+    await checkpointService.deleteBranch("/p", "dex/2026-05-04-abc", { confirmedLoss: true });
     await checkpointService.syncStateFromHead("/p");
 
-    expect(api.unselect).toHaveBeenCalledWith("/p", "branch");
+    expect(api.deleteBranch).toHaveBeenNthCalledWith(1, "/p", "dex/2026-05-04-abc", undefined);
+    expect(api.deleteBranch).toHaveBeenNthCalledWith(2, "/p", "dex/2026-05-04-abc", { confirmedLoss: true });
     expect(api.syncStateFromHead).toHaveBeenCalledWith("/p");
   });
 });
@@ -132,7 +144,12 @@ describe("checkpointService — surface completeness", () => {
       "listTimeline",
       "checkIsRepo",
       "checkIdentity",
-      "unselect",
+      "deleteBranch",
+      "promoteSummary",
+      "mergeToMain",
+      "acceptResolverResult",
+      "abortResolverMerge",
+      "openInEditor",
       "syncStateFromHead",
       "jumpTo",
       "initRepo",

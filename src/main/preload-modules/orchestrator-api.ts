@@ -1,6 +1,17 @@
 import { ipcRenderer } from "electron";
 import type { RunConfig, OrchestratorEvent } from "../../core/types.js";
 
+// Module-level fan-out: a single ipcRenderer listener feeds N renderer
+// subscribers. Without this, every hook that calls `onOrchestratorEvent`
+// adds another listener to the IpcRenderer EventEmitter — the renderer has
+// 10+ such hooks, which trips Node's default MaxListeners cap and emits
+// `MaxListenersExceededWarning` on every page load.
+const subscribers = new Set<(event: OrchestratorEvent) => void>();
+let ipcAttached = false;
+const ipcHandler = (_e: Electron.IpcRendererEvent, data: OrchestratorEvent): void => {
+  for (const cb of subscribers) cb(data);
+};
+
 export const orchestratorApi = {
   startRun: (config: RunConfig) =>
     ipcRenderer.invoke("orchestrator:start", config),
@@ -26,11 +37,13 @@ export const orchestratorApi = {
     } | null>,
 
   onOrchestratorEvent: (cb: (event: OrchestratorEvent) => void) => {
-    const handler = (
-      _e: Electron.IpcRendererEvent,
-      data: OrchestratorEvent,
-    ) => cb(data);
-    ipcRenderer.on("orchestrator:event", handler);
-    return () => ipcRenderer.removeListener("orchestrator:event", handler);
+    if (!ipcAttached) {
+      ipcRenderer.on("orchestrator:event", ipcHandler);
+      ipcAttached = true;
+    }
+    subscribers.add(cb);
+    return () => {
+      subscribers.delete(cb);
+    };
   },
 };

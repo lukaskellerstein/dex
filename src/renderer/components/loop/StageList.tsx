@@ -176,19 +176,23 @@ function StageRow({
           style={{
             fontSize: "0.8rem",
             fontWeight: isRunning || isPaused ? 600 : 400,
+            // "skipped" renders identically to "pending" — plain unstyled grey.
+            // Strikethrough was misleading during paused runs (it implied the
+            // step was crossed out by user action when in fact gap_analysis
+            // simply chose RESUME_FEATURE / REPLAN_FEATURE) and the DoD for
+            // 014/test-003 explicitly forbids strikethrough for not-yet-started
+            // steps.
             color:
               hovered && hasTrace
                 ? "var(--status-info)"
-                : isSkipped
-                  ? "var(--foreground-dim)"
-                  : isRunning
-                    ? "var(--status-info)"
-                    : isPaused
-                      ? "var(--status-warning, #f59e0b)"
-                      : isCompleted
-                        ? "var(--foreground-muted)"
-                        : "var(--foreground-dim)",
-            textDecoration: isSkipped ? "line-through" : "none",
+                : isRunning
+                  ? "var(--status-info)"
+                  : isPaused
+                    ? "var(--status-warning, #f59e0b)"
+                    : isCompleted
+                      ? "var(--foreground-muted)"
+                      : "var(--foreground-dim)",
+            textDecoration: "none",
             flex: 1,
             transition: "color 0.15s",
           }}

@@ -50,6 +50,13 @@ export interface LaidOutNode {
    * renderer paints these as hollow circles so the merge structure pops.
    */
   isMerge?: boolean;
+  /**
+   * Mirrors `TimelineCommit.kind` for `step-commit` nodes. Lets the
+   * renderer differentiate user commits (smaller, dimmer, no jump-to)
+   * without re-narrowing the discriminated `node` union at every site.
+   * Undefined for the synthetic `start` anchor.
+   */
+  commitKind?: "step" | "promote" | "user";
 }
 
 export interface LaidOutEdge {
@@ -242,13 +249,22 @@ interface BranchInfo {
 function allocateLanes(infos: BranchInfo[]): Map<string, number> {
   const branchLane = new Map<string, number>();
 
-  // Trunk first. Then sort by forkRow ascending — this is the chronological
-  // order the user sees. lastRow + branch name are deterministic tiebreakers.
+  // Sort tiers, left → right:
+  //   1. trunk (main / master) — lane 0
+  //   2. ordinary branches — by forkRow ascending (older forks go left)
+  //   3. `selected-*` navigation forks — always pinned to the rightmost
+  //      tier regardless of where they fork from. They're transient
+  //      "you clicked here" markers; the user expects to find them on
+  //      the right edge no matter which commit they jumped to.
   const sorted = [...infos].sort((a, b) => {
     const ta = isTrunk(a.branch);
     const tb = isTrunk(b.branch);
     if (ta && !tb) return -1;
     if (tb && !ta) return 1;
+    const sa = a.branch.startsWith("selected-");
+    const sb = b.branch.startsWith("selected-");
+    if (sa && !sb) return 1;
+    if (sb && !sa) return -1;
     if (a.forkRow !== b.forkRow) return a.forkRow - b.forkRow;
     if (a.lastRow !== b.lastRow) return a.lastRow - b.lastRow;
     return a.branch.localeCompare(b.branch);
@@ -408,7 +424,13 @@ export function layoutTimeline(
       rowIndex,
       colorState: pickColorState(commit.sha, selectedSet, keptSet),
       laneColor: laneColorFor(commit.branch),
-      isMerge: commit.mergedParentShas.length > 0,
+      // Squash-promote commits get the hollow-circle "milestone" rendering
+      // even though they have no second parent — `promoteSourceTip` is the
+      // synthetic source-branch tip the timeline parser populated. Pre-013
+      // `--no-ff` promote merges (still in older project histories) keep
+      // their two-parent topology and continue flagging via `mergedParentShas`.
+      isMerge: commit.mergedParentShas.length > 0 || commit.promoteSourceTip != null,
+      commitKind: commit.kind,
     });
   }
   const nodeBySha = new Map(nodes.map((n) => [n.id, n]));
@@ -504,11 +526,18 @@ export function layoutTimeline(
   // Merge edges. For each merge commit, draw a right-angle path from each
   // merged parent's canonical position back to the merge commit. The elbow
   // sits at the merged parent's X, at the merge commit's Y.
+  //
+  // Squash-promote commits have no second parent in git but logically
+  // rejoin their source branch into main — `promoteSourceTip` carries the
+  // source branch's tip SHA so we can synthesize the same rejoin edge.
   for (const commit of commits) {
-    if (commit.mergedParentShas.length === 0) continue;
     const merge = nodeBySha.get(commit.sha);
     if (!merge) continue;
-    for (const mergedSha of commit.mergedParentShas) {
+    const synthSources: string[] = [];
+    if (commit.promoteSourceTip) synthSources.push(commit.promoteSourceTip);
+    const allSources = [...commit.mergedParentShas, ...synthSources];
+    if (allSources.length === 0) continue;
+    for (const mergedSha of allSources) {
       const mergedTip = nodeBySha.get(mergedSha);
       if (!mergedTip) continue;
       edges.push({
@@ -576,11 +605,14 @@ export function layoutTimeline(
     .filter((c) => c.columnIndex > 0)
     .map((c) => ({ x: c.x, y1: markerY1, y2: markerY2 }));
 
-  // Cycle bands — group consecutive rows by cycleNumber.
+  // Cycle bands — group consecutive rows by cycleNumber. Only commits
+  // with `kind: "step"` (real orchestrator stages) drive band edges;
+  // promote merges and user commits fall into the surrounding band's
+  // visual range without creating new bands.
   const cycleBands: CycleBand[] = [];
   const stepRows: Array<{ row: number; cycle: number }> = [];
   for (const n of nodes) {
-    if (n.node.kind === "step-commit") {
+    if (n.node.kind === "step-commit" && n.commitKind === "step") {
       stepRows.push({ row: n.rowIndex, cycle: n.node.data.cycleNumber });
     }
   }

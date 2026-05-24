@@ -36,6 +36,13 @@ const REASON_CONFIG: Record<
     icon: <XCircle size={28} style={{ color: "var(--foreground-muted)" }} />,
     color: "var(--foreground-muted)",
   },
+  consecutive_failures: {
+    heading: "Stopped After Repeated Failures",
+    label:
+      "The loop stopped after 3 consecutive cycles failed — likely a configuration or environment issue.",
+    icon: <AlertCircle size={28} style={{ color: "var(--status-error)" }} />,
+    color: "var(--status-error)",
+  },
 };
 
 function StatCard({

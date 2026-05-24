@@ -22,10 +22,12 @@ const PARALLELIZABLE_STEPS: StepType[] = [
  * Files that materially change in each step — used for path-filtered diffs
  * when comparing two checkpoints ("show me what changed at the spec level vs.
  * everywhere"). Steps absent from this map fall through to a `--stat` diff.
+ *
+ * `gap_analysis` and `manifest_extraction` are intentionally absent: the
+ * manifest is gitignored runtime cache (re-extracted from
+ * `GOAL_clarified.md`), so a diff would always be empty.
  */
 export const PATHS_BY_STEP: Partial<Record<StepType, string[]>> = {
-  gap_analysis: [".dex/feature-manifest.json"],
-  manifest_extraction: [".dex/feature-manifest.json"],
   specify: ["specs/"],
   plan: ["specs/"],
   tasks: ["specs/"],

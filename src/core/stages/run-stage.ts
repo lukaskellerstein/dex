@@ -22,6 +22,14 @@ export async function runStage(
   stageType: StepType,
   specDir?: string,
   outputFormat?: { type: "json_schema"; schema: Record<string, unknown> },
+  /**
+   * Optional hook fired after the agent finishes but before the post-stage
+   * checkpoint commit. Use it to stage state/manifest writes that depend on
+   * agent output (e.g. specify's newly-created spec dir) so they land in the
+   * same `[checkpoint:<step>:<cycle>]` commit. Runs unconditionally, even on
+   * abort — mirrors the existing "persist new spec dir even on Stop" rule.
+   */
+  preCheckpoint?: () => Promise<void>,
 ): Promise<{ result: string; structuredOutput: unknown | null; cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
   const ctx = getActiveContext();
   if (!ctx) {
@@ -101,6 +109,13 @@ export async function runStage(
     durationMs,
     ...(isAborted() ? { stopped: true } : {}),
   });
+
+  // Pre-checkpoint hook fires regardless of abort, so callers (e.g. specify
+  // discovering its new spec dir) can persist newly-created state even if the
+  // user clicked Stop — matching the pre-extraction behavior.
+  if (preCheckpoint) {
+    await preCheckpoint();
+  }
 
   // Post-stage checkpoint: state file update + commit + candidate emit +
   // auto-promote + optional pause. Delegated to stages/finalize.ts (A6).

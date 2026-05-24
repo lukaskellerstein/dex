@@ -184,6 +184,15 @@ export function useOrchestrator(): OrchestratorHook {
 
   const loadRunHistory = useCallback(
     async (projectDir: string): Promise<boolean> => {
+      // Gate rehydration on state.json's presence. After a successful
+      // squash-merge, the IPC handler deletes state.json (the run is
+      // shipped — Steps tab should show the "no run yet" view, not the
+      // historical celebration). Without this gate, loadRunHistory would
+      // pull the latest runs/<runId>.json off disk and re-set
+      // loopTermination, undoing the loop_reset event.
+      const liveState = await orchestratorService.getProjectState(projectDir);
+      if (!liveState) return false;
+
       const run = await historyService.getLatestProjectRun(projectDir);
       if (!run || run.mode !== "loop") return false;
 

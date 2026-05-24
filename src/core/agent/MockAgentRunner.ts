@@ -2,19 +2,26 @@ import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentRunner, TaskPhaseContext, TaskPhaseResult, StepContext, StepResult } from "./AgentRunner.js";
+import type {
+  AgentRunner,
+  TaskPhaseContext,
+  TaskPhaseResult,
+  StepContext,
+  StepResult,
+  OneShotContext,
+  OneShotResult,
+} from "./AgentRunner.js";
 import type { AgentStep, RunConfig } from "../types.js";
 import {
   MockConfig,
   MockConfigMissingEntryError,
   MockConfigInvalidPathError,
-  MockFixtureMissingError,
-  MockDisabledError,
   PHASE_OF_STEP,
   StepDescriptor,
+  MockOneShotResponse,
   loadMockConfig,
-  mockConfigPath,
 } from "./MockConfig.js";
+import { deriveGoalPaths, type GoalPaths } from "../goal-paths.js";
 
 /**
  * Inline step constructor. Duplicates the helper in ./steps.ts — importing
@@ -41,7 +48,29 @@ function mkStep(
   };
 }
 
-const ALLOWED_TOKENS = ["specDir", "cycle", "feature"] as const;
+const ALLOWED_TOKENS = [
+  "specDir",
+  "cycle",
+  "feature",
+  // Per-run uniqueness — for mock-config paths that would otherwise collide
+  // across re-runs of the same project (e.g. `specs/mock-c1-f-001/spec.md`
+  // generated identically by every run, fighting for the same folder).
+  // `{runId}` is the full orchestrator runId, `{shortRunId}` is the first 6
+  // characters — short enough to use as a path-component postfix (e.g.
+  // `f-001-{shortRunId}` in `cycle.feature.id`), long enough that two
+  // back-to-back runs won't collide in practice.
+  "runId",
+  "shortRunId",
+  // Goal-derivative tokens (014 — file-name-agnostic clarification). Resolve
+  // to the absolute paths the orchestrator expects given the user's chosen
+  // goal file. mock-config.json should use these instead of hardcoding
+  // `GOAL_*.md` so picking a non-default goal file (e.g. `PROJECT.md`,
+  // `docs/.../README.md`) Just Works.
+  "goalFile",
+  "goalProductDomain",
+  "goalTechnicalDomain",
+  "goalClarified",
+] as const;
 
 /**
  * Deterministic, scripted agent backend (009-testing-checkpointing). Replays a
@@ -50,14 +79,14 @@ const ALLOWED_TOKENS = ["specDir", "cycle", "feature"] as const;
  * (writes / appends), emits exactly one synthetic agent_step per stage, and
  * returns the structured output (if any) verbatim.
  *
- * Failure modes are loud by design: missing script entries, missing fixtures,
- * and unknown substitution tokens all throw typed errors that name the offending
- * coordinates (spec FR-010, FR-011).
+ * Failure modes are loud by design: missing script entries and unknown
+ * substitution tokens throw typed errors that name the offending coordinates
+ * (spec FR-010, FR-011).
  */
 export class MockAgentRunner implements AgentRunner {
   private readonly config: MockConfig;
   private readonly projectDir: string;
-  private readonly fixtureDir: string;
+  private readonly goalPaths: GoalPaths;
   /**
    * Tracks which cycles have already had their `stages.implement` side effects
    * applied. The orchestrator's implement flow bypasses `runStage("implement")`
@@ -69,29 +98,15 @@ export class MockAgentRunner implements AgentRunner {
   private readonly implementAppliedForSpecDir = new Map<string, number>();
   private nextImplementCycleIndex = 0;
 
-  constructor(_runConfig: RunConfig, projectDir: string) {
+  constructor(runConfig: RunConfig, projectDir: string) {
     this.config = loadMockConfig(projectDir);
     this.projectDir = projectDir;
-    if (!this.config.enabled) {
-      throw new MockDisabledError(mockConfigPath(projectDir));
-    }
-    // Resolve fixtureDir. Must be absolute or relative-to-projectDir. When
-    // omitted, we require the user to set it explicitly — resolving a default
-    // relative to this module's location is fragile across compiled/source
-    // runtimes. Authoring a MockConfig without a fixtureDir is a common enough
-    // slip that surfacing it at construction time is better than silent
-    // fallback behavior.
-    const declared = this.config.fixtureDir;
-    if (!declared) {
-      throw new Error(
-        `MockAgentRunner: ${mockConfigPath(projectDir)} does not declare 'fixtureDir'. Set it to the absolute path of your fixtures directory (e.g. the Dex repo's /path/to/dex/fixtures/mock-run/).`,
-      );
-    }
-    this.fixtureDir = path.isAbsolute(declared) ? declared : path.resolve(projectDir, declared);
+    const goalPath = runConfig.descriptionFile ?? path.join(projectDir, "GOAL.md");
+    this.goalPaths = deriveGoalPaths(goalPath);
   }
 
   async runStep(ctx: StepContext): Promise<StepResult> {
-    const { cycleNumber, step, specDir, prompt, emit, rlog } = ctx;
+    const { cycleNumber, step, specDir, prompt, emit, rlog, runId } = ctx;
     const start = Date.now();
     const phase = PHASE_OF_STEP[step];
 
@@ -111,7 +126,14 @@ export class MockAgentRunner implements AgentRunner {
         );
       }
       const cycle = cycles[cycleIdx];
-      featureId = cycle.feature.id;
+      // Render the feature ID through the same template engine as paths so
+      // mock-config can postfix `{shortRunId}` (or any other run-scoped
+      // token) directly on `cycle.feature.id`. Then `{feature}` in any
+      // path template inherits the uniqueness without each path having to
+      // append `{shortRunId}` itself.
+      featureId = this.renderTemplate(cycle.feature.id, {
+        cycleNumber, featureId: null, specDir: specDir ?? null, runId,
+      });
       const found = (cycle.stages as Record<string, StepDescriptor>)[step];
       if (!found) {
         throw new MockConfigMissingEntryError(phase, step, cycleNumber, featureId);
@@ -160,7 +182,7 @@ export class MockAgentRunner implements AgentRunner {
     }
 
     // Execute side effects.
-    this.applySideEffects(descriptor, { cycleNumber, featureId, specDir });
+    this.applySideEffects(descriptor, { cycleNumber, featureId, specDir, runId });
 
     const durationMs = Date.now() - start;
 
@@ -179,7 +201,7 @@ export class MockAgentRunner implements AgentRunner {
   }
 
   async runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult> {
-    const { taskPhase, prompt, emit, rlog, config: runConfig } = ctx;
+    const { taskPhase, prompt, emit, rlog, config: runConfig, runId } = ctx;
     const start = Date.now();
 
     // The orchestrator invokes runPhase in two places:
@@ -212,7 +234,10 @@ export class MockAgentRunner implements AgentRunner {
         const cycle = this.config.dex_loop.cycles[idx];
         descriptor = cycle.stages.implement;
         assignedCycleNumber = idx + 1;
-        assignedFeatureId = cycle.feature.id;
+        // Same renderTemplate pass as runStep — see comment there.
+        assignedFeatureId = this.renderTemplate(cycle.feature.id, {
+          cycleNumber: assignedCycleNumber, featureId: null, specDir, runId,
+        });
       }
     }
     // Fall back to prerequisites descriptor for build mode or out-of-range.
@@ -252,6 +277,7 @@ export class MockAgentRunner implements AgentRunner {
         cycleNumber: assignedCycleNumber,
         featureId: assignedFeatureId,
         specDir,
+        runId,
       });
     }
 
@@ -265,26 +291,92 @@ export class MockAgentRunner implements AgentRunner {
     };
   }
 
+  /**
+   * 014 — scripted runOneShot. Looks up `ctx.prompt` against
+   * `MockConfig.oneShotResponses`; honours the optional `editFile` side
+   * effect (write content into the resolved cwd before returning); falls
+   * back to a permissive default record when no entry matches so tests
+   * aren't required to script every prompt the harness might send.
+   */
+  async runOneShot(ctx: OneShotContext): Promise<OneShotResult> {
+    const start = Date.now();
+    const cwd = ctx.cwd ?? this.projectDir;
+    const responses: MockOneShotResponse[] = this.config.oneShotResponses ?? [];
+
+    let matched: MockOneShotResponse | undefined;
+    for (const r of responses) {
+      if (r.isRegex) {
+        try {
+          if (new RegExp(r.matchPrompt).test(ctx.prompt)) {
+            matched = r;
+            break;
+          }
+        } catch {
+          // Bad regex source — skip silently; surfaces in test by missing match.
+          continue;
+        }
+      } else if (r.matchPrompt === ctx.prompt) {
+        matched = r;
+        break;
+      }
+    }
+
+    if (matched?.delayMs && matched.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, matched!.delayMs));
+    }
+
+    if (matched?.editFile) {
+      const dest = path.isAbsolute(matched.editFile.path)
+        ? matched.editFile.path
+        : path.resolve(cwd, matched.editFile.path);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, matched.editFile.content, "utf8");
+    }
+
+    if (ctx.abortController?.signal.aborted) {
+      return {
+        cost: 0,
+        durationMs: Date.now() - start,
+        inputTokens: 0,
+        outputTokens: 0,
+        finalText: "",
+        finishedNormally: false,
+      };
+    }
+
+    if (!matched) {
+      return {
+        cost: 0,
+        durationMs: Date.now() - start,
+        inputTokens: 0,
+        outputTokens: 0,
+        finalText: "(mock default — no oneShotResponses entry matched)",
+        finishedNormally: true,
+      };
+    }
+
+    return {
+      cost: matched.cost ?? 0,
+      durationMs: Date.now() - start,
+      inputTokens: matched.inputTokens ?? 0,
+      outputTokens: matched.outputTokens ?? 0,
+      finalText: matched.finalText,
+      finishedNormally: matched.finishedNormally ?? true,
+    };
+  }
+
   // ── Side-effect helpers ──
 
   private applySideEffects(
     descriptor: StepDescriptor,
-    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null },
+    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
   ): void {
     if (descriptor.writes) {
       for (const w of descriptor.writes) {
         const dest = this.resolveProjectPath(w.path, ctx);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
-        if (w.from !== undefined) {
-          const src = path.resolve(this.fixtureDir, w.from);
-          if (!fs.existsSync(src)) {
-            throw new MockFixtureMissingError(src);
-          }
-          fs.copyFileSync(src, dest);
-        } else if (w.content !== undefined) {
-          const rendered = this.renderTemplate(w.content, ctx);
-          fs.writeFileSync(dest, rendered, "utf8");
-        }
+        const rendered = this.renderTemplate(w.content, ctx);
+        fs.writeFileSync(dest, rendered, "utf8");
       }
     }
     if (descriptor.appends) {
@@ -299,12 +391,12 @@ export class MockAgentRunner implements AgentRunner {
 
     // Mirror what a real agent does at the end of its work — stage everything
     // so the orchestrator's next commitCheckpoint captures the files the mock
-    // just wrote. commitCheckpoint itself only git-adds .dex/feature-manifest.json
-    // and .dex/learnings.md, so without this the spec files (spec.md/plan.md/
-    // tasks.md) and implement outputs (src/mock/*.ts) would sit uncommitted in
-    // the working tree and every checkpoint commit after specify would be empty.
-    // gitignored files (.dex/state.json, .dex/state.lock, etc.) are skipped
-    // automatically by `git add -A`.
+    // just wrote. commitCheckpoint git-adds .dex/state.json,
+    // .dex/feature-manifest.json, .dex/learnings.md, and .dex/runs/, so
+    // without this `git add -A` the spec files (spec.md/plan.md/tasks.md)
+    // and implement outputs (src/mock/*.ts) would sit uncommitted in the
+    // working tree and every checkpoint commit after specify would be empty.
+    // Per-developer files (.dex/state.lock, .dex/ui.json) stay gitignored.
     if ((descriptor.writes && descriptor.writes.length) || (descriptor.appends && descriptor.appends.length)) {
       try {
         execSync("git add -A", { cwd: this.projectDir, stdio: "pipe" });
@@ -317,7 +409,7 @@ export class MockAgentRunner implements AgentRunner {
 
   private resolveProjectPath(
     template: string,
-    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null },
+    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
   ): string {
     const rendered = this.renderTemplate(template, ctx);
     if (path.isAbsolute(rendered)) return rendered;
@@ -326,7 +418,7 @@ export class MockAgentRunner implements AgentRunner {
 
   private renderTemplate(
     template: string,
-    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null },
+    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
   ): string {
     return template.replace(/\{([a-zA-Z_]+)\}/g, (match, token: string) => {
       switch (token) {
@@ -336,6 +428,22 @@ export class MockAgentRunner implements AgentRunner {
           return String(ctx.cycleNumber);
         case "feature":
           return ctx.featureId ?? "";
+        case "runId":
+          return ctx.runId;
+        case "shortRunId":
+          // 6 chars — short enough to use as a path-component postfix, long
+          // enough that two back-to-back runs won't collide in practice
+          // (orchestrator runIds are random UUIDs so the first 6 hex chars
+          // give ~16M possibilities).
+          return ctx.runId.slice(0, 6);
+        case "goalFile":
+          return this.goalPaths.goal;
+        case "goalProductDomain":
+          return this.goalPaths.productDomain;
+        case "goalTechnicalDomain":
+          return this.goalPaths.technicalDomain;
+        case "goalClarified":
+          return this.goalPaths.clarified;
         default:
           throw new MockConfigInvalidPathError(template, token, ALLOWED_TOKENS);
       }

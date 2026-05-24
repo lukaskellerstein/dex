@@ -22,6 +22,7 @@ const STEP_COMMIT = (
   containingBranches: containingBranches ?? [branch],
   parentSha,
   mergedParentShas,
+  kind: "step",
   step: step as TimelineCommit["step"],
   cycleNumber,
   subject: `dex: ${step} completed [cycle:${cycleNumber}]`,
@@ -29,9 +30,32 @@ const STEP_COMMIT = (
   hasCheckpointTag,
 });
 
+const USER_COMMIT = (
+  sha: string,
+  branch: string,
+  parentSha: string | null,
+  subject: string,
+  timestamp: string,
+  containingBranches?: string[],
+  mergedParentShas: string[] = [],
+): TimelineCommit => ({
+  sha,
+  shortSha: sha.slice(0, 7),
+  branch,
+  containingBranches: containingBranches ?? [branch],
+  parentSha,
+  mergedParentShas,
+  kind: "user",
+  cycleNumber: -1,
+  subject,
+  timestamp,
+  hasCheckpointTag: false,
+});
+
 const EMPTY_SNAP: TimelineSnapshot = {
   checkpoints: [],
   currentBranch: "",
+  headSha: "",
   pending: [],
   startingPoint: null,
   commits: [],
@@ -165,6 +189,34 @@ test("layoutTimeline: selected-* lane flagged isSelectedLane", () => {
   assert.equal(t!.isSelectedLane, true);
 });
 
+test("layoutTimeline: selected-* always lands on the rightmost lane", () => {
+  // Two non-trunk branches: a `dex/*` branch that forks LATER (higher
+  // forkRow) and a `selected-*` fork that forks EARLIER (lower forkRow).
+  // Pure forkRow-ascending order would put `selected-*` left of the dex
+  // branch — but the canvas convention is that `selected-*` is always
+  // the rightmost column, regardless of when it forked.
+  const baseline = STEP_COMMIT("a".repeat(40), "main", null, "specify", 0, "2026-05-04T10:00:00Z");
+  const dexTip = STEP_COMMIT(
+    "b".repeat(40), "dex/2026-05-04-clean", baseline.sha, "specify", 1, "2026-05-04T10:01:00Z",
+  );
+  // selected-* forks from baseline (earlier than dex's fork from baseline,
+  // by tiebreaker). Without the rule, this lands at lane 1 (left of dex).
+  const selTip = STEP_COMMIT(
+    "c".repeat(40), "selected-041", baseline.sha, "specify", 0, "2026-05-04T10:00:00Z",
+  );
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [baseline, dexTip, selTip] };
+  const out = layoutTimeline(snap, OPTS);
+
+  const mainCol = out.columns.find((c) => c.branch === "main")!;
+  const dexCol = out.columns.find((c) => c.branch === "dex/2026-05-04-clean")!;
+  const selCol = out.columns.find((c) => c.branch === "selected-041")!;
+  assert.ok(mainCol && dexCol && selCol);
+  assert.equal(mainCol.columnIndex, 0);
+  // Dex sits between trunk and selected; selected is rightmost.
+  assert.ok(selCol.columnIndex > dexCol.columnIndex);
+  assert.ok(dexCol.columnIndex > mainCol.columnIndex);
+});
+
 test("layoutTimeline: a third branch forking last gets the rightmost lane", () => {
   // Validates the chronological rule across three branches forking from the
   // same trunk row at increasing fork rows. Whichever forks last must land
@@ -243,6 +295,73 @@ test("layoutTimeline: merge commit on main — hollow flag + merge edge from mer
   assert.equal(merges[0].elbow!.y, mNode.y);
 });
 
+test("layoutTimeline: promote step on main — main lane extends to merge tip, source lane preserved", () => {
+  // Reproduces the post-promote topology where listTimeline has surfaced
+  // the merge commit as a `step: "promote"` TimelineCommit and recovered
+  // the (now-deleted) source branch's exclusive step-commit. Verifies the
+  // main lane reaches all the way to the merge row (so the `main` badge
+  // sits on the actual HEAD) and the source-branch lane gets its own
+  // column with a merge edge into main.
+  const baseline = STEP_COMMIT(
+    "a".repeat(40), "main", null, "specify", 0, "2026-05-04T17:45:16Z",
+  );
+  const sideTip = STEP_COMMIT(
+    "b".repeat(40),
+    "dex/2026-05-04-clean",
+    baseline.parentSha,
+    "specify",
+    1,
+    "2026-05-04T17:45:16.500Z",
+  );
+  const promoteMerge: TimelineCommit = {
+    sha: "c".repeat(40),
+    shortSha: "ccccccc",
+    branch: "main",
+    containingBranches: ["main"],
+    parentSha: baseline.sha,
+    mergedParentShas: [sideTip.sha],
+    kind: "promote",
+    step: "promote",
+    cycleNumber: -1,
+    subject: "dex: promoted dex/2026-05-04-clean to main",
+    timestamp: "2026-05-04T17:45:22Z",
+    hasCheckpointTag: false,
+  };
+  const snap: TimelineSnapshot = {
+    ...EMPTY_SNAP,
+    commits: [baseline, sideTip, promoteMerge],
+    currentBranch: "main",
+  };
+  const out = layoutTimeline(snap, OPTS);
+
+  const baselineNode = out.nodes.find((n) => n.id === baseline.sha)!;
+  const mergeNode = out.nodes.find((n) => n.id === promoteMerge.sha)!;
+  const sideNode = out.nodes.find((n) => n.id === sideTip.sha)!;
+
+  // Merge node sits in main's column, below baseline, and is hollow.
+  assert.equal(mergeNode.branch, "main");
+  assert.equal(mergeNode.columnIndex, baselineNode.columnIndex);
+  assert.equal(mergeNode.isMerge, true);
+  assert.ok(mergeNode.y > baselineNode.y);
+
+  // Side branch claimed its own non-trunk column.
+  assert.equal(sideNode.branch, "dex/2026-05-04-clean");
+  assert.notEqual(sideNode.columnIndex, baselineNode.columnIndex);
+
+  // Merge edge from sideTip → mergeNode is drawn.
+  const merges = out.edges.filter((e) => e.kind === "merge");
+  assert.equal(merges.length, 1);
+  assert.equal(merges[0].fromId, sideTip.sha);
+  assert.equal(merges[0].toId, promoteMerge.sha);
+
+  // The `main` badge's tail row sits below the merge — proves main's lane
+  // extends all the way to its actual HEAD instead of stopping at the
+  // last step-commit (the original bug).
+  const mainTail = out.branchTitles.find((t) => t.branch === "main" && t.isTail);
+  assert.ok(mainTail, "main should have a tail badge once it has ≥2 commits in lane");
+  assert.ok(mainTail!.y > mergeNode.y);
+});
+
 test("layoutTimeline: color states — selected (blue), kept (red), both, default", () => {
   const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
   const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
@@ -268,6 +387,34 @@ test("layoutTimeline: color states — selected (blue), kept (red), both, defaul
   assert.equal(byId.get(b.sha)!.colorState, "kept");
   assert.equal(byId.get(c.sha)!.colorState, "selected+kept");
   assert.equal(byId.get(d.sha)!.colorState, "default");
+});
+
+test("layoutTimeline: user commit on main — node carries commitKind, no cycle band", () => {
+  // Mixed history: a user commit, then a dex specify step, then another
+  // user commit. Verifies (a) the user commit lands on main's lane with
+  // commitKind="user" so the renderer can dim it, (b) cycle bands span
+  // ONLY the step-commit row (user rows don't seed bands).
+  const u1 = USER_COMMIT("u".repeat(40), "main", null, "remove testing", "2026-04-25T12:00:00Z");
+  const s1 = STEP_COMMIT("s".repeat(40), "main", u1.sha, "specify", 1, "2026-04-25T13:00:00Z");
+  const u2 = USER_COMMIT("v".repeat(40), "main", s1.sha, "tweak readme", "2026-04-25T14:00:00Z");
+  const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [u1, s1, u2] };
+  const out = layoutTimeline(snap, OPTS);
+
+  const u1Node = out.nodes.find((n) => n.id === u1.sha)!;
+  const s1Node = out.nodes.find((n) => n.id === s1.sha)!;
+  const u2Node = out.nodes.find((n) => n.id === u2.sha)!;
+  assert.equal(u1Node.commitKind, "user");
+  assert.equal(s1Node.commitKind, "step");
+  assert.equal(u2Node.commitKind, "user");
+
+  // All three on main's lane (canonical).
+  assert.equal(u1Node.columnIndex, s1Node.columnIndex);
+  assert.equal(u1Node.columnIndex, u2Node.columnIndex);
+
+  // Exactly one band — for cycle 1 (the lone step commit). The two user
+  // commits flank it and don't create their own bands.
+  assert.equal(out.cycleBands.length, 1);
+  assert.equal(out.cycleBands[0].cycleNumber, 1);
 });
 
 test("layoutTimeline: cycle bands — one band per contiguous cycleNumber run", () => {

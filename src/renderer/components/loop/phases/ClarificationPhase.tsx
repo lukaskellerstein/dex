@@ -101,10 +101,10 @@ export function ClarificationPhase({
       title: "Generate Plan & Project Rules",
       description:
         synthesisStage?.status === "completed"
-          ? "GOAL_clarified.md and CLAUDE.md generated."
+          ? "Clarified plan and CLAUDE.md generated."
           : synthesisStage?.status === "running"
-            ? "Synthesizing domain outputs into GOAL_clarified.md and CLAUDE.md..."
-            : "Produce GOAL_clarified.md and CLAUDE.md from domain outputs.",
+            ? "Synthesizing domain outputs into the clarified plan and CLAUDE.md..."
+            : "Produce the clarified plan and CLAUDE.md from domain outputs.",
       status: stageToStatus(synthesisStage, technicalStage?.status === "completed"),
       onClick: synthesisStage ? () => onStageClick(synthesisStage) : undefined,
       meta: stageMeta(synthesisStage),
@@ -129,7 +129,7 @@ export function ClarificationPhase({
         manifestExtractionStage?.status === "completed"
           ? "Ordered list of MVP features extracted from the clarified plan."
           : manifestExtractionStage?.status === "running"
-            ? "Extracting MVP features and descriptions from GOAL_clarified.md..."
+            ? "Extracting MVP features and descriptions from the clarified plan..."
             : "Extract the ordered list of MVP features from the clarified plan.",
       status: stageToStatus(manifestExtractionStage, constitutionStage?.status === "completed"),
       onClick: manifestExtractionStage ? () => onStageClick(manifestExtractionStage) : undefined,

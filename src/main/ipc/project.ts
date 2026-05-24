@@ -118,6 +118,20 @@ export function registerProjectHandlers(): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle("project:pick-goal-file", async (_event, defaultDir: string) => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile"],
+      title: "Select goal file",
+      defaultPath: defaultDir,
+      filters: [
+        { name: "Markdown", extensions: ["md", "markdown"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
   ipcMain.handle(
     "project:create-project",
     (_event, parentDir: string, projectName: string): { path: string } | { error: string } => {

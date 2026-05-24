@@ -56,6 +56,8 @@ export interface RunRecord {
   taskPhasesCompleted: number;
   writerPid: number;
   description: string | null;
+  /** Absolute path to the goal/description file used for this run. Recoverable for resume after state.json is gone. */
+  descriptionFile: string | null;
   fullPlanPath: string | null;
   maxLoopCycles: number | null;
   maxBudgetUsd: number | null;
@@ -156,6 +158,9 @@ function migrateLegacyRun(raw: Record<string, unknown>): RunRecord {
     (raw as { taskPhasesCompleted: unknown }).taskPhasesCompleted = (raw as { phasesCompleted: unknown }).phasesCompleted;
     delete (raw as { phasesCompleted?: unknown }).phasesCompleted;
   }
+  if ((raw as { descriptionFile?: unknown }).descriptionFile === undefined) {
+    (raw as { descriptionFile: string | null }).descriptionFile = null;
+  }
   return raw as unknown as RunRecord;
 }
 
@@ -182,6 +187,7 @@ interface StartRunInput {
   status: RunStatus;
   writerPid: number;
   description?: string | null;
+  descriptionFile?: string | null;
   fullPlanPath?: string | null;
   maxLoopCycles?: number | null;
   maxBudgetUsd?: number | null;
@@ -201,6 +207,7 @@ export function startRun(projectDir: string, input: StartRunInput): RunRecord {
     taskPhasesCompleted: 0,
     writerPid: input.writerPid,
     description: input.description ?? null,
+    descriptionFile: input.descriptionFile ?? null,
     fullPlanPath: input.fullPlanPath ?? null,
     maxLoopCycles: input.maxLoopCycles ?? null,
     maxBudgetUsd: input.maxBudgetUsd ?? null,

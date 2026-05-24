@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { select as d3Select } from "d3-selection";
-import { zoom as d3Zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
+import { useMemo, useRef, useState } from "react";
+import { zoomIdentity, type ZoomTransform } from "d3-zoom";
 import {
   layoutTimeline,
   type LaidOutNode,
@@ -16,34 +15,23 @@ const LAYOUT_OPTIONS = {
 };
 
 /**
- * Owns the d3 state behind TimelineGraph: svg ref, layout memo, pan/zoom
- * transform, hover state. Right-angle fork/merge paths are constructed
- * inline in the renderer (no d3-shape needed); pan/zoom handles the rest.
+ * Owns the d3 state behind TimelineGraph: svg ref, layout memo, hover
+ * state, and a pinned identity `transform`. Pan / zoom is intentionally
+ * disabled — Ctrl+wheel zoom and drag-to-pan caused the canvas to drift
+ * away from a meaningful "home" view. The wrapper div uses `overflow:
+ * auto`, so users still scroll long timelines with the mouse wheel /
+ * trackpad in the normal way. The `transform` is kept as a return value
+ * (always identity) so the SVG render path stays unchanged.
  */
 export function useD3Timeline(snapshot: TimelineSnapshot) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hovered, setHovered] = useState<LaidOutNode | null>(null);
-  const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
+  const transform: ZoomTransform = zoomIdentity;
 
   const layout: LayoutOutput = useMemo(
     () => layoutTimeline(snapshot, LAYOUT_OPTIONS),
     [snapshot],
   );
-
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const zoom = d3Zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.25, 4])
-      .on("zoom", (event) => {
-        setTransform(event.transform);
-      });
-    const sel = d3Select(svg);
-    sel.call(zoom);
-    return () => {
-      sel.on(".zoom", null);
-    };
-  }, []);
 
   const nodeById = useMemo(
     () => new Map(layout.nodes.map((n) => [n.id, n])),

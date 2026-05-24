@@ -10,6 +10,9 @@ import type {
 import type {
   TimelineSnapshot,
   JumpToResult,
+  DeleteBranchResult,
+  MergeToMainResult,
+  PromoteSummary,
 } from "../core/checkpoints.js";
 import type {
   ProfileEntry,
@@ -25,11 +28,35 @@ interface CheckpointsApi {
     suggestedName: string;
     suggestedEmail: string;
   }>;
-  unselect(projectDir: string, branchName: string): Promise<
-    | { ok: true; switchedTo: string | null; deleted: string }
+  deleteBranch(
+    projectDir: string,
+    branchName: string,
+    opts?: { confirmedLoss?: boolean },
+  ): Promise<DeleteBranchResult | { ok: false; error: "locked_by_other_instance" }>;
+  promoteSummary(projectDir: string, sourceBranch: string): Promise<PromoteSummary>;
+  mergeToMain(
+    projectDir: string,
+    sourceBranch: string,
+    opts?: { force?: "save" | "discard" },
+  ): Promise<MergeToMainResult | { ok: false; error: "locked_by_other_instance" }>;
+  acceptResolverResult(
+    projectDir: string,
+  ): Promise<
+    | { ok: true; mergeSha: string }
     | { ok: false; error: string }
     | { ok: false; error: "locked_by_other_instance" }
   >;
+  abortResolverMerge(
+    projectDir: string,
+  ): Promise<
+    | { ok: true }
+    | { ok: false; error: string }
+    | { ok: false; error: "locked_by_other_instance" }
+  >;
+  openInEditor(
+    projectDir: string,
+    files: string[],
+  ): Promise<{ ok: true } | { ok: false; error: string }>;
   syncStateFromHead(projectDir: string): Promise<
     | { ok: true; updated: boolean; step?: string; cycle?: number }
     | { ok: false; error: string }
@@ -54,6 +81,7 @@ export interface DexAPI {
   readFile(filePath: string): Promise<string | null>;
   writeFile(filePath: string, content: string): Promise<boolean>;
   pickFolder(): Promise<string | null>;
+  pickGoalFile(defaultDir: string): Promise<string | null>;
   createProject(parentDir: string, name: string): Promise<{ path: string } | { error: string }>;
   openProjectPath(projectPath: string): Promise<{ path: string } | { error: string }>;
   pathExists(targetPath: string): Promise<boolean>;
@@ -112,6 +140,17 @@ export interface DexAPI {
   close(): Promise<void>;
   isMaximized(): Promise<boolean>;
   onMaximizedChange(cb: (maximized: boolean) => void): () => void;
+
+  // Dev — surface renderer errors into the main-process terminal log
+  // (see src/main/preload-modules/dev-api.ts).
+  reportRendererError(payload: {
+    type: "error" | "unhandledrejection";
+    message: string;
+    source?: string;
+    line?: number;
+    col?: number;
+    stack?: string | null;
+  }): void;
 }
 
 declare global {

@@ -1,20 +1,18 @@
 /**
- * What: Container for the autonomous-loop start UI — composes LoopStartForm (GOAL.md editor) + budget controls (Max Cycles / Max Budget) + Automatic Clarification toggle + Start button.
- * Not: Does not own form state — useLoopStartForm does. Does not start the run; calls onStart with the form values.
+ * What: Container for the autonomous-loop start UI — composes LoopStartForm (goal-file editor + file picker) + Automatic Clarification toggle + Start button.
+ * Not: Does not own form state — useLoopStartForm does. Does not start the run; calls onStart with the form values. Does not surface budget caps (max cycles / max budget) — they're not part of this UI any more.
  * Deps: useLoopStartForm, LoopStartForm, lucide-react Play icon.
  */
 import { Play } from "lucide-react";
 import { useLoopStartForm } from "../../hooks/useLoopStartForm.js";
 import { LoopStartForm } from "./LoopStartForm.js";
-import { formLabel, textInput, cardSurface } from "../../styles/tokens.js";
+import { cardSurface } from "../../styles/tokens.js";
 
 interface LoopStartPanelProps {
   projectDir: string;
   isRunning: boolean;
   onStart: (config: {
     descriptionFile?: string;
-    maxLoopCycles?: number;
-    maxBudgetUsd?: number;
     autoClarification?: boolean;
   }) => void;
 }
@@ -27,8 +25,6 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
     if (!canStart) return;
     onStart({
       descriptionFile: form.goalPath.trim() || undefined,
-      maxLoopCycles: form.maxCycles ? parseInt(form.maxCycles, 10) : undefined,
-      maxBudgetUsd: form.maxBudget ? parseFloat(form.maxBudget) : undefined,
       autoClarification: form.autoClarification || undefined,
     });
   };
@@ -54,9 +50,9 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
           lineHeight: 1.5,
         }}
       >
-        Provide a GOAL.md describing what you want to build. Dex will conduct an interactive
-        clarification session, produce a refined plan (GOAL_clarified.md), then autonomously
-        implement each feature in cycles.
+        Provide a goal file describing what you want to build (defaults to <code>GOAL.md</code>).
+        Dex will conduct an interactive clarification session, produce a refined plan, then
+        autonomously implement each feature in cycles.
       </p>
 
       <LoopStartForm
@@ -71,36 +67,8 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
         saving={form.saving}
         saveGoal={form.saveGoal}
         loadGoalFromPath={form.loadGoalFromPath}
+        pickGoalFile={form.pickGoalFile}
       />
-
-      {/* Budget controls */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
-        <div style={{ flex: 1 }}>
-          <label style={formLabel}>Max Cycles</label>
-          <input
-            type="number"
-            min="1"
-            value={form.maxCycles}
-            onChange={(e) => form.setMaxCycles(e.target.value)}
-            placeholder="unlimited"
-            disabled={isRunning}
-            style={{ ...textInput, width: "100%" }}
-          />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={formLabel}>Max Budget (USD)</label>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.maxBudget}
-            onChange={(e) => form.setMaxBudget(e.target.value)}
-            placeholder="unlimited"
-            disabled={isRunning}
-            style={{ ...textInput, width: "100%" }}
-          />
-        </div>
-      </div>
 
       {/* Auto clarification toggle */}
       <div
@@ -157,7 +125,7 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
               marginTop: 2,
             }}
           >
-            Skip interactive Q&A — agent auto-selects recommended options based on GOAL.md context
+            Skip interactive Q&A — agent auto-selects recommended options based on the goal-file context
           </div>
         </div>
       </div>

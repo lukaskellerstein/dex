@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "start": "electron dist/main/index.js",
     "build:start": "npm run build && npm start",
-    "test:core": "node --test --experimental-strip-types src/core/__tests__/agentProfile.test.ts src/core/__tests__/appConfig.test.ts src/core/__tests__/context.test.ts src/core/__tests__/dexConfig.test.ts src/core/__tests__/finalize.test.ts src/core/__tests__/gap-analysis.test.ts src/core/__tests__/phase-lifecycle.test.ts src/core/__tests__/timelineLayout.test.ts",
+    "test:core": "node --test --experimental-strip-types src/core/__tests__/agentProfile.test.ts src/core/__tests__/appConfig.test.ts src/core/__tests__/context.test.ts src/core/__tests__/dexConfig.test.ts src/core/__tests__/finalize.test.ts src/core/__tests__/gap-analysis.test.ts src/core/__tests__/goal-paths.test.ts src/core/__tests__/phase-lifecycle.test.ts src/core/__tests__/timelineLayout.test.ts",
     "test:core:all": "node --test --experimental-strip-types 'src/core/__tests__/*.test.ts'",
     "test:renderer": "vitest run",
     "test": "npm run test:core && npm run test:renderer && npm run check:size",

@@ -8,7 +8,6 @@ import {
   checkpointTagFor,
   labelFor,
   isParallelizable,
-  unselect,
   listTimeline,
   CHECKPOINT_MESSAGE_PREFIX,
 } from "../checkpoints.ts";
@@ -218,54 +217,9 @@ test("listTimeline: selectedPath shrinks after checking out an earlier commit", 
   }
 });
 
-test("unselect: switches HEAD to main and deletes the selected-* branch", () => {
-  const dir = mkTmpRepo();
-  try {
-    const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
-    execSync(`git checkout -q -b selected-20260101T000000 ${sha}`, { cwd: dir });
-
-    const r = unselect(dir, "selected-20260101T000000");
-    assert.equal(r.ok, true);
-    if (r.ok) {
-      assert.equal(r.deleted, "selected-20260101T000000");
-      assert.match(r.switchedTo ?? "", /^(main|master)$/);
-    }
-    const branches = execSync("git branch", { cwd: dir, encoding: "utf-8" });
-    assert.equal(branches.includes("selected-20260101T000000"), false);
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("unselect: refuses non-selected-* branches", () => {
-  const dir = mkTmpRepo();
-  try {
-    const r = unselect(dir, "main");
-    assert.equal(r.ok, false);
-    if (!r.ok) {
-      assert.match(r.error, /selected-\*/);
-    }
-  } finally {
-    rmTmp(dir);
-  }
-});
-
-test("unselect: prefers main/master over dex/* when both contain the SHA", () => {
-  const dir = mkTmpRepo();
-  try {
-    const sha = execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }).trim();
-    execSync(`git checkout -q -b dex/2026-04-25-abcdef ${sha}`, { cwd: dir });
-    execSync(`git checkout -q -b selected-20260101T000000 ${sha}`, { cwd: dir });
-
-    const r = unselect(dir, "selected-20260101T000000");
-    assert.equal(r.ok, true);
-    if (r.ok) {
-      assert.match(r.switchedTo ?? "", /^(main|master)$/);
-    }
-  } finally {
-    rmTmp(dir);
-  }
-});
+// Note: unselect() was removed in 014; deleteBranch (in branchOps.ts) subsumes
+// it with stricter HEAD-handling (always main, fallback master). See
+// branchOps.test.ts for the new test coverage.
 
 test("listTimeline: surfaces step-commits from a sibling branch", () => {
   const dir = mkTmpRepo();

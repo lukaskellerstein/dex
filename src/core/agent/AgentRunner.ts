@@ -81,9 +81,46 @@ export interface TaskPhaseResult {
   outputTokens: number;
 }
 
+/**
+ * Context for runOneShot — free-form ad-hoc agent invocation. Used by the
+ * 014 conflict resolver and any future "small AI gesture" that fits neither
+ * the cycle-step nor the task-phase shape.
+ */
+export interface OneShotContext {
+  /** Same RunConfig that drives the orchestrator — used for model, projectDir, settings. */
+  config: RunConfig;
+  /** Free-form user prompt sent as the first user turn. */
+  prompt: string;
+  /** Appended to (not replacing) the project's resolved system prompt — used to install role-specific instructions. */
+  systemPromptOverride?: string;
+  /** Tool allowlist passed to the SDK. The conflict resolver always sets `["Read", "Edit"]`. */
+  allowedTools?: string[];
+  /** Working dir for the SDK invocation. Defaults to `config.projectDir` when unset. */
+  cwd?: string;
+  abortController: AbortController | null;
+  emit: EmitFn;
+  rlog: RunLogger;
+  /** SDK maxTurns ceiling. Defaults to 1 when undefined. */
+  maxTurns?: number;
+}
+
+export interface OneShotResult {
+  /** USD; 0 for non-SDK runners. */
+  cost: number;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** The agent's last assistant text. Empty string when no assistant message arrived (e.g. immediate abort). */
+  finalText: string;
+  /** True iff the SDK ended its stream cleanly — no abort, no error, no max-turns cutoff. */
+  finishedNormally: boolean;
+}
+
 export interface AgentRunner {
   runStep(ctx: StepContext): Promise<StepResult>;
   runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult>;
+  /** 014 — generic ad-hoc invocation. v1 caller is the conflict resolver. */
+  runOneShot(ctx: OneShotContext): Promise<OneShotResult>;
 }
 
 export type AgentRunnerFactory = (

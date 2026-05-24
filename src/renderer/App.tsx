@@ -221,6 +221,21 @@ export default function App() {
     }
   }, [orchestrator.loopTermination, orchestrator.isRunning]);
 
+  // 014/test-003 — After a Timeline click-to-jump fork, the HEAD moves to a
+  // step-commit on a `selected-*` branch. state.json on disk is restored
+  // automatically (tracked since 014) but the renderer's in-memory loop
+  // cycles array is stale from the prior run's tip. Rehydrate from the
+  // latest run record so the Steps tab reflects the orchestrator state at
+  // the fork point instead of regressing to the kickoff form.
+  useEffect(() => {
+    const unsub = orchestratorService.subscribeEvents((evt) => {
+      if (evt.type === "head_changed" && project.projectDir) {
+        void orchestrator.loadRunHistory(project.projectDir);
+      }
+    });
+    return unsub;
+  }, [project.projectDir, orchestrator.loadRunHistory]);
+
   // Auto-switch to loop dashboard when loop starts running
   useEffect(() => {
     if (orchestrator.isRunning && orchestrator.mode === "loop") {
@@ -232,8 +247,6 @@ export default function App() {
 
   const handleStartLoop = (loopConfig: {
     descriptionFile?: string;
-    maxLoopCycles?: number;
-    maxBudgetUsd?: number;
     autoClarification?: boolean;
     resume?: boolean;
   }) => {
@@ -469,10 +482,16 @@ export default function App() {
   // of whichever sub-view currentView points at. Spec / trace / subagent
   // detail views remain reachable from inside the dashboard via spec-card
   // clicks; they don't belong on the top-level "Steps" tab.
+  //
+  // 014 — `dexStatus === null` means there's no `.dex/state.json` on disk:
+  // either a fresh project OR a project whose last run was just promoted to
+  // main (the squash-merge IPC deletes state.json). In both cases the user
+  // wants the LoopStartPanel — pick a spec / toggle auto-clarification /
+  // start a new run — not the LoopDashboard's prerequisites view.
   const stepsTabContent =
     project.projectDir &&
-    project.specSummaries.length === 0 &&
-    !orchestrator.isRunning ? (
+    !orchestrator.isRunning &&
+    (project.specSummaries.length === 0 || project.dexStatus === null) ? (
       <LoopStartPanel
         projectDir={project.projectDir}
         isRunning={orchestrator.isRunning}
@@ -517,17 +536,14 @@ export default function App() {
         projectDir={project.projectDir}
         aggregate={project.aggregate}
         isRunning={orchestrator.isRunning}
-        isPausedLoop={
-          !orchestrator.isRunning &&
-          (orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0) &&
-          !orchestrator.loopTermination
-        }
+        isPausedLoop={!orchestrator.isRunning && project.dexStatus === "paused"}
         onOpenProject={handleOpenProject}
         onGoHome={handleGoHome}
         onRefreshProject={project.refreshProject}
         onDeselectSpec={handleDeselectSpec}
         onStart={handleStart}
         onStop={() => orchestratorService.stopRun()}
+        debugBadge={debugBadge}
         tabs={tabs}
         content={shellContent}
       />

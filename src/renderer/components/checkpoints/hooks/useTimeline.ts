@@ -8,6 +8,7 @@ const POLL_INTERVAL_MS = 30_000;
 const EMPTY: TimelineSnapshot = {
   checkpoints: [],
   currentBranch: "",
+  headSha: "",
   pending: [],
   startingPoint: null,
   commits: [],

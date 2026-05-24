@@ -11,6 +11,8 @@ export const projectApi = {
     ipcRenderer.invoke("project:write-file", filePath, content) as Promise<boolean>,
   pickFolder: () =>
     ipcRenderer.invoke("project:pick-folder") as Promise<string | null>,
+  pickGoalFile: (defaultDir: string) =>
+    ipcRenderer.invoke("project:pick-goal-file", defaultDir) as Promise<string | null>,
   createProject: (parentDir: string, name: string) =>
     ipcRenderer.invoke("project:create-project", parentDir, name) as Promise<
       { path: string } | { error: string }

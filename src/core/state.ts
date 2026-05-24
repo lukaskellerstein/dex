@@ -21,10 +21,6 @@ type DeepPartial<T> = {
 
 type PauseReason = "user_abort" | "step_mode" | "budget" | "failure";
 
-interface DexUiPrefs {
-  pauseAfterStage?: boolean;
-}
-
 export interface DexState {
   version: 1;
   runId: string;
@@ -68,9 +64,6 @@ export interface DexState {
   // Reason for status === "paused" (typed; present iff paused).
   pauseReason?: PauseReason;
 
-  // Session UI preferences — Record mode, Pause-after-stage toggles.
-  ui?: DexUiPrefs;
-
   // Timestamps
   startedAt: string;
   pausedAt: string | null;
@@ -83,6 +76,10 @@ interface ConfigSnapshot {
   maxTurns: number;
   maxIterations: number;
   autoClarification?: boolean;
+  /** Absolute path to the user's goal file. Default `<projectDir>/GOAL.md`;
+   * persisted so resume + UI auto-detect honor a non-default choice without
+   * the user having to retype it on every launch. */
+  descriptionFile?: string;
 }
 
 interface ArtifactManifest {
@@ -262,6 +259,7 @@ export function createInitialState(
       maxTurns: config.maxTurns,
       maxIterations: config.maxIterations,
       autoClarification: config.autoClarification,
+      descriptionFile: config.descriptionFile,
     },
     artifacts: {
       goalFile: null,
@@ -305,6 +303,10 @@ function stripRemovedFields(raw: Record<string, unknown>): DexState | null {
     raw.currentTaskPhaseNumber = raw.currentPhaseNumber;
     delete raw.currentPhaseNumber;
   }
+  // Post-014 (this fix): UI prefs moved to `<projectDir>/.dex/ui.json` so
+  // state.json can be committed without leaking machine-specific toggles.
+  // Drop the legacy `ui` field silently from older payloads.
+  delete raw.ui;
   return raw as unknown as DexState;
 }
 
@@ -590,13 +592,14 @@ function deriveResumeCursor(state: DexState, acc: DriftAccumulator): ResumeCurso
 
   if (state.artifacts.clarifiedGoal) {
     const goalPath = state.artifacts.clarifiedGoal.path;
+    const goalName = path.basename(goalPath);
     if (acc.driftSummary.missingArtifacts.includes(goalPath)) {
       cursor.phase = "clarification";
       cursor.step = null;
-      acc.warnings.push("GOAL_clarified.md deleted — resetting to clarification phase");
+      acc.warnings.push(`${goalName} deleted — resetting to clarification phase`);
     } else if (acc.driftSummary.modifiedArtifacts.includes(goalPath)) {
       acc.blockers.push(
-        "GOAL_clarified.md was modified. Re-run gap analysis? Choose: re-run or accept.",
+        `${goalName} was modified. Re-run gap analysis? Choose: re-run or accept.`,
       );
     }
   }

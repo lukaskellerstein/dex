@@ -1,4 +1,5 @@
-import { RefreshCw, Play, Square, FolderOpen } from "lucide-react";
+import { ReactNode } from "react";
+import { RefreshCw, Play, Pause, FolderOpen } from "lucide-react";
 import type { RunConfig } from "../../../core/types.js";
 
 interface AggregateStats {
@@ -21,6 +22,9 @@ export interface TopbarProps {
   onDeselectSpec: () => void;
   onStart: (config: Partial<RunConfig>) => void;
   onStop: () => void;
+  /** Always-visible debug-context copy badge — placed in the topbar so the user can
+   * grab RunID/PhaseTraceID/etc. from any view. */
+  debugBadge?: ReactNode;
 }
 
 export function Topbar({
@@ -34,6 +38,7 @@ export function Topbar({
   onDeselectSpec,
   onStart,
   onStop,
+  debugBadge,
 }: TopbarProps) {
   const canStart = !!projectDir && (aggregate.unfinishedSpecs > 0 || isPausedLoop) && !isRunning;
 
@@ -203,8 +208,13 @@ export function Topbar({
         </div>
       )}
 
-      {/* Run Controls (compact) */}
-      {projectDir && (
+      {/* Debug badge — always visible when a project is open, regardless of view. */}
+      {projectDir && debugBadge && (
+        <div style={{ flexShrink: 0 }}>{debugBadge}</div>
+      )}
+
+      {/* Run Controls (compact) — only when there's something to start or resume. */}
+      {projectDir && (isRunning || aggregate.unfinishedSpecs > 0 || isPausedLoop) && (
         <div style={{ flexShrink: 0 }}>
           {isRunning ? (
             <button
@@ -217,14 +227,14 @@ export function Topbar({
                 borderRadius: "var(--radius)",
                 fontSize: "0.8rem",
                 fontWeight: 500,
-                background: "rgba(239, 68, 68, 0.15)",
-                color: "var(--status-error)",
-                border: "1px solid rgba(239, 68, 68, 0.3)",
+                background: "rgba(245, 158, 11, 0.15)",
+                color: "var(--status-warning, #f59e0b)",
+                border: "1px solid rgba(245, 158, 11, 0.3)",
                 cursor: "pointer",
               }}
             >
-              <Square size={11} />
-              Stop
+              <Pause size={11} fill="currentColor" />
+              Pause
             </button>
           ) : (
             <button

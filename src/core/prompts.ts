@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { RunConfig, TaskPhase } from "./types.js";
 
 // ── Structured Output Schemas ──
@@ -95,8 +96,13 @@ export const SYNTHESIS_SCHEMA = {
 
 // ── T005a: Product Domain Clarification Prompt ──
 
-export function buildProductClarificationPrompt(goalFilePath: string): string {
-  return `You are conducting the PRODUCT clarification session for a software project. The user has provided an initial project description in GOAL.md. Your job is to read it, identify gaps in the product definition, and ask clarifying questions focused exclusively on the product domain.
+export function buildProductClarificationPrompt(
+  goalFilePath: string,
+  productDomainPath: string,
+): string {
+  const goalName = path.basename(goalFilePath);
+  const productDomainName = path.basename(productDomainPath);
+  return `You are conducting the PRODUCT clarification session for a software project. The user has provided an initial project description in ${goalName}. Your job is to read it, identify gaps in the product definition, and ask clarifying questions focused exclusively on the product domain.
 
 ## Instructions
 
@@ -114,7 +120,7 @@ Do NOT ask about technology stack, deployment, testing strategy, or build comman
 
 ## Question Format Rules
 
-When using AskUserQuestion, ALWAYS mark exactly one option as recommended per question by setting \`recommended: true\` on that option. Choose the recommendation based on the project context from GOAL.md — pick the option that best fits the described project. This is critical for automatic clarification mode where the recommended options are auto-selected.
+When using AskUserQuestion, ALWAYS mark exactly one option as recommended per question by setting \`recommended: true\` on that option. Choose the recommendation based on the project context from ${goalName} — pick the option that best fits the described project. This is critical for automatic clarification mode where the recommended options are auto-selected.
 
 ## Completeness Checklist
 
@@ -127,19 +133,23 @@ Before writing the output, verify you have answers for ALL of these:
 
 ## Output
 
-When you have sufficient information, write the product domain output to \`GOAL_product_domain.md\` in the project root using the Write tool. Structure it as clear markdown sections covering all checklist items.
+When you have sufficient information, write the product domain output to the absolute path \`${productDomainPath}\` using the Write tool. This path sits next to the goal file — do NOT relocate it to the project root or any other directory. Structure the file as clear markdown sections covering all checklist items.
 
-Do NOT modify the original GOAL.md — it is the user's input and must be preserved.
+Do NOT modify the original ${goalName} — it is the user's input and must be preserved.
 
-After writing the file, output the absolute path to GOAL_product_domain.md as the final line of your response.`;
+After writing the file, output the absolute path \`${productDomainPath}\` as the final line of your response.`;
 }
 
 // ── T005b: Technical Domain Clarification Prompt ──
 
 export function buildTechnicalClarificationPrompt(
   goalFilePath: string,
-  productDomainPath: string
+  productDomainPath: string,
+  technicalDomainPath: string,
 ): string {
+  const goalName = path.basename(goalFilePath);
+  const productDomainName = path.basename(productDomainPath);
+  const technicalDomainName = path.basename(technicalDomainPath);
   return `You are conducting the TECHNICAL clarification session for a software project. The product domain has already been clarified. Your job is to read the product decisions and ask clarifying questions focused exclusively on the technical domain.
 
 ## Instructions
@@ -161,7 +171,7 @@ Do NOT re-ask product questions (features, user stories, scope) — those are al
 
 ## Question Format Rules
 
-When using AskUserQuestion, ALWAYS mark exactly one option as recommended per question by setting \`recommended: true\` on that option. Choose the recommendation based on the project context from GOAL.md and the product domain output — pick the option that best fits the described project. This is critical for automatic clarification mode where the recommended options are auto-selected.
+When using AskUserQuestion, ALWAYS mark exactly one option as recommended per question by setting \`recommended: true\` on that option. Choose the recommendation based on the project context from ${goalName} and the product domain output — pick the option that best fits the described project. This is critical for automatic clarification mode where the recommended options are auto-selected.
 
 ## Completeness Checklist
 
@@ -176,11 +186,11 @@ Before writing the output, verify you have answers for ALL of these:
 
 ## Output
 
-When you have sufficient information, write the technical domain output to \`GOAL_technical_domain.md\` in the project root using the Write tool. Structure it as clear markdown sections covering all checklist items.
+When you have sufficient information, write the technical domain output to the absolute path \`${technicalDomainPath}\` using the Write tool. This path sits next to the goal file — do NOT relocate it to the project root or any other directory. Structure the file as clear markdown sections covering all checklist items.
 
-Do NOT modify the original GOAL.md or GOAL_product_domain.md.
+Do NOT modify the original ${goalName} or ${productDomainName}.
 
-After writing the file, output the absolute path to GOAL_technical_domain.md as the final line of your response.`;
+After writing the file, output the absolute path \`${technicalDomainPath}\` as the final line of your response.`;
 }
 
 // ── T005c: Clarification Synthesis Prompt ──
@@ -188,8 +198,13 @@ After writing the file, output the absolute path to GOAL_technical_domain.md as 
 export function buildClarificationSynthesisPrompt(
   goalFilePath: string,
   productDomainPath: string,
-  technicalDomainPath: string
+  technicalDomainPath: string,
+  clarifiedPath: string,
 ): string {
+  const goalName = path.basename(goalFilePath);
+  const productDomainName = path.basename(productDomainPath);
+  const technicalDomainName = path.basename(technicalDomainPath);
+  const clarifiedName = path.basename(clarifiedPath);
   return `You are synthesizing the results of a multi-domain clarification session into two output files. No interactive Q&A is needed — all information has been collected.
 
 ## Instructions
@@ -199,9 +214,9 @@ export function buildClarificationSynthesisPrompt(
 3. Read the technical domain decisions at: ${technicalDomainPath}
 4. Produce TWO output files:
 
-### Output 1: GOAL_clarified.md
+### Output 1: ${clarifiedName}
 
-Write \`GOAL_clarified.md\` in the project root. This is the comprehensive, unified project plan and the single source of truth for all subsequent specification and implementation work. It must include:
+Write the clarified plan to the absolute path \`${clarifiedPath}\` using the Write tool. This path sits next to the goal file — do NOT relocate it to the project root or any other directory. This is the comprehensive, unified project plan and the single source of truth for all subsequent specification and implementation work. It must include:
 
 - Project overview and vision
 - User personas and stories with acceptance criteria
@@ -234,9 +249,9 @@ Keep CLAUDE.md concise and directive — it's an instruction file, not documenta
 
 ## Important
 
-- Do NOT modify GOAL.md, GOAL_product_domain.md, or GOAL_technical_domain.md
+- Do NOT modify ${goalName}, ${productDomainName}, or ${technicalDomainName}
 - Do NOT ask interactive questions — synthesize from existing inputs only
-- After writing both files, output the absolute path to GOAL_clarified.md as the final line of your response.`;
+- After writing both files, output the absolute path \`${clarifiedPath}\` as the final line of your response.`;
 }
 
 // ── Manifest Extraction Prompt ──
@@ -427,11 +442,14 @@ export function buildImplementPrompt(
     ? config.specDir
     : `${config.projectDir}/${config.specDir}`;
 
+  const goalName = config.descriptionFile ? path.basename(config.descriptionFile) : "GOAL.md";
+  const clarifiedName = path.basename(fullPlanPath);
+
   return `/speckit-implement ${specPath} --phase ${phase.number}
 
 ## Dex Loop Guardrails
 
-- Read ${fullPlanPath} for full project context (READ-ONLY — do not modify GOAL.md or GOAL_clarified.md)
+- Read ${fullPlanPath} for full project context (READ-ONLY — do not modify ${goalName} or ${clarifiedName})
 - Orient: You are implementing TaskPhase ${phase.number}: ${phase.name}
 - After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md
 - Run build/typecheck after each logical group of changes
