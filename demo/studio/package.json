@@ -1,0 +1,24 @@
+{
+  "name": "demo-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion project for demo-video-plugin. Renders ../timeline.json. Media resolves through --public-dir=.. so demo/capture and demo/audio are used in place.",
+  "scripts": {
+    "start": "remotion studio src/index.ts --public-dir=..",
+    "render": "remotion render src/index.ts Demo ../out/demo.mp4 --public-dir=..",
+    "render:draft": "remotion render src/index.ts Demo ../out/demo-draft.mp4 --public-dir=.. --scale=0.6 --crf=28",
+    "still": "remotion still src/index.ts Demo ../out/still.png --public-dir=..",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.320",
+    "remotion": "^4.0.320",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.6.0"
+  }
+}

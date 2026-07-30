@@ -29,6 +29,33 @@ function getScriptType(): "sh" | "ps" {
   return process.platform === "win32" ? "ps" : "sh";
 }
 
+/**
+ * Which flag this spec-kit build uses to select the coding agent.
+ *
+ * spec-kit 0.14 renamed `--ai` to `--integration`. Passing the wrong one makes
+ * `specify init` exit non-zero with "No such option", which fails the
+ * speckit_init check — and a failed check blocks the whole run behind the
+ * "Continue anyway" prompt in runPrerequisites. Probing `--help` keeps both the
+ * current CLI and pre-0.14 installs working.
+ *
+ * Defaults to `--integration` when the probe yields nothing useful: an unknown
+ * future build is likelier to resemble the current CLI than the retired one.
+ */
+function detectSpecifyAgentFlag(): "--integration" | "--ai" {
+  try {
+    const help = execSync("specify init --help", {
+      stdio: "pipe",
+      timeout: 15_000,
+      encoding: "utf-8",
+    });
+    if (help.includes("--integration")) return "--integration";
+    if (help.includes("--ai")) return "--ai";
+  } catch {
+    // Probe failed (CLI missing, or --help itself errored). Fall through.
+  }
+  return "--integration";
+}
+
 type CheckFinalStatus = "pass" | "fail" | "fixed";
 
 // ── Public driver ───────────────────────────────────────────
@@ -267,10 +294,11 @@ async function checkSpeckitInit(
     results.set("speckit_init", "fail");
     return;
   }
-  ctx.rlog.run("INFO", "runPrerequisites: running specify init");
+  const agentFlag = detectSpecifyAgentFlag();
+  ctx.rlog.run("INFO", "runPrerequisites: running specify init", { agentFlag });
   try {
     const scriptType = getScriptType();
-    execSync(`specify init . --force --ai claude --script ${scriptType}`, {
+    execSync(`specify init . --force ${agentFlag} claude --script ${scriptType}`, {
       cwd: ctx.projectDir,
       stdio: "pipe",
       timeout: 60_000,

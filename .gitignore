@@ -4,9 +4,18 @@ dist
 
 .playwright-mcp
 
+.DS_Store
+
 
 # Dex runtime cache — local only, never committed
 .dex/state.json
 .dex/state.lock
 .dex/variant-groups/
 .dex/worktrees/
+
+# demo-video-plugin — media is regenerable, the source of truth is storyboard.json
+demo/capture/
+demo/audio/
+demo/out/
+demo/studio/node_modules/
+demo/timeline.json

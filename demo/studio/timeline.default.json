@@ -1,0 +1,26 @@
+{
+  "generatedBy": "placeholder — replaced by scripts/reconcile.mjs",
+  "title": "Demo (not yet reconciled)",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "durationInFrames": 90,
+  "captionsMode": "section",
+  "sections": [
+    {
+      "id": "01-placeholder",
+      "beat": "hook",
+      "title": "Run /demo to build this video",
+      "surface": "titlecard",
+      "startFrame": 0,
+      "durationInFrames": 90,
+      "camera": { "kind": "static", "from": 1, "to": 1, "focus": "center" },
+      "transitionIn": { "kind": "cut", "seconds": 0, "frames": 0 },
+      "titlecard": {
+        "title": "No timeline yet",
+        "subtitle": "reconcile.mjs regenerates this file from the storyboard and the measured media"
+      }
+    }
+  ],
+  "report": { "targetSeconds": 3, "actualSeconds": 3, "warnings": [], "errors": [] }
+}

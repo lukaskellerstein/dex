@@ -13,7 +13,7 @@ interface Props {
 /**
  * Offered at project-open when git identity is unset. Writes to local config
  * only; never --global. Users can skip — identity is only strictly required
- * for Record mode / checkpoint tagging.
+ * for checkpoint commits and tagging.
  */
 export function IdentityPrompt({
   suggestedName,

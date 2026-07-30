@@ -33,8 +33,9 @@ export function InitRepoPrompt({ projectDir, onSkip, onInit }: Props) {
       </p>
       <p style={{ color: "var(--foreground-muted)", fontSize: 13 }}>
         Dex's checkpoint system uses git under the hood. Initialize now to turn on
-        Go back / Try again / Try N ways. You can skip — the timeline will stay
-        disabled with a banner until you come back to it.
+        the Timeline — jump back to any stage, remove a version, or promote one to
+        main. You can skip — the timeline will stay disabled with a banner until
+        you come back to it.
       </p>
     </CheckpointModal>
   );

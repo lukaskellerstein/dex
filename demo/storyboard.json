@@ -1,0 +1,581 @@
+{
+  "meta": {
+    "title": "Dex — autonomous development you can steer",
+    "audience": "Engineers and engineering leads evaluating AI-assisted autonomous development tooling. They already use supervised chat-based coding and are deciding whether to trust an agent to run unsupervised on their repo, and whether they can get control back when it goes wrong.",
+    "targetSeconds": 128,
+    "fps": 30,
+    "captureSize": "1920x1080",
+    "outputSize": "1920x1080",
+    "captions": "section",
+    "appUrl": null,
+    "startCommand": "npm run build",
+    "readySignal": "dist/renderer/index.html exists; demo/prep/capture-dex.mjs launches Electron itself per section",
+    "electron": {
+      "cwd": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex",
+      "executablePath": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+      "args": [
+        "dist/main/index.js"
+      ],
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "freezeClock": false,
+      "note": "Captured in production mode against the built renderer (npm run build) — no Vite dev server, no HMR, no second process to keep alive. executablePath must be absolute: Playwright resolves it against process.cwd(), not the launch cwd. Capture runs through demo/prep/capture-dex.mjs, which launches one Electron per section and trims the setupActions head off the clip.",
+      "demoProject": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex-ecommerce",
+      "runDuration": "A full scripted run takes ~80s: prerequisites, ~9s clarification, then cycles (cycle 1 fast ~12s, cycle 2 slow ~32s, cycle 3 ~16s). Every section is self-contained — 02 and 03 each start their own run from a reset, and 04/05 build the finished run headlessly via prepareCommands — so sections can be recorded in any order and re-recorded individually."
+    },
+    "voice": {
+      "provider": "gemini-tts",
+      "model": "pro-tts",
+      "voiceName": "Charon",
+      "styleInstructions": "Calm, measured technical narrator for a developer product demo. Mid-range, unhurried, dry and matter-of-fact. No enthusiasm, no announcer cadence, no upspeak. Pronounce \"Dex\" as a single syllable rhyming with \"specs\".",
+      "note": "Not ElevenLabs: this machines ELEVENLABS_API_KEY lacks the voices_read scope, so the demo-elevenlabs MCP server rejects every synthesis request. Regenerate with mcp__plugin_media-plugin_media-mcp__generate_speech using exactly these settings, then re-run demo/prep/import-narration.mjs."
+    },
+    "music": null
+  },
+  "sections": [
+    {
+      "id": "01-intro",
+      "beat": "hook",
+      "title": "Dex",
+      "surface": "titlecard",
+      "targetSeconds": 3.5,
+      "voiceover": "",
+      "onScreenText": "autonomous development you can steer",
+      "successCriteria": "The logo mark settles before the wordmark reads, nothing is still moving when the card cuts to the app, and the tagline is legible. Deliberately silent — narration starts on the next section.",
+      "note": "Logo sting. Silent on purpose: the first voice in the video is the problem statement, and a narrated intro would delay it. The cut into 02-problem is hard, not a crossfade, because reconcile cuts on a surface change."
+    },
+    {
+      "id": "02-problem",
+      "beat": "problem",
+      "title": "One long session degrades",
+      "surface": "electron",
+      "targetSeconds": 15,
+      "resetBefore": true,
+      "camera": {
+        "kind": "kenburns",
+        "from": 1,
+        "to": 1.08,
+        "focus": "0%,0%"
+      },
+      "voiceover": "A single AI coding session degrades past about a hundred thousand tokens. So teams babysit every step, and still end up reviewing a branch nobody can explain. Dex starts from one goal file.",
+      "actions": [
+        {
+          "kind": "waitFor",
+          "target": "welcome screen with parent path and project name inputs",
+          "idleUpTo": 3,
+          "note": "App boots to the welcome screen."
+        },
+        {
+          "kind": "type",
+          "target": "parent path input (data-testid welcome-path)",
+          "text": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein",
+          "wps": 22,
+          "dwellBefore": 0.8,
+          "note": "Type the path — never touch the native folder-picker button, it is opaque to capture."
+        },
+        {
+          "kind": "type",
+          "target": "project name input (data-testid welcome-name)",
+          "text": "dex-ecommerce",
+          "wps": 6,
+          "dwellBefore": 0.4
+        },
+        {
+          "kind": "click",
+          "target": "submit button reading 'Open Existing' (data-testid welcome-submit)",
+          "dwellBefore": 0.7,
+          "note": "Label reads 'Open Existing' because prep created the folder."
+        },
+        {
+          "kind": "waitFor",
+          "target": "Timeline tab content",
+          "idleUpTo": 4
+        },
+        {
+          "kind": "click",
+          "target": "Steps tab (data-testid top-tab-steps)",
+          "dwellBefore": 0.6,
+          "note": "Default tab on project open is Timeline; the start form lives on Steps."
+        },
+        {
+          "kind": "waitFor",
+          "target": "loop start panel showing the auto-detected GOAL.md",
+          "idleUpTo": 3,
+          "dwellAfter": 1.5
+        }
+      ],
+      "successCriteria": "The loop start panel is visible, the 'auto-detected' badge is showing, and the resolved path ends in dex-ecommerce/GOAL.md. No error banner, no empty state, no spinner. The 'Start Autonomous Loop' button is enabled. The goal file's contents are behind the Edit button and are deliberately not shown — the narration only claims a goal file exists."
+    },
+    {
+      "id": "03-loop",
+      "beat": "core-flow",
+      "title": "A fresh agent per stage",
+      "surface": "electron",
+      "targetSeconds": 25,
+      "resetBefore": true,
+      "camera": {
+        "kind": "kenburns",
+        "from": 1,
+        "to": 1.06,
+        "focus": "0%,0%"
+      },
+      "voiceover": "Every feature runs through GitHub's spec-kit. Specify, plan, tasks, implement, verify. Each stage gets a brand new agent with an empty context window. That is the Ralph loop's insight: context is the scarce resource, so you throw it away between steps. Every finished stage becomes a git commit.",
+      "setupActions": [
+        {
+          "kind": "waitFor",
+          "target": "parent path input (data-testid welcome-path)",
+          "idleUpTo": 6
+        },
+        {
+          "kind": "type",
+          "target": "parent path input (data-testid welcome-path)",
+          "text": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "type",
+          "target": "project name input (data-testid welcome-name)",
+          "text": "dex-ecommerce",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "waitFor",
+          "target": "submit button once its label flips to 'Open Existing'",
+          "idleUpTo": 5,
+          "note": "The existence check behind the label is debounced 150ms then async over IPC; clicking before it lands takes the create-project branch instead of the open branch."
+        },
+        {
+          "kind": "click",
+          "target": "submit button reading 'Open Existing' (data-testid welcome-submit)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "click",
+          "target": "Steps tab (data-testid top-tab-steps)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "waitFor",
+          "target": "Start Autonomous Loop button",
+          "idleUpTo": 6,
+          "dwellAfter": 0.4
+        },
+        {
+          "kind": "click",
+          "target": "Automatic Clarification toggle (xpath=//div[text()='Automatic Clarification']/parent::div/preceding-sibling::button)",
+          "dwellAfter": 0.3,
+          "note": "On, so the interactive Q&A panel never appears — it cannot be staged deterministically under mock. The toggle is an unlabelled <button>; an accessible-name lookup resolves to the label text next to it, which is not clickable, so the target carries an explicit xpath."
+        },
+        {
+          "kind": "click",
+          "target": "Start Autonomous Loop button",
+          "dwellAfter": 0.3
+        },
+        {
+          "kind": "waitFor",
+          "target": "loop dashboard branch row (data-testid steps-current-branch)",
+          "idleUpTo": 6
+        },
+        {
+          "kind": "dwell",
+          "seconds": 11,
+          "note": "Starting the run is setup, not content. Prerequisites plus the four clarification stages are ~13s of scripted delay before cycle 1 exists, and the narration enumerates the cycle's stages five seconds in — so recording has to begin once cycle 1 is on screen, not at the click. This dwell is what buys that."
+        }
+      ],
+      "actions": [
+        {
+          "kind": "waitFor",
+          "target": "cycle 1 header row (css=button:has-text(\"Cycle 1\"))",
+          "idleUpTo": 12,
+          "note": "Matching on `button` is deliberate: the ghost skeleton rows below the live cycles also render 'Cycle 1' while clarification is still going, but they are divs."
+        },
+        {
+          "kind": "dwell",
+          "seconds": 23,
+          "note": "Cycle 1's stage rows finish flipping to completed, then cycle 2 opens and works down its own list — the whole section is stage rows changing state. Do NOT open a stage row; the trace is sparse under mock."
+        }
+      ],
+      "successCriteria": "The loop dashboard shows the phase stepper with at least three stage rows in a completed state and one actively running, and the stages the narration names (Specify, Plan, Tasks, Implement, Verify) are all on screen while it enumerates them — those names are spec-kit's, so the picture is the evidence for the spec-kit claim. Stage names are readable. No error state. The running row's inline reply preview reads as an ordinary stage identifier ('dex_loop/verify (001-catalog-and-search)') — if any frame shows a '[mock]' marker the clip predates the marker removal and must be re-recorded against a rebuilt dist/."
+    },
+    {
+      "id": "04-how",
+      "beat": "proof",
+      "title": "Spec-kit, on a Ralph loop",
+      "surface": "code",
+      "targetSeconds": 19,
+      "voiceover": "Two ideas, fused. Spec-kit says write the constitution, the spec and the task list before any code. The Ralph loop says never let one agent session live long enough to degrade. Dex does both, until the feature list is empty.",
+      "code": {
+        "file": "dex-ecommerce — what spec-kit left on disk",
+        "content": "$ ls .specify/\ninit-options.json  scripts\nintegration.json  templates\nintegrations    workflows\nmemory\n\n$ ls specs/001-catalog-and-search/\nplan.md    spec.md    tasks.md\n\n# spec.md   what to build\n# plan.md   how, and the trade-offs\n# tasks.md  ordered work, one agent per phase\n"
+      },
+      "successCriteria": "Both listings are real output from the recorded run and legible without wrapping. The card names spec-kit and the Ralph loop only as the narration does — spec-kit produces the artefacts shown; the fresh-agent-per-phase split is Dex/Ralph, not spec-kit.",
+      "onScreenText": "ghuntley.com/ralph  ·  github.com/github/spec-kit"
+    },
+    {
+      "id": "05-pause",
+      "beat": "core-flow",
+      "title": "Pause that means pause",
+      "surface": "electron",
+      "targetSeconds": 16,
+      "resetBefore": true,
+      "camera": {
+        "kind": "kenburns",
+        "from": 1,
+        "to": 1.05,
+        "focus": "0%,0%"
+      },
+      "onScreenText": "Every finished stage is already committed",
+      "voiceover": "Pausing stops the loop at a stage boundary, not mid-thought. Finished stages stay green, the current one holds, and Resume re-enters exactly where it stopped. No run restarts from scratch.",
+      "setupActions": [
+        {
+          "kind": "waitFor",
+          "target": "parent path input (data-testid welcome-path)",
+          "idleUpTo": 6
+        },
+        {
+          "kind": "type",
+          "target": "parent path input (data-testid welcome-path)",
+          "text": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "type",
+          "target": "project name input (data-testid welcome-name)",
+          "text": "dex-ecommerce",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "waitFor",
+          "target": "submit button once its label flips to 'Open Existing'",
+          "idleUpTo": 5,
+          "note": "The existence check behind the label is debounced 150ms then async over IPC; clicking before it lands takes the create-project branch instead of the open branch."
+        },
+        {
+          "kind": "click",
+          "target": "submit button reading 'Open Existing' (data-testid welcome-submit)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "click",
+          "target": "Steps tab (data-testid top-tab-steps)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "click",
+          "target": "Automatic Clarification toggle (xpath=//div[text()='Automatic Clarification']/parent::div/preceding-sibling::button)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "click",
+          "target": "Start Autonomous Loop button",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "waitFor",
+          "target": "cycle 2 header row (css=button:has-text(\"Cycle 2\"))",
+          "idleUpTo": 50,
+          "note": "Cycle 2 starts ~22s of scripted delay into the run. Matching on `button` is deliberate: the ghost skeleton rows below the live cycles also render 'Cycle 2' while cycle 1 is still going, but they are divs."
+        },
+        {
+          "kind": "dwell",
+          "seconds": 6,
+          "note": "Cycle 2's stages run 4.5-6.5s each, so six seconds past its start lands the Pause click inside a running stage rather than on a boundary."
+        }
+      ],
+      "actions": [
+        {
+          "kind": "click",
+          "target": "the topbar Pause button (xpath=//button[normalize-space()='Pause'])",
+          "dwellBefore": 0.5,
+          "note": "Prep tunes one stage to a longer delay so this click reliably lands inside a running stage. The explicit xpath is not decoration: resolving Pause through the prose ladder took about five seconds of failed candidates, and every one of those seconds pushed the click further past the line of narration it belongs to."
+        },
+        {
+          "kind": "waitFor",
+          "target": "the held stage row's paused label (xpath=//*[text()='paused'])",
+          "idleUpTo": 3,
+          "dwellAfter": 1.6,
+          "note": "Held just long enough to read — completed stages green, current paused, future grey. It cannot be longer: everything after it has to fit inside the window the recorder actually writes."
+        },
+        {
+          "kind": "click",
+          "target": "the topbar Resume button (xpath=//button[normalize-space()='Resume'])",
+          "dwellBefore": 0.5
+        },
+        {
+          "kind": "dwell",
+          "seconds": 14,
+          "note": "Two independent delays have to be outlasted here, and together they set this section's whole shape. Resuming leaves the UI unchanged for about six seconds while state is synced from HEAD and the run restarts; and Playwright stops writing frames roughly four seconds before the app closes, so the clip's last seconds are a duplicated frame. Fourteen seconds puts the moment the loop visibly restarts inside both windows. The reconciler trims what is left over."
+        }
+      ],
+      "successCriteria": "Exactly one stage shows a paused indicator while paused, with earlier stages completed and later ones pending. After Resume, a later stage is running and no stage was re-run. No error toast."
+    },
+    {
+      "id": "06-rewind",
+      "beat": "wow",
+      "title": "Rewind the run",
+      "surface": "electron",
+      "targetSeconds": 18,
+      "resetBefore": true,
+      "camera": {
+        "kind": "kenburns",
+        "from": 1,
+        "to": 1.1,
+        "focus": "0%,0%"
+      },
+      "prepareCommands": [
+        "node scripts/run-mock-headless.mjs /Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex-ecommerce"
+      ],
+      "onScreenText": "Fork point: [checkpoint:plan:1]",
+      "voiceover": "Every stage is a commit, so the whole run is a graph you can navigate. Selecting a node moves the working tree back to the state after planning, before any code existed. Continuing from there forks a new branch instead of overwriting the old one.",
+      "setupActions": [
+        {
+          "kind": "waitFor",
+          "target": "parent path input (data-testid welcome-path)",
+          "idleUpTo": 6
+        },
+        {
+          "kind": "type",
+          "target": "parent path input (data-testid welcome-path)",
+          "text": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "type",
+          "target": "project name input (data-testid welcome-name)",
+          "text": "dex-ecommerce",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "waitFor",
+          "target": "submit button once its label flips to 'Open Existing'",
+          "idleUpTo": 5,
+          "note": "The existence check behind the label is debounced 150ms then async over IPC; clicking before it lands takes the create-project branch instead of the open branch."
+        },
+        {
+          "kind": "click",
+          "target": "submit button reading 'Open Existing' (data-testid welcome-submit)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "click",
+          "target": "Timeline tab (data-testid top-tab-timeline)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "waitFor",
+          "target": "timeline graph (data-testid timeline-graph)",
+          "idleUpTo": 10,
+          "dwellAfter": 0.6
+        }
+      ],
+      "actions": [
+        {
+          "kind": "waitFor",
+          "target": "the run branch's plan node (timeline-label plan · cycle 1)",
+          "idleUpTo": 6,
+          "dwellAfter": 1.2,
+          "note": "The graph is populated by the headless run in prepareCommands — ~25 checkpoint commits on one dex/* branch, done in ~85s without burning screen time."
+        },
+        {
+          "kind": "hover",
+          "target": "the 'plan' stage node partway up the run branch (timeline-label plan · cycle 1)",
+          "dwellBefore": 0.6,
+          "dwellAfter": 1.8,
+          "note": "Timeline dots are SVG <g> keyed by commit sha, which is unknowable when the storyboard is written. The label rendered beside each dot starts with that sha, so the operator reads the sha off the label and builds the testid."
+        },
+        {
+          "kind": "click",
+          "target": "the 'plan' stage node partway up the run branch (timeline-label plan · cycle 1)",
+          "dwellBefore": 0.4,
+          "note": "Working tree must be clean here so the Save/Discard dialog does not appear."
+        },
+        {
+          "kind": "waitFor",
+          "target": "a new selected-* branch column appearing in the graph (css=[data-testid^=\"branch-badge-selected-\"])",
+          "idleUpTo": 6,
+          "dwellAfter": 3,
+          "note": "The fork branch is named selected-<timestamp>, so its badge is matched by prefix. Three seconds, not ten: the new column is a badge and an elbow, and there is nothing further to read once both have landed."
+        },
+        {
+          "kind": "click",
+          "target": "Steps tab (data-testid top-tab-steps)",
+          "dwellBefore": 0.8,
+          "dwellAfter": 0.4,
+          "note": "The graph proves the fork exists; the Steps tab proves what the fork IS. jumpTo restores .dex/state.json from the target commit, so the dashboard redraws as it stood at that node — gap analysis, specify and plan green, tasks held, implement onward pending. That is the narration's claim ('back to the state after planning, before any code existed') shown rather than asserted."
+        },
+        {
+          "kind": "waitFor",
+          "target": "the branch row now reading selected-* (data-testid steps-current-branch)",
+          "idleUpTo": 4,
+          "dwellAfter": 3.5
+        },
+        {
+          "kind": "click",
+          "target": "Timeline tab (data-testid top-tab-timeline)",
+          "dwellBefore": 0.6,
+          "dwellAfter": 0.4
+        },
+        {
+          "kind": "waitFor",
+          "target": "timeline graph (data-testid timeline-graph)",
+          "idleUpTo": 4,
+          "dwellAfter": 2.5
+        }
+      ],
+      "successCriteria": "The graph shows at least two branch columns with the new selected-* column visible and HEAD on it. Stage labels are legible on the nodes. The Steps tab then shows the loop dashboard rebuilt at the jumped-to node — plan and everything before it complete, tasks onward not — with the branch row reading selected-*. No dirty-tree dialog, no error toast, no single-node graph. KNOWN GAP: the selected-* column carries no commit of its own, because nothing in the app commits onto a navigation fork without a further run, and a run cannot reach its first checkpoint inside this section's budget. Nothing here fabricates one."
+    },
+    {
+      "id": "07-promote",
+      "beat": "core-flow",
+      "title": "Merge into main",
+      "surface": "electron",
+      "targetSeconds": 19,
+      "resetBefore": true,
+      "camera": {
+        "kind": "kenburns",
+        "from": 1,
+        "to": 1.1,
+        "focus": "0%,0%"
+      },
+      "prepareCommands": [
+        "node scripts/run-mock-headless.mjs /Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex-ecommerce",
+        "bash demo/prep/stage-conflict.sh"
+      ],
+      "onScreenText": "Read + Edit only  ·  5 iterations  ·  $0.50 cap",
+      "voiceover": "Main moved while the run was in flight, so this promotion conflicts. Dex hands the conflicted file to a one-shot agent that can only read and edit, under a fixed iteration and cost ceiling. The merge keeps both sides.",
+      "setupActions": [
+        {
+          "kind": "waitFor",
+          "target": "parent path input (data-testid welcome-path)",
+          "idleUpTo": 6
+        },
+        {
+          "kind": "type",
+          "target": "parent path input (data-testid welcome-path)",
+          "text": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "type",
+          "target": "project name input (data-testid welcome-name)",
+          "text": "dex-ecommerce",
+          "wps": 400,
+          "dwellAfter": 0.1
+        },
+        {
+          "kind": "waitFor",
+          "target": "submit button once its label flips to 'Open Existing'",
+          "idleUpTo": 5,
+          "note": "The existence check behind the label is debounced 150ms then async over IPC; clicking before it lands takes the create-project branch instead of the open branch."
+        },
+        {
+          "kind": "click",
+          "target": "submit button reading 'Open Existing' (data-testid welcome-submit)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "click",
+          "target": "Timeline tab (data-testid top-tab-timeline)",
+          "dwellAfter": 0.2
+        },
+        {
+          "kind": "waitFor",
+          "target": "timeline graph (data-testid timeline-graph)",
+          "idleUpTo": 10,
+          "dwellAfter": 0.6
+        }
+      ],
+      "actions": [
+        {
+          "kind": "click",
+          "button": "right",
+          "target": "the dex/* run branch badge in the timeline (css=[data-testid^=\"branch-badge-dex/\"])",
+          "dwellBefore": 1.2,
+          "note": "RIGHT-CLICK — opens the branch context menu. The badge testid embeds the run branch name, which carries the run date and a random suffix, so it is matched by prefix."
+        },
+        {
+          "kind": "waitFor",
+          "target": "branch context menu (data-testid branch-context-menu)",
+          "idleUpTo": 2
+        },
+        {
+          "kind": "click",
+          "target": "'Merge into main' menu item",
+          "dwellBefore": 0.7,
+          "note": "The section title still says 'Make this the new main'; the shipped menu item reads 'Merge into main'."
+        },
+        {
+          "kind": "waitFor",
+          "target": "promote confirmation summary (data-testid promote-summary-stats)",
+          "idleUpTo": 2.5,
+          "dwellAfter": 2.2
+        },
+        {
+          "kind": "click",
+          "target": "confirm button in the promote dialog (data-testid promote-confirm)",
+          "dwellBefore": 0.7
+        },
+        {
+          "kind": "waitFor",
+          "target": "conflict resolver progress modal (data-testid resolver-progress-status)",
+          "idleUpTo": 4,
+          "dwellAfter": 4,
+          "note": "The payoff frame. The modal streams file-start, then an iteration, then Resolved 1/1 for README.md over a 2.6s scripted delay — so this dwell is covering movement, not a held picture. Do NOT zoom the 'cost so far $0.0000' line."
+        },
+        {
+          "kind": "waitFor",
+          "target": "success toast, graph redrawn with main at the promoted commit (data-testid timeline-toast)",
+          "idleUpTo": 8,
+          "dwellAfter": 2.5,
+          "note": "The toast only clears on click, so waiting on it cannot race the resolver finishing."
+        },
+        {
+          "kind": "hover",
+          "target": "the main branch badge, now at the promoted commit (css=[data-testid^=\"branch-badge-main\"])",
+          "dwellBefore": 0.8,
+          "dwellAfter": 2.5,
+          "note": "Ends the section on the claim it has to land — main is at the merge — instead of on a held frame of the toast. The pointer move is also the only thing keeping the last three seconds alive."
+        }
+      ],
+      "successCriteria": "The resolver progress modal is visible, names README.md, and shows real progress ('Resolving 1 of 1', not 'Starting…' / 'Resolved 0 / ?'). The terminal confirmation the viewer reads is the banner 'AI resolved 1 disagreement. The new main is ready.', with main at the promoted commit in the graph. No failure modal, no 'Accept what AI did' rollback prompt, no residual conflict markers. Requires demo/prep/stage-conflict.sh to have run after the loop finished — without it the merge is clean and the resolver never appears."
+    },
+    {
+      "id": "08-audit",
+      "beat": "proof",
+      "title": "No database, just git",
+      "surface": "code",
+      "targetSeconds": 10,
+      "camera": {
+        "kind": "static"
+      },
+      "voiceover": "There is no database. Every run is a JSON file in the repo, and every stage is a commit you can grep for with plain git.",
+      "code": {
+        "file": "shell — dex-ecommerce, after the recorded run",
+        "content": "$ git log dex/2026-07-30-ff81d5 --format='%s' \\\n    | grep -oE '\\[checkpoint:[a-z_]+:[0-9]+\\]' | head -5\n[checkpoint:completion:3]\n[checkpoint:learnings:3]\n[checkpoint:verify:3]\n[checkpoint:implement:3]\n[checkpoint:tasks:3]\n# 24 checkpoint commits in this run\n\n$ ls -t .dex/runs/*.json | head -1 | xargs jq -c \\\n    '{status, mode, agentRuns: (.agentRuns|length)}'\n{\"status\":\"completed\",\"mode\":\"loop\",\"agentRuns\":33}\n"
+      },
+      "successCriteria": "Real terminal output, legible at output size, no wrapped or clipped lines.",
+      "note": "Static camera. A Ken Burns move exists to keep a screen recording from reading as a still; on a card that is nothing but live text it only re-rasterizes the type every frame, which shows up as shimmer on the large weights."
+    },
+    {
+      "id": "09-close",
+      "beat": "close",
+      "title": "Point it at a repo",
+      "surface": "titlecard",
+      "targetSeconds": 6,
+      "camera": {
+        "kind": "static"
+      },
+      "onScreenText": "Dex — github.com/lukaskellerstein/dex",
+      "voiceover": "Point it at a repo with a goal file, and watch the first cycle commit itself.",
+      "note": "Static camera. A Ken Burns move exists to keep a screen recording from reading as a still; on a card that is nothing but live text it only re-rasterizes the type every frame, which shows up as shimmer on the large weights."
+    }
+  ]
+}

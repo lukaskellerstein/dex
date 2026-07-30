@@ -166,9 +166,13 @@ export class MockAgentRunner implements AgentRunner {
     };
     emitOnly(mkStep("user_message", stepIndex++, prompt));
 
-    // One synthetic mock_step agent_step so the trace view shows progress.
+    // One synthetic mock_step agent_step so the trace view shows progress. The
+    // step is identified as synthetic by its metadata (mockPhase/mockStep) and
+    // by the `mock.runStep` line in the run log, not by a marker in the content
+    // — the loop dashboard renders this content inline as the running stage's
+    // reply preview, where a marker is redundant with the metadata.
     emitOnly(
-      mkStep("text", stepIndex++, `[mock] ${phase}/${step}${featureId ? ` (${featureId})` : ""}`, {
+      mkStep("text", stepIndex++, `${phase}/${step}${featureId ? ` (${featureId})` : ""}`, {
         mockStep: step,
         mockPhase: phase,
         cycleNumber,
@@ -260,7 +264,7 @@ export class MockAgentRunner implements AgentRunner {
     };
     emitOnly(mkStep("user_message", stepIndex++, prompt));
     emitOnly(
-      mkStep("text", stepIndex++, `[mock] runTaskPhase ${taskPhase.number}: ${taskPhase.name} (cycle=${assignedCycleNumber || "?"})`, {
+      mkStep("text", stepIndex++, `runTaskPhase ${taskPhase.number}: ${taskPhase.name} (cycle=${assignedCycleNumber || "?"})`, {
         mockPhase: "implement",
         cycleNumber: assignedCycleNumber || null,
         featureId: assignedFeatureId,
