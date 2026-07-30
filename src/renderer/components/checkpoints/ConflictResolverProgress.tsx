@@ -12,6 +12,8 @@ interface Props {
   onDone: (ok: boolean, costTotal: number, reason: string | null) => void;
   /** User clicked Cancel — caller should propagate via the abort IPC. */
   onCancel: () => void;
+  /** The `file-start` event that opened the modal. See ResolverSeed. */
+  seed?: ResolverSeed | null;
 }
 
 interface State {
@@ -37,6 +39,24 @@ const INITIAL: State = {
   failedFiles: [],
   done: false,
 };
+
+/**
+ * The `file-start` event that opened this modal. TimelinePanel mounts the modal
+ * *in response to* that event, so the modal's own subscription starts one tick
+ * too late to ever receive it — leaving `totalFiles` at 0 and the UI stuck on
+ * "Starting…" / "Resolved 0 / ?" for the entire resolution, however long it
+ * takes. Seeding from the opening event is what makes the progress real.
+ */
+export interface ResolverSeed {
+  file: string;
+  index: number;
+  total: number;
+}
+
+function seeded(seed: ResolverSeed | null): State {
+  if (!seed) return INITIAL;
+  return { ...INITIAL, totalFiles: seed.total, currentFile: seed.file, currentIndex: seed.index };
+}
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -74,8 +94,8 @@ function reduce(state: State, action: Action): State {
  * the displayed state. Closes itself when the terminal `done` event arrives,
  * forwarding the outcome to the caller via `onDone`.
  */
-export function ConflictResolverProgress({ onDone, onCancel }: Props) {
-  const [state, dispatch] = useReducer(reduce, INITIAL);
+export function ConflictResolverProgress({ onDone, onCancel, seed = null }: Props) {
+  const [state, dispatch] = useReducer(reduce, seed, seeded);
 
   useEffect(() => {
     const off = orchestratorService.subscribeEvents((evt) => {

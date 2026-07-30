@@ -163,12 +163,12 @@ export function mockConfigPath(projectDir: string): string {
 
 /**
  * Parse and validate .dex/mock-config.json. Caller decides whether to
- * actually use the mock — that's `dex-config.json`'s `mocked` flag.
+ * actually use the mock — that's `dex-config.json`'s `agent` field.
  */
 export function loadMockConfig(projectDir: string): MockConfig {
   const file = mockConfigPath(projectDir);
   if (!fs.existsSync(file)) {
-    throw new MockConfigInvalidError(file, "file does not exist. Create it or set 'mocked: false' in .dex/dex-config.json.");
+    throw new MockConfigInvalidError(file, "file does not exist. Create it or set 'agent': 'claude' in .dex/dex-config.json.");
   }
   const raw = fs.readFileSync(file, "utf8");
   let parsed: unknown;

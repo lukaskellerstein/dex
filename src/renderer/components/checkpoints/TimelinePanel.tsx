@@ -5,7 +5,7 @@ import { TimelineGraph } from "./TimelineGraph";
 import { DeleteBranchConfirm } from "./DeleteBranchConfirm";
 import { BranchContextMenu } from "./BranchContextMenu";
 import { PromoteConfirm } from "./PromoteConfirm";
-import { ConflictResolverProgress } from "./ConflictResolverProgress";
+import { ConflictResolverProgress, type ResolverSeed } from "./ConflictResolverProgress";
 import { ResolverFailureModal } from "./ResolverFailureModal";
 import { checkpointService } from "../../services/checkpointService.js";
 import { orchestratorService } from "../../services/orchestratorService.js";
@@ -86,6 +86,7 @@ export function TimelinePanel({
   const [promoteConfirm, setPromoteConfirm] = useState<PromoteConfirmEnvelope | null>(null);
   const [promoteDirty, setPromoteDirty] = useState<PromoteDirtyEnvelope | null>(null);
   const [resolverActive, setResolverActive] = useState(false);
+  const [resolverSeed, setResolverSeed] = useState<ResolverSeed | null>(null);
   const [resolverFailure, setResolverFailure] = useState<ResolverFailureEnvelope | null>(null);
   // Track which files the resolver flagged as failing so the failure modal
   // can surface them and pass them to "Open in editor".
@@ -102,6 +103,11 @@ export function TimelinePanel({
     const off = orchestratorService.subscribeEvents((evt) => {
       const t = (evt as { type?: string }).type;
       if (t === "conflict-resolver:file-start") {
+        const e = evt as { file: string; index: number; total: number };
+        // Mounting the modal is what makes it subscribe, so it cannot receive
+        // this event itself — hand it the payload or it renders "Starting…"
+        // and "Resolved 0 / ?" for the whole resolution.
+        setResolverSeed({ file: e.file, index: e.index, total: e.total });
         setResolverActive(true);
         setResolverFailedFiles([]);
       } else if (t === "conflict-resolver:file-done") {
@@ -449,6 +455,7 @@ export function TimelinePanel({
       )}
       {resolverActive && (
         <ConflictResolverProgress
+          seed={resolverSeed}
           onDone={() => {
             // Close the modal immediately; the mergeToMain promise's resolution
             // is what drives the success toast / error banner.

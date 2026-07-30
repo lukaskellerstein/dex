@@ -17,8 +17,6 @@ import { gitExec } from "./_helpers.js";
 const RUNTIME_CACHE_ENTRIES = [
   ".dex/state.lock",
   ".dex/ui.json",
-  ".dex/variant-groups/",
-  ".dex/worktrees/",
 ] as const;
 
 // Legacy entries that previous versions added to projects' `.gitignore`. They
