@@ -170,16 +170,6 @@
             "command": "echo '⚠️ AUTH REQUIRED: Set Authorization header before navigation!' && echo 'Token:' && grep 'CLAUDE_SERVICE_TOKEN=' claude_tokens.md 2>/dev/null | cut -d'=' -f2 | head -1 || echo 'Token file not found - regenerate token first'"
           }
         ]
-      },
-      {
-        "matcher": "mcp__electron-playwright__browser_(navigate|run_code|snapshot)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/playwright-pre-navigate.py\"",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "PostToolUse": [

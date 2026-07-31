@@ -19,3 +19,7 @@ demo/audio/
 demo/out/
 demo/studio/node_modules/
 demo/timeline.json
+
+# Bytecode cache from the Python hooks in .claude/hooks/
+__pycache__/
+*.pyc
