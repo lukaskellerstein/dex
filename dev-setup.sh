@@ -3,7 +3,7 @@
 # dev-setup.sh — Start all Dex components for development.
 #
 # Starts Vite dev server (HMR) and Electron with CDP enabled so the
-# AI agent can test UI changes via the electron-chrome MCP server.
+# AI agent can test UI changes via the electron-playwright MCP server.
 #
 # Usage:
 #   ./dev-setup.sh
@@ -16,9 +16,10 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="${HOME}/.dex/dev-logs"
 mkdir -p "$LOG_DIR"
 
-# Truncate old logs
->"$LOG_DIR/vite.log"
->"$LOG_DIR/electron.log"
+# Truncate old logs (`: >` rather than a bare `>` — shellcheck SC2188 flags a
+# redirection with no command, and the no-op keeps the intent explicit)
+: >"$LOG_DIR/vite.log"
+: >"$LOG_DIR/electron.log"
 
 # --- Cleanup on exit ---
 PIDS=()

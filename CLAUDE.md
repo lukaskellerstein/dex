@@ -38,7 +38,10 @@ tests/
 
 ## Commands
 
-npm test && npm run lint
+`npm test` (core via `node --test` + renderer via `vitest` + `check:size`), `npx tsc --noEmit` for types.
+
+Linting and formatting are **not** repo scripts — biome and ruff run in the editor
+off `biome.jsonc` / `ruff.toml`. There is no `npm run lint`.
 
 ## Code Style
 

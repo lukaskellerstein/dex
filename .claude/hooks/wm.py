@@ -18,6 +18,7 @@ caller stashes those with `stash()` (float + refocus) instead, which keeps the
 window compositing and therefore keeps Playwright screencasts working.
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -413,10 +414,11 @@ class Yabai(WindowManager):
         pid = window.get("pid")
         if not pid:
             return
-        try:
+        # Both failures are expected and mean the job is already done: the
+        # process died with its window (ProcessLookupError), or it is not ours
+        # to signal (PermissionError). Neither may fail the hook.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
 
     def release_scratch(self) -> None:
         state = self._read_state()

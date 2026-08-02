@@ -1,0 +1,55 @@
+# markdownlint-cli2 — copy to a repo root as `.markdownlint-cli2.yaml`.
+#
+# Presence of this file is the entire opt-in signal: without it markdown linting
+# is silent in that repo, exactly like ruff without a `ruff.toml`. There is no
+# global fallback — a `~/.markdownlint-cli2.yaml` used to exist and turned this
+# tool on for every repo under $HOME, which is the one thing "no config, no
+# tool" is supposed to prevent (retired 2026-08-02).
+#
+# The disables below follow the same policy as `ruff.toml` and `biome.jsonc`: a
+# rule earns its place by auto-fixing on `:w` or by pointing at a probable real
+# problem. Rules that only demand hand edits to correct, readable prose are off.
+# A repo that wants one back re-enables it here — this file is a starting point,
+# not a frozen ruleset.
+
+# markdownlint-cli2 does NOT read .gitignore unless told to, and a `**/*.md`
+# glob walks straight into `.venv/`, `node_modules/` and any vendored tree. The
+# finding count then stops meaning anything: one Python repo measured **12,042
+# findings across site-packages, against 0 in its own docs** once this was set.
+# Same failure as biome's `vcs.useIgnoreFile` — and the same fix, pointing the
+# tool at the ignore file the repo already maintains rather than a second
+# exclude list that can drift. (Measured 2026-08-02.)
+gitignore: true
+
+config:
+  # Line length. Prose is soft-wrapped by the editor; an 80-column hard limit is
+  # meaningless in a README and fires on nearly every paragraph and table row.
+  # Not auto-fixable, so every hit is a manual reflow of working text.
+  MD013: false
+
+  # Table column style. Demands padding spaces around every pipe; cosmetic only,
+  # and the renderer draws its own borders anyway.
+  MD060: false
+
+  # Inline HTML. <br/>, <details>, <kbd>, <img align> etc. are normal in
+  # hand-written docs and in every GitHub README.
+  MD033: false
+
+  # First line must be a top-level heading. Breaks any file starting with
+  # frontmatter, a badge row, or a callout.
+  MD041: false
+
+  # Duplicate headings: only complain about siblings, so repeated subsection
+  # names like "Usage" under different parents are fine.
+  MD024:
+    siblings_only: true
+
+  # The next two both fire on Obsidian-style callouts (`> [!tip] Title`), which
+  # markdownlint parses as plain blockquotes and has no concept of.
+  #
+  # MD028 sees two adjacent callouts separated by one blank line as "a blank
+  # line inside a blockquote". MD032 sees a list starting on the line after a
+  # callout title as "a list without blank lines around it" -- but inserting the
+  # blank `>` it wants would split the callout in two when rendered.
+  MD028: false
+  MD032: false
