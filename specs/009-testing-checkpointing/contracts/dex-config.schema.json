@@ -14,8 +14,5 @@
       "examples": ["claude", "mock"]
     }
   },
-  "examples": [
-    { "agent": "claude" },
-    { "agent": "mock" }
-  ]
+  "examples": [{ "agent": "claude" }, { "agent": "mock" }]
 }

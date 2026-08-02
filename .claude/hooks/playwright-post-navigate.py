@@ -29,8 +29,7 @@ def main() -> None:
     candidates = [
         window
         for window in manager.browser_windows()
-        if not manager.is_scratch(window["workspace"])
-        and wm.is_playwright_browser(window["pid"])
+        if not manager.is_scratch(window["workspace"]) and wm.is_playwright_browser(window["pid"])
     ]
     if not candidates:
         sys.exit(0)

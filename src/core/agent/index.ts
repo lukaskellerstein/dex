@@ -12,10 +12,11 @@
  * The earlier dynamic-registry indirection was deleted — a switch is
  * easier to navigate at this scale and adding a case is one line.
  */
+
+import type { RunConfig } from "../types.js";
+import type { AgentRunner } from "./AgentRunner.js";
 import { ClaudeAgentRunner } from "./ClaudeAgentRunner.js";
 import { MockAgentRunner } from "./MockAgentRunner.js";
-import type { AgentRunner } from "./AgentRunner.js";
-import type { RunConfig } from "../types.js";
 
 /** Names this build of Dex knows how to instantiate. Update when adding a runner. */
 export const KNOWN_AGENTS = ["claude", "mock"] as const;
@@ -46,6 +47,12 @@ export function createAgentRunner(
   }
 }
 
-export type { AgentRunner, StepContext, StepResult, TaskPhaseContext, TaskPhaseResult } from "./AgentRunner.js";
+export type {
+  AgentRunner,
+  StepContext,
+  StepResult,
+  TaskPhaseContext,
+  TaskPhaseResult,
+} from "./AgentRunner.js";
 export { ClaudeAgentRunner } from "./ClaudeAgentRunner.js";
 export { MockAgentRunner } from "./MockAgentRunner.js";

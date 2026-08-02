@@ -29,7 +29,10 @@ if [[ "$(basename "$PROJECT")" != "dex-ecommerce" ]]; then
 fi
 
 git -C "$PROJECT" rev-parse --verify -q main >/dev/null \
-  || { echo "no main branch in $PROJECT" >&2; exit 1; }
+  || {
+    echo "no main branch in $PROJECT" >&2
+    exit 1
+  }
 
 RUN_BRANCH="$(git -C "$PROJECT" for-each-ref --format='%(refname:short)' 'refs/heads/dex/*' | head -1)"
 if [[ -z "$RUN_BRANCH" ]]; then
@@ -41,7 +44,7 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-cat > "$TMP/README.md" <<'MD'
+cat >"$TMP/README.md" <<'MD'
 # Eshopy
 
 Storefront for a small online shop. See `docs/my-specs/` for the specifications.
@@ -78,15 +81,27 @@ git -C "$PROJECT" update-ref refs/heads/main "$COMMIT"
 BASE="$(git -C "$PROJECT" merge-base main "$RUN_BRANCH")"
 for ref in "$BASE" main "$RUN_BRANCH"; do
   git -C "$PROJECT" cat-file -e "$ref:README.md" 2>/dev/null \
-    || { echo "FATAL: README.md missing on $ref — the merge would be AA, not UU." >&2; exit 1; }
+    || {
+      echo "FATAL: README.md missing on $ref — the merge would be AA, not UU." >&2
+      exit 1
+    }
 done
 
 base_blob="$(git -C "$PROJECT" rev-parse "$BASE:README.md")"
 main_blob="$(git -C "$PROJECT" rev-parse "main:README.md")"
 run_blob="$(git -C "$PROJECT" rev-parse "$RUN_BRANCH:README.md")"
-[[ "$main_blob" != "$base_blob" ]] || { echo "FATAL: main did not change README.md" >&2; exit 1; }
-[[ "$run_blob"  != "$base_blob" ]] || { echo "FATAL: the run did not change README.md" >&2; exit 1; }
-[[ "$main_blob" != "$run_blob"  ]] || { echo "FATAL: both sides wrote identical content — git would auto-merge" >&2; exit 1; }
+[[ "$main_blob" != "$base_blob" ]] || {
+  echo "FATAL: main did not change README.md" >&2
+  exit 1
+}
+[[ "$run_blob" != "$base_blob" ]] || {
+  echo "FATAL: the run did not change README.md" >&2
+  exit 1
+}
+[[ "$main_blob" != "$run_blob" ]] || {
+  echo "FATAL: both sides wrote identical content — git would auto-merge" >&2
+  exit 1
+}
 
 # Prove the merge actually conflicts, without touching the working tree.
 if git -C "$PROJECT" merge-tree --write-tree main "$RUN_BRANCH" >/dev/null 2>&1; then

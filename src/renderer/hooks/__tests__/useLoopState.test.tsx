@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrchestratorEvent, RunConfig } from "../../../core/types.js";
 
 type EventHandler = (event: OrchestratorEvent) => void;
@@ -59,7 +59,19 @@ describe("useLoopState", () => {
     const { result } = renderHook(() => useLoopState());
     // Pre-seed something to confirm clearing.
     act(() => {
-      result.current.setLoopCycles([{ cycleNumber: 99, featureName: "x", specDir: null, decision: null, status: "running", costUsd: 0, stages: [], implementPhases: [], startedAt: "" }]);
+      result.current.setLoopCycles([
+        {
+          cycleNumber: 99,
+          featureName: "x",
+          specDir: null,
+          decision: null,
+          status: "running",
+          costUsd: 0,
+          stages: [],
+          implementPhases: [],
+          startedAt: "",
+        },
+      ]);
       result.current.setTotalCost(42);
     });
     expect(result.current.loopCycles.length).toBe(1);
@@ -131,7 +143,13 @@ describe("useLoopState", () => {
   it("step_completed accumulates totalCost and updates the matching stage", () => {
     const { result } = renderHook(() => useLoopState());
     emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
-    emit({ type: "step_started", runId: "r-1", cycleNumber: 0, step: "specify", agentRunId: "ar-1" });
+    emit({
+      type: "step_started",
+      runId: "r-1",
+      cycleNumber: 0,
+      step: "specify",
+      agentRunId: "ar-1",
+    });
     emit({
       type: "step_completed",
       runId: "r-1",

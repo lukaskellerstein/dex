@@ -1,13 +1,13 @@
-import React from 'react';
-import { AbsoluteFill, Audio, Sequence, staticFile, useVideoConfig } from 'remotion';
-import type { Timeline } from './lib/timeline';
-import { dbToGain } from './lib/timeline';
-import { theme } from './lib/theme';
-import { SectionShell } from './components/SectionShell';
-import { VideoSection } from './sections/VideoSection';
-import { StillSection } from './sections/StillSection';
-import { TitleCard } from './sections/TitleCard';
-import { CodeSection } from './sections/CodeSection';
+import type React from "react";
+import { AbsoluteFill, Audio, Sequence, staticFile, useVideoConfig } from "remotion";
+import { SectionShell } from "./components/SectionShell";
+import { theme } from "./lib/theme";
+import type { Timeline } from "./lib/timeline";
+import { dbToGain } from "./lib/timeline";
+import { CodeSection } from "./sections/CodeSection";
+import { StillSection } from "./sections/StillSection";
+import { TitleCard } from "./sections/TitleCard";
+import { VideoSection } from "./sections/VideoSection";
 
 export const DemoTimeline: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const { fps } = useVideoConfig();
@@ -26,11 +26,11 @@ export const DemoTimeline: React.FC<{ timeline: Timeline }> = ({ timeline }) => 
           layout="none"
         >
           <SectionShell section={section}>
-            {section.surface === 'web' || section.surface === 'electron' ? (
+            {section.surface === "web" || section.surface === "electron" ? (
               <VideoSection section={section} />
-            ) : section.surface === 'still' ? (
+            ) : section.surface === "still" ? (
               <StillSection section={section} />
-            ) : section.surface === 'code' ? (
+            ) : section.surface === "code" ? (
               <CodeSection section={section} />
             ) : (
               <TitleCard section={section} />
@@ -55,7 +55,10 @@ export const DemoTimeline: React.FC<{ timeline: Timeline }> = ({ timeline }) => 
  * ranges reconcile.mjs derived from the measured narration, with a short ramp either side
  * so the level change is never audible as a step.
  */
-const MusicBed: React.FC<{ music: NonNullable<Timeline['music']>; fps: number }> = ({ music, fps }) => {
+const MusicBed: React.FC<{ music: NonNullable<Timeline["music"]>; fps: number }> = ({
+  music,
+  fps,
+}) => {
   const bedGain = dbToGain(music.gainDb ?? -22);
   const duckGain = dbToGain(music.duckDb ?? -30);
   const ramp = Math.round(fps * 0.35);
@@ -72,7 +75,11 @@ const MusicBed: React.FC<{ music: NonNullable<Timeline['music']>; fps: number }>
             inside = true;
             break;
           }
-          closest = Math.min(closest, Math.abs(frame - range.startFrame), Math.abs(frame - range.endFrame));
+          closest = Math.min(
+            closest,
+            Math.abs(frame - range.startFrame),
+            Math.abs(frame - range.endFrame),
+          );
         }
         if (inside) return duckGain;
         if (closest < ramp) {

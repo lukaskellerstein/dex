@@ -4,19 +4,27 @@
  * Deps: useOrchestrator, useProject types; component imports for each view; AppBreadcrumbs for the trace breadcrumb.
  */
 import type { ReactNode } from "react";
-import type { TaskPhase, SubagentInfo, StepType, LoopTermination, PrerequisiteCheck, Task, AgentStep } from "../core/types.js";
-import { WelcomeScreen, type WelcomeNextView } from "./components/welcome/WelcomeScreen.js";
+import type { AgentRunRecord } from "../core/runs.js";
+import type {
+  AgentStep,
+  LoopTermination,
+  PrerequisiteCheck,
+  StepType,
+  SubagentInfo,
+  Task,
+  TaskPhase,
+} from "../core/types.js";
+import { AppBreadcrumbs } from "./components/AppBreadcrumbs.js";
 import { AgentStepList } from "./components/agent-trace/AgentStepList.js";
 import { SubagentDetailView } from "./components/agent-trace/SubagentDetailView.js";
+import { LoopDashboard } from "./components/loop/LoopDashboard.js";
+import { LoopStartPanel } from "./components/loop/LoopStartPanel.js";
 import { ProjectOverview } from "./components/project-overview/ProjectOverview.js";
 import { PhaseView } from "./components/task-board/PhaseView.js";
 import { ProgressBar } from "./components/task-board/ProgressBar.js";
-import { LoopStartPanel } from "./components/loop/LoopStartPanel.js";
-import { LoopDashboard } from "./components/loop/LoopDashboard.js";
-import { AppBreadcrumbs } from "./components/AppBreadcrumbs.js";
+import { type WelcomeNextView, WelcomeScreen } from "./components/welcome/WelcomeScreen.js";
+import type { LatestAction, UiLoopCycle, UiLoopStage } from "./hooks/useOrchestrator.js";
 import type { SpecSummary } from "./hooks/useProject.js";
-import type { UiLoopStage, UiLoopCycle, LatestAction } from "./hooks/useOrchestrator.js";
-import type { AgentRunRecord } from "../core/runs.js";
 
 export type View =
   | "overview"
@@ -198,11 +206,7 @@ export function AppRouter(props: AppRouterProps): ReactNode {
 
   if (
     currentView === "loop-dashboard" ||
-    (currentView === "trace" &&
-      mode === "loop" &&
-      isRunning &&
-      !currentStage &&
-      !isClarifying)
+    (currentView === "trace" && mode === "loop" && isRunning && !currentStage && !isClarifying)
   ) {
     return (
       <LoopDashboard
@@ -229,11 +233,7 @@ export function AppRouter(props: AppRouterProps): ReactNode {
 
   if (currentView === "loop-start") {
     return (
-      <LoopStartPanel
-        projectDir={projectDir}
-        isRunning={isRunning}
-        onStart={handleStartLoop}
-      />
+      <LoopStartPanel projectDir={projectDir} isRunning={isRunning} onStart={handleStartLoop} />
     );
   }
 
@@ -241,11 +241,7 @@ export function AppRouter(props: AppRouterProps): ReactNode {
     // If project has no specs, show LoopStartPanel so user can generate them.
     if (specSummaries.length === 0) {
       return (
-        <LoopStartPanel
-          projectDir={projectDir}
-          isRunning={isRunning}
-          onStart={handleStartLoop}
-        />
+        <LoopStartPanel projectDir={projectDir} isRunning={isRunning} onStart={handleStartLoop} />
       );
     }
     return (
@@ -307,11 +303,7 @@ export function AppRouter(props: AppRouterProps): ReactNode {
       </div>
 
       {phases.length > 0 && (
-        <ProgressBar
-          phases={phases}
-          totalCost={totalCost}
-          totalDuration={totalDuration}
-        />
+        <ProgressBar phases={phases} totalCost={totalCost} totalDuration={totalDuration} />
       )}
     </div>
   );

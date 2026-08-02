@@ -2,26 +2,26 @@ import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { deriveGoalPaths, type GoalPaths } from "../goal-paths.js";
+import type { AgentStep, RunConfig } from "../types.js";
 import type {
   AgentRunner,
-  TaskPhaseContext,
-  TaskPhaseResult,
-  StepContext,
-  StepResult,
   OneShotContext,
   OneShotResult,
+  StepContext,
+  StepResult,
+  TaskPhaseContext,
+  TaskPhaseResult,
 } from "./AgentRunner.js";
-import type { AgentStep, RunConfig } from "../types.js";
 import {
-  MockConfig,
-  MockConfigMissingEntryError,
-  MockConfigInvalidPathError,
-  PHASE_OF_STEP,
-  StepDescriptor,
-  MockOneShotResponse,
   loadMockConfig,
+  type MockConfig,
+  MockConfigInvalidPathError,
+  MockConfigMissingEntryError,
+  type MockOneShotResponse,
+  PHASE_OF_STEP,
+  type StepDescriptor,
 } from "./MockConfig.js";
-import { deriveGoalPaths, type GoalPaths } from "../goal-paths.js";
 
 /**
  * Inline step constructor. Duplicates the helper in ./steps.ts — importing
@@ -132,7 +132,10 @@ export class MockAgentRunner implements AgentRunner {
       // path template inherits the uniqueness without each path having to
       // append `{shortRunId}` itself.
       featureId = this.renderTemplate(cycle.feature.id, {
-        cycleNumber, featureId: null, specDir: specDir ?? null, runId,
+        cycleNumber,
+        featureId: null,
+        specDir: specDir ?? null,
+        runId,
       });
       const found = (cycle.stages as Record<string, StepDescriptor>)[step];
       if (!found) {
@@ -140,7 +143,9 @@ export class MockAgentRunner implements AgentRunner {
       }
       descriptor = found;
     } else {
-      const phaseEntry = (this.config as unknown as Record<string, Record<string, StepDescriptor>>)[phase];
+      const phaseEntry = (this.config as unknown as Record<string, Record<string, StepDescriptor>>)[
+        phase
+      ];
       const found = phaseEntry[step];
       if (!found) {
         throw new MockConfigMissingEntryError(phase, step, null, null);
@@ -148,7 +153,10 @@ export class MockAgentRunner implements AgentRunner {
       descriptor = found;
     }
 
-    rlog.agentRun("INFO", `mock.runStep: phase=${phase} step=${step} cycle=${cycleNumber} feature=${featureId ?? "(none)"}`);
+    rlog.agentRun(
+      "INFO",
+      `mock.runStep: phase=${phase} step=${step} cycle=${cycleNumber} feature=${featureId ?? "(none)"}`,
+    );
 
     // Emit the initial prompt + one synthetic agent_step per step. Unlike the
     // real runner, the mock does NOT persist steps via runs.appendAgentStep —
@@ -240,7 +248,10 @@ export class MockAgentRunner implements AgentRunner {
         assignedCycleNumber = idx + 1;
         // Same renderTemplate pass as runStep — see comment there.
         assignedFeatureId = this.renderTemplate(cycle.feature.id, {
-          cycleNumber: assignedCycleNumber, featureId: null, specDir, runId,
+          cycleNumber: assignedCycleNumber,
+          featureId: null,
+          specDir,
+          runId,
         });
       }
     }
@@ -252,7 +263,10 @@ export class MockAgentRunner implements AgentRunner {
       }
     }
 
-    rlog.agentRun("INFO", `mock.runTaskPhase: TaskPhase ${taskPhase.number} (specDir=${specDir}, cycle=${assignedCycleNumber || "?"}, feature=${assignedFeatureId ?? "?"}, firstForSpecDir=${isFirstPhaseForSpecDir})`);
+    rlog.agentRun(
+      "INFO",
+      `mock.runTaskPhase: TaskPhase ${taskPhase.number} (specDir=${specDir}, cycle=${assignedCycleNumber || "?"}, feature=${assignedFeatureId ?? "?"}, firstForSpecDir=${isFirstPhaseForSpecDir})`,
+    );
 
     let stepIndex = 0;
     const emitOnly = (agentStep: AgentStep) => {
@@ -264,11 +278,16 @@ export class MockAgentRunner implements AgentRunner {
     };
     emitOnly(mkStep("user_message", stepIndex++, prompt));
     emitOnly(
-      mkStep("text", stepIndex++, `runTaskPhase ${taskPhase.number}: ${taskPhase.name} (cycle=${assignedCycleNumber || "?"})`, {
-        mockPhase: "implement",
-        cycleNumber: assignedCycleNumber || null,
-        featureId: assignedFeatureId,
-      }),
+      mkStep(
+        "text",
+        stepIndex++,
+        `runTaskPhase ${taskPhase.number}: ${taskPhase.name} (cycle=${assignedCycleNumber || "?"})`,
+        {
+          mockPhase: "implement",
+          cycleNumber: assignedCycleNumber || null,
+          featureId: assignedFeatureId,
+        },
+      ),
     );
 
     if (descriptor.delay > 0) {
@@ -285,7 +304,13 @@ export class MockAgentRunner implements AgentRunner {
       });
     }
 
-    emitOnly(mkStep("completed", stepIndex++, `TaskPhase ${taskPhase.number}: ${taskPhase.name} completed (mock)`));
+    emitOnly(
+      mkStep(
+        "completed",
+        stepIndex++,
+        `TaskPhase ${taskPhase.number}: ${taskPhase.name} completed (mock)`,
+      ),
+    );
 
     return {
       cost: 0,
@@ -315,10 +340,7 @@ export class MockAgentRunner implements AgentRunner {
             matched = r;
             break;
           }
-        } catch {
-          // Bad regex source — skip silently; surfaces in test by missing match.
-          continue;
-        }
+        } catch {}
       } else if (r.matchPrompt === ctx.prompt) {
         matched = r;
         break;
@@ -401,7 +423,10 @@ export class MockAgentRunner implements AgentRunner {
     // and implement outputs (src/mock/*.ts) would sit uncommitted in the
     // working tree and every checkpoint commit after specify would be empty.
     // Per-developer files (.dex/state.lock, .dex/ui.json) stay gitignored.
-    if ((descriptor.writes && descriptor.writes.length) || (descriptor.appends && descriptor.appends.length)) {
+    if (
+      (descriptor.writes && descriptor.writes.length) ||
+      (descriptor.appends && descriptor.appends.length)
+    ) {
       try {
         execSync("git add -A", { cwd: this.projectDir, stdio: "pipe" });
       } catch {

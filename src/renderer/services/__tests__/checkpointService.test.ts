@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  checkpointService,
   CheckpointError,
   type CheckpointErrorCode,
+  checkpointService,
 } from "../checkpointService.js";
 
 type CheckpointsApiMock = {
@@ -82,7 +82,9 @@ describe("checkpointService — IPC pass-through", () => {
     await checkpointService.syncStateFromHead("/p");
 
     expect(api.deleteBranch).toHaveBeenNthCalledWith(1, "/p", "dex/2026-05-04-abc", undefined);
-    expect(api.deleteBranch).toHaveBeenNthCalledWith(2, "/p", "dex/2026-05-04-abc", { confirmedLoss: true });
+    expect(api.deleteBranch).toHaveBeenNthCalledWith(2, "/p", "dex/2026-05-04-abc", {
+      confirmedLoss: true,
+    });
     expect(api.syncStateFromHead).toHaveBeenCalledWith("/p");
   });
 });
@@ -94,10 +96,22 @@ describe("checkpointService — error mapping", () => {
     expectedCode: CheckpointErrorCode;
   }> = [
     { name: "BUSY", thrown: new Error("locked_by_other_instance"), expectedCode: "BUSY" },
-    { name: "GIT_DIRTY", thrown: new Error("working tree has uncommitted changes"), expectedCode: "GIT_DIRTY" },
+    {
+      name: "GIT_DIRTY",
+      thrown: new Error("working tree has uncommitted changes"),
+      expectedCode: "GIT_DIRTY",
+    },
     { name: "INVALID_TAG", thrown: new Error("invalid tag name"), expectedCode: "INVALID_TAG" },
-    { name: "TAG_NOT_FOUND", thrown: new Error("tag fixture/x not found"), expectedCode: "TAG_NOT_FOUND" },
-    { name: "GIT_FAILURE (fallback)", thrown: new Error("some random git error"), expectedCode: "GIT_FAILURE" },
+    {
+      name: "TAG_NOT_FOUND",
+      thrown: new Error("tag fixture/x not found"),
+      expectedCode: "TAG_NOT_FOUND",
+    },
+    {
+      name: "GIT_FAILURE (fallback)",
+      thrown: new Error("some random git error"),
+      expectedCode: "GIT_FAILURE",
+    },
   ];
 
   for (const tc of cases) {

@@ -3,8 +3,9 @@
  * Not: Does not handle non-Agent tools — ToolCard's generic chrome owns those. Does not subscribe to events; props-only.
  * Deps: AgentStep, ToolResultStep, lucide-react.
  */
-import { useState } from "react";
+
 import { Bot, ChevronDown, ChevronUp } from "lucide-react";
+import { useState } from "react";
 import type { AgentStep } from "../../../../core/types.js";
 import { ToolResultStep } from "../ToolResultStep.js";
 

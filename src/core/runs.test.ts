@@ -1,27 +1,27 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
+import { test } from "node:test";
 
 import {
-  readRun,
-  listRuns,
-  updateRun,
-  startRun,
-  completeRun,
-  startPhase,
-  completePhase,
-  recordSubagent,
-  reconcileCrashedRuns,
   appendStep,
-  readSteps,
-  upsertFailureCount,
-  latestPhasesForSpec,
+  completePhase,
+  completeRun,
   getSpecAggregateStats,
+  latestPhasesForSpec,
+  listRuns,
+  type PhaseRecord,
   phaseLogDir,
   type RunRecord,
-  type PhaseRecord,
+  readRun,
+  readSteps,
+  reconcileCrashedRuns,
+  recordSubagent,
+  startPhase,
+  startRun,
+  updateRun,
+  upsertFailureCount,
 } from "./runs.js";
 
 function tempProject(name: string): string {
@@ -29,7 +29,9 @@ function tempProject(name: string): string {
   return dir;
 }
 
-function makeRunInput(runId = "11111111-1111-1111-1111-111111111111"): Parameters<typeof startRun>[1] {
+function makeRunInput(
+  runId = "11111111-1111-1111-1111-111111111111",
+): Parameters<typeof startRun>[1] {
   return {
     runId,
     mode: "loop",
@@ -63,11 +65,23 @@ test("listRuns returns one record for one file", () => {
 
 test("listRuns sorts by startedAt descending", () => {
   const dir = tempProject("sort");
-  startRun(dir, { ...makeRunInput("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), startedAt: "2026-04-17T10:00:00.000Z" });
-  startRun(dir, { ...makeRunInput("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), startedAt: "2026-04-17T12:00:00.000Z" });
-  startRun(dir, { ...makeRunInput("cccccccc-cccc-cccc-cccc-cccccccccccc"), startedAt: "2026-04-17T11:00:00.000Z" });
+  startRun(dir, {
+    ...makeRunInput("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    startedAt: "2026-04-17T10:00:00.000Z",
+  });
+  startRun(dir, {
+    ...makeRunInput("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+    startedAt: "2026-04-17T12:00:00.000Z",
+  });
+  startRun(dir, {
+    ...makeRunInput("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+    startedAt: "2026-04-17T11:00:00.000Z",
+  });
   const list = listRuns(dir);
-  assert.deepEqual(list.map((r) => r.runId.slice(0, 1)), ["b", "c", "a"]);
+  assert.deepEqual(
+    list.map((r) => r.runId.slice(0, 1)),
+    ["b", "c", "a"],
+  );
 });
 
 test("listRuns skips malformed JSON files and continues", () => {
@@ -100,7 +114,12 @@ test("startPhase + completePhase round-trip with cost recomputation", () => {
     startedAt: new Date().toISOString(),
     status: "running",
   });
-  completePhase(dir, run.runId, "phase-1", { status: "completed", costUsd: 0.5, inputTokens: 100, outputTokens: 50 });
+  completePhase(dir, run.runId, "phase-1", {
+    status: "completed",
+    costUsd: 0.5,
+    inputTokens: 100,
+    outputTokens: 50,
+  });
   const back = readRun(dir, run.runId)!;
   assert.equal(back.phases.length, 1);
   assert.equal(back.phases[0].status, "completed");
@@ -243,26 +262,28 @@ test("getSpecAggregateStats picks latest phase per phaseNumber across runs", () 
     maxBudgetUsd: null,
     loopsCompleted: 1,
     failureCounters: {},
-    phases: costs.map((c, i): PhaseRecord => ({
-      phaseTraceId: `${runId}-p${i + 1}`,
-      runId,
-      specDir: "specs/foo",
-      phaseNumber: i + 1,
-      phaseName: `loop:p${i + 1}`,
-      stage: "specify",
-      cycleNumber: 1,
-      featureSlug: "foo",
-      startedAt: when,
-      endedAt: when,
-      status: "completed",
-      costUsd: c,
-      durationMs: 100,
-      inputTokens: 10,
-      outputTokens: 5,
-      subagents: [],
-      checkpointTag: null,
-      candidateSha: null,
-    })),
+    phases: costs.map(
+      (c, i): PhaseRecord => ({
+        phaseTraceId: `${runId}-p${i + 1}`,
+        runId,
+        specDir: "specs/foo",
+        phaseNumber: i + 1,
+        phaseName: `loop:p${i + 1}`,
+        stage: "specify",
+        cycleNumber: 1,
+        featureSlug: "foo",
+        startedAt: when,
+        endedAt: when,
+        status: "completed",
+        costUsd: c,
+        durationMs: 100,
+        inputTokens: 10,
+        outputTokens: 5,
+        subagents: [],
+        checkpointTag: null,
+        candidateSha: null,
+      }),
+    ),
   });
   const runs: RunRecord[] = [
     baseRun("old", "2026-04-15T00:00:00.000Z", [1, 2]),
@@ -308,30 +329,86 @@ test("US3 cross-project isolation: two projects produce disjoint runs", () => {
 test("latestPhasesForSpec returns one row per phaseNumber, latest wins", () => {
   const runs: RunRecord[] = [
     {
-      runId: "old", mode: "loop", model: "m", specDir: "s", startedAt: "2026-04-15T00:00:00.000Z",
-      endedAt: null, status: "completed", totalCostUsd: 0, totalDurationMs: 0, phasesCompleted: 1,
-      writerPid: 0, description: null, fullPlanPath: null, maxLoopCycles: null, maxBudgetUsd: null,
-      loopsCompleted: 1, failureCounters: {},
-      phases: [{
-        phaseTraceId: "old-1", runId: "old", specDir: "specs/foo", phaseNumber: 1,
-        phaseName: "loop:specify", stage: "specify", cycleNumber: 1, featureSlug: "foo",
-        startedAt: "2026-04-15T00:00:00.000Z", endedAt: "2026-04-15T00:01:00.000Z", status: "completed",
-        costUsd: 1, durationMs: 60000, inputTokens: 1, outputTokens: 1, subagents: [],
-        checkpointTag: null, candidateSha: null,
-      }],
+      runId: "old",
+      mode: "loop",
+      model: "m",
+      specDir: "s",
+      startedAt: "2026-04-15T00:00:00.000Z",
+      endedAt: null,
+      status: "completed",
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      phasesCompleted: 1,
+      writerPid: 0,
+      description: null,
+      fullPlanPath: null,
+      maxLoopCycles: null,
+      maxBudgetUsd: null,
+      loopsCompleted: 1,
+      failureCounters: {},
+      phases: [
+        {
+          phaseTraceId: "old-1",
+          runId: "old",
+          specDir: "specs/foo",
+          phaseNumber: 1,
+          phaseName: "loop:specify",
+          stage: "specify",
+          cycleNumber: 1,
+          featureSlug: "foo",
+          startedAt: "2026-04-15T00:00:00.000Z",
+          endedAt: "2026-04-15T00:01:00.000Z",
+          status: "completed",
+          costUsd: 1,
+          durationMs: 60000,
+          inputTokens: 1,
+          outputTokens: 1,
+          subagents: [],
+          checkpointTag: null,
+          candidateSha: null,
+        },
+      ],
     },
     {
-      runId: "new", mode: "loop", model: "m", specDir: "s", startedAt: "2026-04-17T00:00:00.000Z",
-      endedAt: null, status: "completed", totalCostUsd: 0, totalDurationMs: 0, phasesCompleted: 1,
-      writerPid: 0, description: null, fullPlanPath: null, maxLoopCycles: null, maxBudgetUsd: null,
-      loopsCompleted: 1, failureCounters: {},
-      phases: [{
-        phaseTraceId: "new-1", runId: "new", specDir: "specs/foo", phaseNumber: 1,
-        phaseName: "loop:specify", stage: "specify", cycleNumber: 1, featureSlug: "foo",
-        startedAt: "2026-04-17T00:00:00.000Z", endedAt: "2026-04-17T00:01:00.000Z", status: "completed",
-        costUsd: 5, durationMs: 60000, inputTokens: 1, outputTokens: 1, subagents: [],
-        checkpointTag: null, candidateSha: null,
-      }],
+      runId: "new",
+      mode: "loop",
+      model: "m",
+      specDir: "s",
+      startedAt: "2026-04-17T00:00:00.000Z",
+      endedAt: null,
+      status: "completed",
+      totalCostUsd: 0,
+      totalDurationMs: 0,
+      phasesCompleted: 1,
+      writerPid: 0,
+      description: null,
+      fullPlanPath: null,
+      maxLoopCycles: null,
+      maxBudgetUsd: null,
+      loopsCompleted: 1,
+      failureCounters: {},
+      phases: [
+        {
+          phaseTraceId: "new-1",
+          runId: "new",
+          specDir: "specs/foo",
+          phaseNumber: 1,
+          phaseName: "loop:specify",
+          stage: "specify",
+          cycleNumber: 1,
+          featureSlug: "foo",
+          startedAt: "2026-04-17T00:00:00.000Z",
+          endedAt: "2026-04-17T00:01:00.000Z",
+          status: "completed",
+          costUsd: 5,
+          durationMs: 60000,
+          inputTokens: 1,
+          outputTokens: 1,
+          subagents: [],
+          checkpointTag: null,
+          candidateSha: null,
+        },
+      ],
     },
   ];
   const rows = latestPhasesForSpec(runs, "specs/foo");

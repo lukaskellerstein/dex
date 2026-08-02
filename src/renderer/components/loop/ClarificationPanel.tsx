@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { MessageCircleQuestion, Send } from "lucide-react";
+import { useState } from "react";
 import { useUserQuestion } from "../../hooks/useUserQuestion.js";
 
 export function ClarificationPanel() {
@@ -17,8 +17,7 @@ export function ClarificationPanel() {
   const allAnswered = questions.every((q) => {
     const sel = selections[q.question];
     if (!sel) return false;
-    if (sel === "__other__")
-      return (freeText[q.question] ?? "").trim().length > 0;
+    if (sel === "__other__") return (freeText[q.question] ?? "").trim().length > 0;
     return true;
   });
 
@@ -33,8 +32,7 @@ export function ClarificationPanel() {
     const answers: Record<string, string> = {};
     for (const q of questions) {
       const sel = selections[q.question];
-      answers[q.question] =
-        sel === "__other__" ? (freeText[q.question] ?? "").trim() : sel;
+      answers[q.question] = sel === "__other__" ? (freeText[q.question] ?? "").trim() : sel;
     }
 
     answerQuestion(requestId, answers);
@@ -65,10 +63,7 @@ export function ClarificationPanel() {
             marginBottom: 16,
           }}
         >
-          <MessageCircleQuestion
-            size={18}
-            style={{ color: "var(--primary)" }}
-          />
+          <MessageCircleQuestion size={18} style={{ color: "var(--primary)" }} />
           <span
             style={{
               fontSize: "0.88rem",
@@ -124,12 +119,8 @@ export function ClarificationPanel() {
                       alignItems: "flex-start",
                       padding: "8px 12px",
                       borderRadius: "var(--radius)",
-                      border: isSelected
-                        ? "1.5px solid var(--primary)"
-                        : "1px solid var(--border)",
-                      background: isSelected
-                        ? "var(--primary-muted)"
-                        : "var(--surface-elevated)",
+                      border: isSelected ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                      background: isSelected ? "var(--primary-muted)" : "var(--surface-elevated)",
                       cursor: "pointer",
                       textAlign: "left",
                       transition: "border-color 0.15s, background 0.15s",
@@ -139,9 +130,7 @@ export function ClarificationPanel() {
                       style={{
                         fontSize: "0.8rem",
                         fontWeight: 500,
-                        color: isSelected
-                          ? "var(--primary)"
-                          : "var(--foreground)",
+                        color: isSelected ? "var(--primary)" : "var(--foreground)",
                       }}
                     >
                       {opt.label}
@@ -240,14 +229,8 @@ export function ClarificationPanel() {
             borderRadius: "var(--radius)",
             fontSize: "0.85rem",
             fontWeight: 600,
-            background:
-              allAnswered && !submitting
-                ? "var(--primary)"
-                : "var(--surface-elevated)",
-            color:
-              allAnswered && !submitting
-                ? "#fff"
-                : "var(--foreground-disabled)",
+            background: allAnswered && !submitting ? "var(--primary)" : "var(--surface-elevated)",
+            color: allAnswered && !submitting ? "#fff" : "var(--foreground-disabled)",
             cursor: allAnswered && !submitting ? "pointer" : "not-allowed",
             border: "none",
             transition: "background 0.15s",

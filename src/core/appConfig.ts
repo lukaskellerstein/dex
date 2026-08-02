@@ -53,7 +53,9 @@ export function loadAppConfig(homeDir: string = os.homedir()): AppConfig {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, JSON.stringify(DEFAULT_APP_CONFIG, null, 2) + "\n");
     } catch (err) {
-      console.warn(`[dex] could not seed ${file}: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(
+        `[dex] could not seed ${file}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     return cloneDefaults();
   }
@@ -62,7 +64,9 @@ export function loadAppConfig(homeDir: string = os.homedir()): AppConfig {
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (err) {
-    console.warn(`[dex] ${file} is not valid JSON, using defaults: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(
+      `[dex] ${file} is not valid JSON, using defaults: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return cloneDefaults();
   }
 
@@ -121,7 +125,10 @@ function randomBase36(len: number): string {
  * with all template placeholders already expanded. Callers get a fresh
  * random value each invocation.
  */
-export function getWelcomeDefaults(homeDir?: string): { defaultLocation: string; defaultName: string } {
+export function getWelcomeDefaults(homeDir?: string): {
+  defaultLocation: string;
+  defaultName: string;
+} {
   const cfg = loadAppConfig(homeDir);
   return {
     defaultLocation: cfg.welcome.defaultLocation,

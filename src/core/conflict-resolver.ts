@@ -9,13 +9,13 @@
  *       core/types (EmitFn).
  */
 
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import type { AgentRunner, OneShotContext } from "./agent/AgentRunner.js";
 import type { ConflictResolverConfig } from "./dexConfig.js";
-import type { EmitFn, RunConfig } from "./types.js";
 import type { RunLogger } from "./log.js";
+import type { EmitFn, RunConfig } from "./types.js";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -88,9 +88,7 @@ const COMMIT_SUBJECT_TRUNCATE_CHARS = 80;
  *   file-start → iteration → file-done (per file)
  *   done (terminal)
  */
-export async function resolveConflicts(
-  ctx: ResolverContext,
-): Promise<ResolverResult> {
+export async function resolveConflicts(ctx: ResolverContext): Promise<ResolverResult> {
   const start = Date.now();
   let costSoFar = 0;
   let prevIterationCost = FIRST_ITERATION_COST_ESTIMATE_USD;
@@ -98,10 +96,7 @@ export async function resolveConflicts(
   const resolvedFiles: string[] = [];
   const failedFiles: string[] = [];
 
-  const finalize = (
-    ok: boolean,
-    reason?: ResolverFailReason,
-  ): ResolverResult => {
+  const finalize = (ok: boolean, reason?: ResolverFailReason): ResolverResult => {
     const durationMs = Date.now() - start;
     ctx.emit({
       type: "conflict-resolver:done",
@@ -269,9 +264,7 @@ function fileHasConflictMarkers(projectDir: string, file: string): boolean {
   if (!fs.existsSync(abs)) return false;
   const content = fs.readFileSync(abs, "utf-8");
   return (
-    content.includes("<<<<<<<") ||
-    content.includes("=======\n") ||
-    content.includes(">>>>>>>")
+    content.includes("<<<<<<<") || content.includes("=======\n") || content.includes(">>>>>>>")
   );
 }
 

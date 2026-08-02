@@ -9,7 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { gitExec, safeExec, log, type RunLoggerLike } from "./_helpers.js";
+import { gitExec, log, type RunLoggerLike, safeExec } from "./_helpers.js";
 import type { MergeToMainResult, NonContentConflictKind } from "./branchOps.js";
 
 export interface UnmergedClassification {
@@ -78,10 +78,7 @@ function isSubmodule(projectDir: string, file: string): boolean {
   const submodulesFile = path.join(projectDir, ".gitmodules");
   if (!fs.existsSync(submodulesFile)) return false;
   const content = fs.readFileSync(submodulesFile, "utf-8");
-  const re = new RegExp(
-    `path\\s*=\\s*${file.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`,
-    "m",
-  );
+  const re = new RegExp(`path\\s*=\\s*${file.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "m");
   return re.test(content);
 }
 

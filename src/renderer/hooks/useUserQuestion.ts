@@ -3,7 +3,7 @@
  * Not: Does not own clarification flow logic (that's in core/stages/clarification.ts). Does not own loop-cycle state (useLoopState).
  * Deps: orchestratorService.{subscribeEvents, answerQuestion}; UserInputQuestion / OrchestratorEvent types.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { OrchestratorEvent, UserInputQuestion } from "../../core/types.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
@@ -26,13 +26,10 @@ export function useUserQuestion(): UseUserQuestionResult {
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
   const [isClarifying, setIsClarifying] = useState(false);
 
-  const answerQuestion = useCallback(
-    (requestId: string, answers: Record<string, string>) => {
-      orchestratorService.answerQuestion(requestId, answers);
-      setPendingQuestion(null);
-    },
-    [],
-  );
+  const answerQuestion = useCallback((requestId: string, answers: Record<string, string>) => {
+    orchestratorService.answerQuestion(requestId, answers);
+    setPendingQuestion(null);
+  }, []);
 
   useEffect(() => {
     const unsub = orchestratorService.subscribeEvents((event: OrchestratorEvent) => {

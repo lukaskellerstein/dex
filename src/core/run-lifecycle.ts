@@ -6,26 +6,22 @@
 
 import crypto from "node:crypto";
 import path from "node:path";
-import { RunLogger, fallbackLog as log } from "./log.js";
-import {
-  createContext,
-  type OrchestrationContext,
-  type RunState,
-} from "./context.js";
-import { createAgentRunner } from "./agent/index.js";
-import { loadDexConfig } from "./dexConfig.js";
 import type { AgentRunner } from "./agent/AgentRunner.js";
-import type { EmitFn, RunConfig } from "./types.js";
-import * as runs from "./runs.js";
-import { getCurrentBranch, createBranch, createPullRequest } from "./git.js";
-import {
-  createInitialState,
-  saveState,
-  loadState,
-  updateState,
-  acquireStateLock,
-} from "./state.js";
+import { createAgentRunner } from "./agent/index.js";
 import { commitCheckpoint, ensureDexGitignore } from "./checkpoints.js";
+import { createContext, type OrchestrationContext, type RunState } from "./context.js";
+import { loadDexConfig } from "./dexConfig.js";
+import { createBranch, createPullRequest, getCurrentBranch } from "./git.js";
+import { fallbackLog as log, RunLogger } from "./log.js";
+import * as runs from "./runs.js";
+import {
+  acquireStateLock,
+  createInitialState,
+  loadState,
+  saveState,
+  updateState,
+} from "./state.js";
+import type { EmitFn, RunConfig } from "./types.js";
 
 // ── Mutable bridge state (single source of truth for the live run) ──────────
 
@@ -55,10 +51,7 @@ export interface InitResult {
 
 // ── initRun ────────────────────────────────────────────────────────────────
 
-export async function initRun(
-  config: RunConfig,
-  emit: EmitFn,
-): Promise<InitResult | null> {
+export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResult | null> {
   // Reconcile any prior runs left "running" by a previous crash.
   try {
     runs.reconcileCrashedRuns(config.projectDir);
@@ -206,7 +199,17 @@ export interface FinalizeArgs {
 }
 
 export async function finalizeRun(args: FinalizeArgs): Promise<void> {
-  const { config, emit, runId, rlog, branchName, baseBranch, taskPhasesCompleted, totalCost, runStart } = args;
+  const {
+    config,
+    emit,
+    runId,
+    rlog,
+    branchName,
+    baseBranch,
+    taskPhasesCompleted,
+    totalCost,
+    runStart,
+  } = args;
   const wasStopped = runtimeState.abortController?.signal.aborted ?? false;
 
   // Drop ctx + bridge aliases.
@@ -217,7 +220,14 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
 
   const totalDuration = Date.now() - runStart;
   const finalStatus = wasStopped ? "stopped" : "completed";
-  runs.completeRun(config.projectDir, runId, finalStatus, totalCost, totalDuration, taskPhasesCompleted);
+  runs.completeRun(
+    config.projectDir,
+    runId,
+    finalStatus,
+    totalCost,
+    totalDuration,
+    taskPhasesCompleted,
+  );
 
   // Update state file: paused if stopped, completed otherwise.
   if (runtimeState.activeProjectDir) {
@@ -262,9 +272,7 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
       const cycle = finalState?.cyclesCompleted ?? 0;
       const specDir = finalState?.currentSpecDir ?? null;
       const madeProgress =
-        taskPhasesCompleted > 0 ||
-        cycle > 0 ||
-        (finalState?.lastCompletedStep ?? null) !== null;
+        taskPhasesCompleted > 0 || cycle > 0 || (finalState?.lastCompletedStep ?? null) !== null;
       if (!madeProgress) {
         rlog.run("INFO", "run: skipping completion checkpoint — no progress to commit");
       } else {

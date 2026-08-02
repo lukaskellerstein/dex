@@ -4,17 +4,13 @@
  * Deps: state.updateState, checkpoints (commit, tags), git.getCurrentBranch, runs.updateRun, OrchestrationContext.emit.
  */
 
-import { updateState } from "../state.js";
-import * as runs from "../runs.js";
-import {
-  commitCheckpoint,
-  readPauseAfterStage,
-  checkpointTagFor,
-} from "../checkpoints.js";
-import { getCurrentBranch } from "../git.js";
+import { checkpointTagFor, commitCheckpoint, readPauseAfterStage } from "../checkpoints.js";
 import type { OrchestrationContext } from "../context.js";
-import type { StepType } from "../types.js";
+import { getCurrentBranch } from "../git.js";
 import type { RunLogger } from "../log.js";
+import * as runs from "../runs.js";
+import { updateState } from "../state.js";
+import type { StepType } from "../types.js";
 
 export interface FinalizeStageInput {
   ctx: OrchestrationContext;
@@ -48,7 +44,8 @@ export interface FinalizeStageInput {
 export async function finalizeStageCheckpoint(
   input: FinalizeStageInput,
 ): Promise<{ shouldPause: boolean }> {
-  const { ctx, runId, agentRunId, cycleNumber, step, specDir, stepModeOverride, abortController } = input;
+  const { ctx, runId, agentRunId, cycleNumber, step, specDir, stepModeOverride, abortController } =
+    input;
   const projectDir = ctx.projectDir;
 
   try {

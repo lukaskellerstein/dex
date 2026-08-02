@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
+import { fallbackLog } from "./log.js";
 import { updateState } from "./state.js";
 import type { EmitFn, UserInputQuestion } from "./types.js";
-import { fallbackLog } from "./log.js";
 
 /** Pending question resolvers — keyed by requestId */
 const pendingQuestions = new Map<string, (answers: Record<string, string>) => void>();
@@ -27,7 +27,7 @@ export function waitForUserInput(
   projectDir: string,
   emit: EmitFn,
   runId: string,
-  questions: UserInputQuestion[]
+  questions: UserInputQuestion[],
 ): Promise<Record<string, string>> {
   const requestId = crypto.randomUUID();
 

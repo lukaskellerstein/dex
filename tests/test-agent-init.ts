@@ -43,8 +43,8 @@ function log(category: string, message: string): void {
 }
 
 async function main(): Promise<void> {
-  const projectDir = process.argv[2]
-    ?? "/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce";
+  const projectDir =
+    process.argv[2] ?? "/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce";
 
   console.log(`\n${BOLD}Dex Agent Init Diagnostics${RESET}`);
   console.log("─".repeat(60) + "\n");
@@ -56,7 +56,8 @@ async function main(): Promise<void> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
   // A simple prompt that should trigger the Skill tool
-  const prompt = 'Use the Skill tool to invoke "speckit-implement" with args "specs/001-product-catalog --phase 1". If the Skill tool is not available, list all tools you have access to.';
+  const prompt =
+    'Use the Skill tool to invoke "speckit-implement" with args "specs/001-product-catalog --phase 1". If the Skill tool is not available, list all tools you have access to.';
 
   log("CONFIG", `Prompt: ${prompt.slice(0, 100)}...`);
 
@@ -108,9 +109,10 @@ async function main(): Promise<void> {
       console.log(`\n  ${YELLOW}${BOLD}/skills (${skills?.length ?? 0})${RESET}`);
       if (skills && skills.length > 0) {
         for (const s of skills) {
-          const name = typeof s === "object" && s !== null
-            ? (s as Record<string, unknown>).name ?? JSON.stringify(s)
-            : String(s);
+          const name =
+            typeof s === "object" && s !== null
+              ? ((s as Record<string, unknown>).name ?? JSON.stringify(s))
+              : String(s);
           log("SKILL", `  ${name}`);
         }
       } else {
@@ -121,9 +123,10 @@ async function main(): Promise<void> {
       console.log(`\n  ${CYAN}${BOLD}/plugins (${plugins?.length ?? 0})${RESET}`);
       if (plugins && plugins.length > 0) {
         for (const p of plugins) {
-          const name = typeof p === "object" && p !== null
-            ? (p as Record<string, unknown>).name ?? JSON.stringify(p)
-            : String(p);
+          const name =
+            typeof p === "object" && p !== null
+              ? ((p as Record<string, unknown>).name ?? JSON.stringify(p))
+              : String(p);
           log("PLUGIN", `  ${name}`);
         }
       } else {
@@ -134,9 +137,10 @@ async function main(): Promise<void> {
       console.log(`\n  ${MAGENTA}${BOLD}/agents (${agents?.length ?? 0})${RESET}`);
       if (agents && agents.length > 0) {
         for (const a of agents) {
-          const name = typeof a === "object" && a !== null
-            ? (a as Record<string, unknown>).name ?? JSON.stringify(a)
-            : String(a);
+          const name =
+            typeof a === "object" && a !== null
+              ? ((a as Record<string, unknown>).name ?? JSON.stringify(a))
+              : String(a);
           log("AGENT", `  ${name}`);
         }
       } else {
@@ -147,9 +151,10 @@ async function main(): Promise<void> {
       console.log(`\n  ${YELLOW}${BOLD}/slash_commands (${slashCommands?.length ?? 0})${RESET}`);
       if (slashCommands && slashCommands.length > 0) {
         for (const sc of slashCommands) {
-          const name = typeof sc === "object" && sc !== null
-            ? (sc as Record<string, unknown>).name ?? JSON.stringify(sc)
-            : String(sc);
+          const name =
+            typeof sc === "object" && sc !== null
+              ? ((sc as Record<string, unknown>).name ?? JSON.stringify(sc))
+              : String(sc);
           log("SLASH", `  ${name}`);
         }
       } else {
@@ -160,9 +165,10 @@ async function main(): Promise<void> {
       if (mcpServers && mcpServers.length > 0) {
         console.log(`\n  ${BLUE}${BOLD}MCP servers (${mcpServers.length})${RESET}`);
         for (const m of mcpServers) {
-          const name = typeof m === "object" && m !== null
-            ? (m as Record<string, unknown>).name ?? JSON.stringify(m)
-            : String(m);
+          const name =
+            typeof m === "object" && m !== null
+              ? ((m as Record<string, unknown>).name ?? JSON.stringify(m))
+              : String(m);
           log("MCP", `  ${name}`);
         }
       }
@@ -171,7 +177,9 @@ async function main(): Promise<void> {
       if (tools) {
         const toolNames = tools.map((t) => String(t.name ?? t));
         const hasSkillTool = toolNames.includes("Skill");
-        console.log(`\n  ${GREEN}${BOLD}Skill tool present: ${hasSkillTool ? `${GREEN}YES` : `${RED}NO`}${RESET}`);
+        console.log(
+          `\n  ${GREEN}${BOLD}Skill tool present: ${hasSkillTool ? `${GREEN}YES` : `${RED}NO`}${RESET}`,
+        );
         if (!hasSkillTool) {
           log("FAIL", "The Skill tool is NOT in the tool list — agent cannot call it!");
           log("WARN", `Available tools: ${toolNames.join(", ")}`);
@@ -198,7 +206,10 @@ async function main(): Promise<void> {
             if (toolName === "Skill") {
               skillInvoked = true;
               const input = block.input as Record<string, unknown> | undefined;
-              log("SKILL", `>>> Skill invoked: ${input?.skill ?? "?"} (args: ${input?.args ?? ""})`);
+              log(
+                "SKILL",
+                `>>> Skill invoked: ${input?.skill ?? "?"} (args: ${input?.args ?? ""})`,
+              );
             } else {
               log("TOOL", toolName);
             }

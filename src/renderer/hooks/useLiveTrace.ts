@@ -3,13 +3,8 @@
  * Not: Does not own loop-cycle progression (useLoopState), run-session metadata (useRunSession), or user-question state. Does not call IPC; subscribes to events and accepts setters via composer.
  * Deps: orchestratorService.subscribeEvents; AgentStep / SubagentInfo / TaskPhase types; viewingHistorical and mode refs from useRunSession.
  */
-import { useState, useEffect, useMemo, useRef, type MutableRefObject } from "react";
-import type {
-  AgentStep,
-  SubagentInfo,
-  TaskPhase,
-  OrchestratorEvent,
-} from "../../core/types.js";
+import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentStep, OrchestratorEvent, SubagentInfo, TaskPhase } from "../../core/types.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
 export interface LatestAction {
@@ -55,7 +50,8 @@ export function labelForStep(step: AgentStep): string | null {
       return tool;
     }
     case "subagent_spawn": {
-      const desc = typeof meta.description === "string" && meta.description ? meta.description : "subagent";
+      const desc =
+        typeof meta.description === "string" && meta.description ? meta.description : "subagent";
       return `Task: ${truncate(desc, 40)}`;
     }
     case "subagent_result":

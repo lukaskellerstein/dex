@@ -3,11 +3,13 @@
 ## Prerequisites
 
 1. Upgrade the SDK:
+
    ```bash
    npm install @anthropic-ai/claude-agent-sdk@^0.1.45
    ```
 
 2. Verify the types exist:
+
    ```bash
    grep -r "outputFormat" node_modules/@anthropic-ai/claude-agent-sdk/
    grep -r "structured_output" node_modules/@anthropic-ai/claude-agent-sdk/

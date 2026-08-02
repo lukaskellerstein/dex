@@ -1,6 +1,6 @@
-import React from 'react';
-import { AbsoluteFill, Freeze, OffthreadVideo, Sequence, staticFile } from 'remotion';
-import type { Section } from '../lib/timeline';
+import type React from "react";
+import { AbsoluteFill, Freeze, OffthreadVideo, Sequence, staticFile } from "remotion";
+import type { Section } from "../lib/timeline";
 
 /**
  * A captured clip, fitted to the section length the narration demands.
@@ -17,12 +17,12 @@ import type { Section } from '../lib/timeline';
  */
 export const VideoSection: React.FC<{ section: Section }> = ({ section }) => {
   const video = section.video;
-  if (!video) return <AbsoluteFill style={{ backgroundColor: '#000' }} />;
+  if (!video) return <AbsoluteFill style={{ backgroundColor: "#000" }} />;
 
   const videoFrames = Math.max(video.videoFrames ?? section.durationInFrames, 1);
   const hold = video.holdLastFrameFrames ?? 0;
 
-  const style: React.CSSProperties = { width: '100%', height: '100%', objectFit: 'cover' };
+  const style: React.CSSProperties = { width: "100%", height: "100%", objectFit: "cover" };
   const shared = {
     src: staticFile(video.src),
     playbackRate: video.playbackRate ?? 1,

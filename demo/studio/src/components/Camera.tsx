@@ -1,7 +1,7 @@
-import React from 'react';
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
-import type { Camera as CameraSpec } from '../lib/timeline';
-import { focusToOrigin } from '../lib/timeline';
+import type React from "react";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
+import type { Camera as CameraSpec } from "../lib/timeline";
+import { focusToOrigin } from "../lib/timeline";
 
 /**
  * Slow scale move over a section, converging on a focus point.
@@ -19,9 +19,9 @@ export const Camera: React.FC<{
   children: React.ReactNode;
 }> = ({ camera, durationInFrames, children }) => {
   const frame = useCurrentFrame();
-  const kind = camera?.kind ?? 'static';
+  const kind = camera?.kind ?? "static";
 
-  if (kind === 'static' || !camera) {
+  if (kind === "static" || !camera) {
     return <AbsoluteFill>{children}</AbsoluteFill>;
   }
 
@@ -29,26 +29,26 @@ export const Camera: React.FC<{
   const to = camera.to ?? 1.06;
 
   let scale = from;
-  if (kind === 'kenburns') {
+  if (kind === "kenburns") {
     // Linear across the whole section: a constant drift is less noticeable than an eased
     // one, which reads as a deliberate zoom.
     scale = interpolate(frame, [0, durationInFrames], [from, to], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
     });
-  } else if (kind === 'zoomTo') {
+  } else if (kind === "zoomTo") {
     // Settle into the target early, then hold — used when narration references detail.
     scale = interpolate(frame, [0, Math.round(durationInFrames * 0.45)], [from, to], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
       easing: Easing.bezier(0.22, 0.61, 0.36, 1),
     });
-  } else if (kind === 'punchIn') {
+  } else if (kind === "punchIn") {
     // Fast snap for an accent beat.
     const hold = Math.round(durationInFrames * 0.12);
     scale = interpolate(frame, [0, hold], [from, to], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
       easing: Easing.out(Easing.cubic),
     });
   }
@@ -57,9 +57,9 @@ export const Camera: React.FC<{
     <AbsoluteFill
       style={{
         transform: `scale(${scale})`,
-        transformOrigin: focusToOrigin(camera.focus ?? 'center'),
+        transformOrigin: focusToOrigin(camera.focus ?? "center"),
         // Avoid a hairline edge when scale rounds below 1 on a sub-pixel boundary.
-        willChange: 'transform',
+        willChange: "transform",
       }}
     >
       {children}

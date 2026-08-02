@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrchestratorEvent } from "../../../core/types.js";
 
 type EventHandler = (event: OrchestratorEvent) => void;
@@ -103,7 +103,15 @@ describe("useUserQuestion", () => {
     expect(result.current.pendingQuestion).not.toBeNull();
     emit({
       type: "run_started",
-      config: { projectDir: "/p", specDir: "", mode: "loop", model: "claude-opus-4-6", maxIterations: 1, maxTurns: 1, taskPhases: "all" },
+      config: {
+        projectDir: "/p",
+        specDir: "",
+        mode: "loop",
+        model: "claude-opus-4-6",
+        maxIterations: 1,
+        maxTurns: 1,
+        taskPhases: "all",
+      },
       runId: "r-2",
       branchName: "b",
     });

@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
-import type { TaskPhase } from "../../core/types.js";
+import { useCallback, useEffect, useState } from "react";
 import type { AgentRunRecord, SpecStats } from "../../core/runs.js";
 import type { DexState } from "../../core/state.js";
-import { projectService } from "../services/projectService.js";
+import type { TaskPhase } from "../../core/types.js";
 import { historyService } from "../services/historyService.js";
 import { orchestratorService } from "../services/orchestratorService.js";
+import { projectService } from "../services/projectService.js";
 
 export interface SpecSummary {
   name: string;
@@ -25,7 +25,10 @@ export function useProject() {
   const [dexStatus, setDexStatus] = useState<DexState["status"] | null>(null);
 
   const refreshDexStatus = useCallback(async (dir: string | null) => {
-    if (!dir) { setDexStatus(null); return; }
+    if (!dir) {
+      setDexStatus(null);
+      return;
+    }
     try {
       const state = await orchestratorService.getProjectState(dir);
       setDexStatus(state?.status ?? null);
@@ -68,7 +71,7 @@ export function useProject() {
       const totalTasks = parsed.reduce((s, p) => s + p.tasks.length, 0);
       const doneTasks = parsed.reduce(
         (s, p) => s + p.tasks.filter((t) => t.status === "done").length,
-        0
+        0,
       );
       summaries.push({
         name: spec,
@@ -103,7 +106,9 @@ export function useProject() {
     return dir;
   };
 
-  const openProjectPath = async (projectPath: string): Promise<{ path: string } | { error: string }> => {
+  const openProjectPath = async (
+    projectPath: string,
+  ): Promise<{ path: string } | { error: string }> => {
     const result = await projectService.openProjectPath(projectPath);
     if ("path" in result) {
       setProjectDir(result.path);
@@ -114,7 +119,10 @@ export function useProject() {
     return result;
   };
 
-  const createProject = async (parentDir: string, name: string): Promise<{ path: string } | { error: string }> => {
+  const createProject = async (
+    parentDir: string,
+    name: string,
+  ): Promise<{ path: string } | { error: string }> => {
     const result = await projectService.createProject(parentDir, name);
     if ("path" in result) {
       setProjectDir(result.path);
@@ -162,7 +170,7 @@ export function useProject() {
     const totalTasks = updatedPhases.reduce((acc, p) => acc + p.tasks.length, 0);
     const doneTasks = updatedPhases.reduce(
       (acc, p) => acc + p.tasks.filter((t) => t.status === "done").length,
-      0
+      0,
     );
     const completedPhases = updatedPhases.filter((p) => p.status === "complete").length;
     const totalPhases = updatedPhases.length;
@@ -172,14 +180,28 @@ export function useProject() {
       if (found) {
         return prev.map((s) => {
           if (s.name !== specDir) return s;
-          return { ...s, phases: updatedPhases, totalTasks, doneTasks, completedPhases, totalPhases };
+          return {
+            ...s,
+            phases: updatedPhases,
+            totalTasks,
+            doneTasks,
+            completedPhases,
+            totalPhases,
+          };
         });
       }
       // Spec not yet in summaries — add it (happens when implement step
       // emits tasks_updated before refreshProject has loaded the spec)
       return [
         ...prev,
-        { name: specDir, phases: updatedPhases, totalTasks, doneTasks, completedPhases, totalPhases },
+        {
+          name: specDir,
+          phases: updatedPhases,
+          totalTasks,
+          doneTasks,
+          completedPhases,
+          totalPhases,
+        },
       ];
     });
   };
@@ -187,14 +209,9 @@ export function useProject() {
   // Aggregate stats across all specs
   const aggregate = {
     totalSpecs: specSummaries.length,
-    unfinishedSpecs: specSummaries.filter(
-      (s) => s.doneTasks < s.totalTasks
-    ).length,
+    unfinishedSpecs: specSummaries.filter((s) => s.doneTasks < s.totalTasks).length,
     totalPhases: specSummaries.reduce((s, sp) => s + sp.totalPhases, 0),
-    incompletePhases: specSummaries.reduce(
-      (s, sp) => s + sp.totalPhases - sp.completedPhases,
-      0
-    ),
+    incompletePhases: specSummaries.reduce((s, sp) => s + sp.totalPhases - sp.completedPhases, 0),
     totalTasks: specSummaries.reduce((s, sp) => s + sp.totalTasks, 0),
     doneTasks: specSummaries.reduce((s, sp) => s + sp.doneTasks, 0),
   };

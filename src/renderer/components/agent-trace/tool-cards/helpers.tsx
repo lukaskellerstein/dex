@@ -3,19 +3,20 @@
  * Not: Does not render. Does not own any React state. Tool-input rendering lives in the per-tool *Input components.
  * Deps: lucide-react icons; no React state.
  */
-import type { ReactNode } from "react";
+
 import {
-  Terminal,
-  FileText,
-  FilePlus,
-  FileEdit,
-  Search,
-  FolderSearch,
   Bot,
-  ListTodo,
   ClipboardList,
+  FileEdit,
+  FilePlus,
+  FileText,
+  FolderSearch,
+  ListTodo,
+  Search,
+  Terminal,
   Wrench,
 } from "lucide-react";
+import type { ReactNode } from "react";
 
 export function getToolIcon(toolName: string): ReactNode {
   switch (toolName) {

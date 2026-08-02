@@ -46,9 +46,11 @@ export interface SpecStats {
 ### Directory helpers
 
 #### `runsDir(projectDir: string): string`
+
 Returns `<projectDir>/.dex/runs`. Pure function, no I/O.
 
 #### `ensureRunsDir(projectDir: string): void`
+
 Creates `<projectDir>/.dex/runs` if missing. Idempotent. `mkdir -p` semantics.
 
 ---

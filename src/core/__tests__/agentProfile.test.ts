@@ -1,12 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  listProfiles,
-  saveDexJson,
-} from "../agent-profile.ts";
+import test from "node:test";
+import { listProfiles, saveDexJson } from "../agent-profile.ts";
 
 function mkTmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "dex-profile-"));
@@ -264,10 +261,7 @@ test("saveDexJson: writes the file atomically", () => {
     });
     assert.equal(r.ok, true);
     const written = JSON.parse(
-      fs.readFileSync(
-        path.join(dir, ".dex", "agents", "conservative", "dex.json"),
-        "utf-8",
-      ),
+      fs.readFileSync(path.join(dir, ".dex", "agents", "conservative", "dex.json"), "utf-8"),
     );
     assert.equal(written.model, "claude-sonnet-4-6");
     assert.equal(written.systemPromptAppend, "Updated.");

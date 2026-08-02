@@ -105,7 +105,7 @@ case "$ARG" in
   *)
     case "$ARG" in
       checkpoint/*) TAG="$ARG" ;;
-      *)            TAG="checkpoint/$ARG" ;;
+      *) TAG="checkpoint/$ARG" ;;
     esac
     if ! git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
       echo "unknown checkpoint: $TAG" >&2

@@ -3,7 +3,7 @@
  * Not: Does not render. Does not own start-run logic; the panel calls onStart with the form's current values. Does not own per-run budget caps (max cycles / max budget) — those move to dex-config.json or programmatic config, not this UI.
  * Deps: projectService for readFile/writeFile/pickGoalFile.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { projectService } from "../services/projectService.js";
 
 const GOAL_TEMPLATE = `# Project Goal
@@ -47,12 +47,9 @@ export function useLoopStartForm(projectDir: string): UseLoopStartFormResult {
   const [showEditor, setShowEditor] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const setAutoClarification = useCallback(
-    (b: boolean | ((prev: boolean) => boolean)) => {
-      setAutoClarificationState(b);
-    },
-    [],
-  );
+  const setAutoClarification = useCallback((b: boolean | ((prev: boolean) => boolean)) => {
+    setAutoClarificationState(b);
+  }, []);
 
   // Auto-detect goal file in project root. Order:
   //   1. previous run's choice (state.json `config.descriptionFile`) — honors a
@@ -95,7 +92,9 @@ export function useLoopStartForm(projectDir: string): UseLoopStartFormResult {
       setGoalContent(GOAL_TEMPLATE);
       setShowEditor(false);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [projectDir]);
 
   const saveGoal = useCallback(async () => {

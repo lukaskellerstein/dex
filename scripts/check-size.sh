@@ -15,8 +15,8 @@ set -euo pipefail
 #   - useOrchestrator.ts retired when Wave B landed (910 → 511 LOC)
 #   - App.tsx retired when Wave C-rest landed (717 → 506 LOC)
 ALLOWLIST=(
-  src/core/state.ts                       # perpetual — 01X-state-reconciliation
-  src/core/agent/ClaudeAgentRunner.ts     # perpetual — TBD SDK-adapter spec
+  src/core/state.ts                   # perpetual — 01X-state-reconciliation
+  src/core/agent/ClaudeAgentRunner.ts # perpetual — TBD SDK-adapter spec
 )
 
 # Find files >600 LOC under src/. `wc -l` emits a trailing "total" line we filter out.
@@ -32,13 +32,16 @@ while IFS= read -r line; do
   file=${line#* }
   exempt=0
   for allowed in "${ALLOWLIST[@]}"; do
-    if [ "$file" = "$allowed" ]; then exempt=1; break; fi
+    if [ "$file" = "$allowed" ]; then
+      exempt=1
+      break
+    fi
   done
   if [ $exempt -eq 0 ]; then
     echo "FAIL: $file ($loc LOC > 600)" >&2
     fail=1
   fi
-done <<< "$VIOLATIONS"
+done <<<"$VIOLATIONS"
 
 if [ $fail -ne 0 ]; then
   echo "" >&2

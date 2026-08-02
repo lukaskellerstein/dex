@@ -3,10 +3,11 @@
  * Not: Does not render the tool input or chrome — ToolCard owns those. Does not handle Agent results — AgentCard renders its own.
  * Deps: AgentStep, ToolFormattedResult / hasFormattedResult.
  */
-import { useState } from "react";
+
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useState } from "react";
 import type { AgentStep } from "../../../../core/types.js";
-import { ToolFormattedResult, hasFormattedResult } from "../ToolFormattedResult.js";
+import { hasFormattedResult, ToolFormattedResult } from "../ToolFormattedResult.js";
 
 interface CardResultSectionProps {
   resultSteps: AgentStep[];
@@ -23,8 +24,7 @@ export function CardResultSection({ resultSteps, toolName }: CardResultSectionPr
   const useFormattedResult = hasFormattedResult(toolName);
 
   // Build preview text from first result.
-  const previewText =
-    results[0]?.content?.slice(0, 120) ?? errors[0]?.content?.slice(0, 120) ?? "";
+  const previewText = results[0]?.content?.slice(0, 120) ?? errors[0]?.content?.slice(0, 120) ?? "";
   const hasError = errors.length > 0;
   const resultColor = hasError ? "var(--status-error)" : "var(--foreground-dim)";
 
@@ -102,9 +102,7 @@ export function CardResultSection({ resultSteps, toolName }: CardResultSectionPr
                     fontSize: "11px",
                     fontFamily: "var(--font-mono)",
                     color:
-                      rs.type === "tool_error"
-                        ? "var(--status-error)"
-                        : "var(--foreground-muted)",
+                      rs.type === "tool_error" ? "var(--status-error)" : "var(--foreground-muted)",
                     lineHeight: 1.6,
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",

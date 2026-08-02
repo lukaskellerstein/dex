@@ -4,10 +4,10 @@
  * Deps: runs.startAgentRun/completeAgentRun, OrchestrationContext.emit, log.RunLogger.
  */
 
-import * as runs from "./runs.js";
 import type { OrchestrationContext } from "./context.js";
-import type { StepType } from "./types.js";
 import type { RunLogger } from "./log.js";
+import * as runs from "./runs.js";
+import type { StepType } from "./types.js";
 
 // ── Shared input shapes ─────────────────────────────────────────────────────
 
@@ -183,11 +183,26 @@ export function emitSkippedStep(input: SkippedStepInput): void {
     startedAt: new Date().toISOString(),
     status: "running",
   });
-  ctx.emit({ type: "step_started", runId, cycleNumber, step, agentRunId, ...(specDir ? { specDir } : {}) });
+  ctx.emit({
+    type: "step_started",
+    runId,
+    cycleNumber,
+    step,
+    agentRunId,
+    ...(specDir ? { specDir } : {}),
+  });
   runs.completeAgentRun(ctx.projectDir, runId, agentRunId, {
     status: "completed",
     costUsd: 0,
     durationMs: 0,
   });
-  ctx.emit({ type: "step_completed", runId, cycleNumber, step, agentRunId, costUsd: 0, durationMs: 0 });
+  ctx.emit({
+    type: "step_completed",
+    runId,
+    cycleNumber,
+    step,
+    agentRunId,
+    costUsd: 0,
+    durationMs: 0,
+  });
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Minus, Square, X, Copy } from "lucide-react";
+import { Copy, Minus, Square, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { windowService } from "../../services/windowService.js";
 
 export function WindowControls() {

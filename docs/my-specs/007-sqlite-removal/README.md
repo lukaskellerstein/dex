@@ -250,10 +250,12 @@ Only field-name adjustments. Shape of the returned data stays close to the SQL r
 4. **Resume**: pause mid-run. Close app. Reopen. Resume. Verify the run JSON is updated in place — phase count grows, `status` transitions through `paused` → `running` → `completed`.
 5. **Multi-project isolation**: open project A, run a cycle. Open project B, run a cycle. Confirm A's runs JSON is only in A's `.dex/runs/`, not in B's.
 6. **IPC smoke**: from DevTools console:
+
    ```js
    await window.dexAPI.listRuns(5)
    await window.dexAPI.getRun((await window.dexAPI.listRuns(1))[0].runId)
    ```
+
    Both return correct data matching on-disk JSON.
 7. **TraceView**: open a past run's phase → trace steps render (sourced from log files).
 8. **Typecheck**: `npx tsc --noEmit` passes.

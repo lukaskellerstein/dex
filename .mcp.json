@@ -2,10 +2,7 @@
   "mcpServers": {
     "electron-playwright": {
       "command": "npx",
-      "args": [
-        "@playwright/mcp@latest",
-        "--cdp-endpoint=http://localhost:9333"
-      ]
+      "args": ["@playwright/mcp@latest", "--cdp-endpoint=http://localhost:9333"]
     }
   }
 }

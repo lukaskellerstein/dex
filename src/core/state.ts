@@ -1,9 +1,14 @@
+import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import type { RunConfig, StepType, Phase, EmitFn, DriftSummary } from "./types.js";
-import { getCurrentBranch, getHeadSha, countCommitsBetween, getCommittedFileContent } from "./git.js";
+import {
+  countCommitsBetween,
+  getCommittedFileContent,
+  getCurrentBranch,
+  getHeadSha,
+} from "./git.js";
+import type { DriftSummary, EmitFn, Phase, RunConfig, StepType } from "./types.js";
 
 // ── Constants ──
 
@@ -155,7 +160,7 @@ function deepMerge<T>(target: T, patch: DeepPartial<T>): T {
     } else {
       (result as Record<string, unknown>)[key as string] = deepMerge(
         (target as Record<string, unknown>)[key as string] ?? {},
-        patchVal as DeepPartial<Record<string, unknown>>
+        patchVal as DeepPartial<Record<string, unknown>>,
       );
     }
   }
@@ -232,7 +237,7 @@ export function createInitialState(
   config: RunConfig,
   runId: string,
   _branchName: string,
-  baseBranch: string
+  baseBranch: string,
 ): DexState {
   return {
     version: 1,
@@ -313,7 +318,7 @@ function stripRemovedFields(raw: Record<string, unknown>): DexState | null {
 // ── Stale State Detection ──
 
 export async function detectStaleState(
-  projectDir: string
+  projectDir: string,
 ): Promise<"fresh" | "stale" | "completed" | "none"> {
   const state = await loadState(projectDir);
   if (!state) return "none";
@@ -354,7 +359,9 @@ export async function acquireStateLock(projectDir: string): Promise<() => void> 
   try {
     const existing: LockFile = JSON.parse(fs.readFileSync(lp, "utf-8"));
     if (!isLockStale(existing)) {
-      throw new Error(`State lock held by PID ${existing.pid} (acquired at ${existing.timestamp}). Another Dex instance may be running on this project.`);
+      throw new Error(
+        `State lock held by PID ${existing.pid} (acquired at ${existing.timestamp}). Another Dex instance may be running on this project.`,
+      );
     }
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("State lock held")) throw err;
@@ -479,11 +486,7 @@ interface DriftAccumulator {
   featurePatches: Record<string, DeepPartial<FeatureArtifacts>>;
 }
 
-function checkGitDrift(
-  projectDir: string,
-  state: DexState,
-  acc: DriftAccumulator,
-): void {
+function checkGitDrift(projectDir: string, state: DexState, acc: DriftAccumulator): void {
   if (!state.lastCommit.sha) return;
   try {
     const currentHead = getHeadSha(projectDir);
@@ -533,15 +536,12 @@ async function checkArtifactDrift(
 
   for (const result of hashResults) {
     if (result.status === "missing") acc.driftSummary.missingArtifacts.push(result.entry.path);
-    else if (result.status === "modified") acc.driftSummary.modifiedArtifacts.push(result.entry.path);
+    else if (result.status === "modified")
+      acc.driftSummary.modifiedArtifacts.push(result.entry.path);
   }
 }
 
-function checkTaskDrift(
-  projectDir: string,
-  state: DexState,
-  acc: DriftAccumulator,
-): void {
+function checkTaskDrift(projectDir: string, state: DexState, acc: DriftAccumulator): void {
   for (const [specDir, feature] of Object.entries(state.artifacts.features)) {
     if (!feature.tasks) continue;
     const tasksPath = path.join(projectDir, feature.tasks.path);
@@ -598,9 +598,7 @@ function deriveResumeCursor(state: DexState, acc: DriftAccumulator): ResumeCurso
       cursor.step = null;
       acc.warnings.push(`${goalName} deleted — resetting to clarification phase`);
     } else if (acc.driftSummary.modifiedArtifacts.includes(goalPath)) {
-      acc.blockers.push(
-        `${goalName} was modified. Re-run gap analysis? Choose: re-run or accept.`,
-      );
+      acc.blockers.push(`${goalName} was modified. Re-run gap analysis? Choose: re-run or accept.`);
     }
   }
 
@@ -655,11 +653,7 @@ function deriveResumeCursor(state: DexState, acc: DriftAccumulator): ResumeCurso
  * Sync FeatureArtifacts entries with feature-manifest.json — manifest is
  * authoritative for active/completed status. Failure is non-fatal.
  */
-function reconcileWithManifest(
-  projectDir: string,
-  state: DexState,
-  acc: DriftAccumulator,
-): void {
+function reconcileWithManifest(projectDir: string, state: DexState, acc: DriftAccumulator): void {
   try {
     const manifestPath = path.join(projectDir, ".dex", "feature-manifest.json");
     if (!fs.existsSync(manifestPath)) return;
@@ -763,4 +757,3 @@ export async function reconcileState(
 
   return result;
 }
-

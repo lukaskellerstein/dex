@@ -1,10 +1,10 @@
-import React from 'react';
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from 'remotion';
-import type { Section } from '../lib/timeline';
-import { theme } from '../lib/theme';
-import { Camera } from './Camera';
-import { LowerThird } from './LowerThird';
-import { Captions } from './Captions';
+import type React from "react";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
+import { theme } from "../lib/theme";
+import type { Section } from "../lib/timeline";
+import { Camera } from "./Camera";
+import { Captions } from "./Captions";
+import { LowerThird } from "./LowerThird";
 
 /**
  * Wraps a section's picture with its camera move, its incoming transition and its overlay
@@ -23,26 +23,26 @@ export const SectionShell: React.FC<{ section: Section; children: React.ReactNod
   children,
 }) => {
   const frame = useCurrentFrame();
-  const { kind, frames } = section.transitionIn ?? { kind: 'cut', frames: 0, seconds: 0 };
+  const { kind, frames } = section.transitionIn ?? { kind: "cut", frames: 0, seconds: 0 };
 
   let opacity = 1;
   let transform: string | undefined;
 
-  if (frames > 0 && kind !== 'cut') {
+  if (frames > 0 && kind !== "cut") {
     const progress = interpolate(frame, [0, frames], [0, 1], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp',
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
       easing: Easing.bezier(0.4, 0, 0.2, 1),
     });
 
-    if (kind === 'crossfade') {
+    if (kind === "crossfade") {
       opacity = progress;
-    } else if (kind === 'fadeThroughBlack') {
+    } else if (kind === "fadeThroughBlack") {
       // Hold black for the first half, then reveal — reads as a scene change rather than
       // a dissolve, which is what you want between unrelated parts of a demo.
-      opacity = interpolate(progress, [0.5, 1], [0, 1], { extrapolateLeft: 'clamp' });
-    } else if (kind === 'slide') {
-      opacity = interpolate(progress, [0, 0.35], [0, 1], { extrapolateRight: 'clamp' });
+      opacity = interpolate(progress, [0.5, 1], [0, 1], { extrapolateLeft: "clamp" });
+    } else if (kind === "slide") {
+      opacity = interpolate(progress, [0, 0.35], [0, 1], { extrapolateRight: "clamp" });
       transform = `translateX(${interpolate(progress, [0, 1], [6, 0])}%)`;
     }
   }

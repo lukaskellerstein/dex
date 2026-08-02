@@ -1,5 +1,5 @@
+import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 
 interface ToolResultStepProps {
   content: string | null;
@@ -57,9 +57,7 @@ export function ToolResultStep({ content, isError }: ToolResultStepProps) {
             fontSize: "0.8rem",
             fontFamily: "var(--font-mono)",
             color: isError ? "var(--status-error)" : "var(--foreground-muted)",
-            background: isError
-              ? "rgba(239, 68, 68, 0.05)"
-              : "var(--surface)",
+            background: isError ? "rgba(239, 68, 68, 0.05)" : "var(--surface)",
             padding: 8,
             borderRadius: "var(--radius)",
             marginTop: 4,

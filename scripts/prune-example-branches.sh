@@ -12,7 +12,7 @@
 set -euo pipefail
 
 TARGET=/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
-DEX_THRESHOLD=$(( $(date +%s) - 7 * 24 * 60 * 60 ))
+DEX_THRESHOLD=$(($(date +%s) - 7 * 24 * 60 * 60))
 DRY_RUN=false
 
 if [ "${1:-}" = "--dry-run" ]; then
@@ -28,13 +28,13 @@ prune() {
   git for-each-ref --format='%(refname:short) %(committerdate:unix)' "$ref_glob" \
     | awk -v t="$threshold" '$2 < t { print $1 }' \
     | while read -r branch; do
-        if [ -z "$branch" ]; then continue; fi
-        if [ "$DRY_RUN" = "true" ]; then
-          echo "[dry-run] would delete $label branch: $branch"
-        else
-          git branch -D "$branch" || true
-        fi
-      done
+      if [ -z "$branch" ]; then continue; fi
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "[dry-run] would delete $label branch: $branch"
+      else
+        git branch -D "$branch" || true
+      fi
+    done
 }
 
 prune "refs/heads/dex/" "$DEX_THRESHOLD" "dex/*"

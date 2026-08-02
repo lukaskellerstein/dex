@@ -1,11 +1,11 @@
-import { CheckpointModal } from "./Modal";
-import {
-  LOST_WORK_TITLE,
-  LOST_WORK_BODY,
-  LOST_WORK_REMOVE,
-  LOST_WORK_CANCEL,
-} from "./branchOps/copy";
 import type { LostStep } from "../../../core/checkpoints.js";
+import {
+  LOST_WORK_BODY,
+  LOST_WORK_CANCEL,
+  LOST_WORK_REMOVE,
+  LOST_WORK_TITLE,
+} from "./branchOps/copy";
+import { CheckpointModal } from "./Modal";
 
 interface Props {
   /** Steps the user is about to lose. Caller short-circuits when empty. */
@@ -26,18 +26,10 @@ export function DeleteBranchConfirm({ lostSteps, onConfirm, onCancel }: Props) {
       onClose={onCancel}
       footer={
         <>
-          <button
-            className="btn-secondary"
-            onClick={onCancel}
-            data-testid="delete-branch-cancel"
-          >
+          <button className="btn-secondary" onClick={onCancel} data-testid="delete-branch-cancel">
             {LOST_WORK_CANCEL}
           </button>
-          <button
-            className="btn-primary"
-            onClick={onConfirm}
-            data-testid="delete-branch-confirm"
-          >
+          <button className="btn-primary" onClick={onConfirm} data-testid="delete-branch-confirm">
             {LOST_WORK_REMOVE}
           </button>
         </>

@@ -1,10 +1,10 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import { deleteBranch, mergeToMain, computePromoteSummary } from "../checkpoints/branchOps.ts";
+import test from "node:test";
+import { computePromoteSummary, deleteBranch, mergeToMain } from "../checkpoints/branchOps.ts";
 
 function mkTmpRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dex-bo-"));
@@ -323,16 +323,19 @@ test("mergeToMain: clean merge produces a single-parent squash commit on main", 
     assert.equal(r.ok, true);
     if (r.ok && r.mode === "clean") {
       // Single-parent squash commit (no merge topology).
-      const parentCount = execSync(
-        `git log -1 --format='%P' ${r.mergeSha}`,
-        { cwd: dir, encoding: "utf-8" },
-      ).trim().split(" ").filter(Boolean).length;
+      const parentCount = execSync(`git log -1 --format='%P' ${r.mergeSha}`, {
+        cwd: dir,
+        encoding: "utf-8",
+      })
+        .trim()
+        .split(" ")
+        .filter(Boolean).length;
       assert.equal(parentCount, 1);
       // Squash subject names the source branch (timeline parser depends on this).
-      const subject = execSync(
-        `git log -1 --format=%s ${r.mergeSha}`,
-        { cwd: dir, encoding: "utf-8" },
-      ).trim();
+      const subject = execSync(`git log -1 --format=%s ${r.mergeSha}`, {
+        cwd: dir,
+        encoding: "utf-8",
+      }).trim();
       assert.match(subject, /^dex: promoted dex\/2026-05-04-mmmmmm to main$/);
       assert.equal(r.mergedSource, "dex/2026-05-04-mmmmmm");
     } else {
@@ -344,10 +347,7 @@ test("mergeToMain: clean merge produces a single-parent squash commit on main", 
     // HEAD is on main.
     assert.equal(currentBranch(dir), "main");
     // Pending-promote sidecar is cleared on success.
-    assert.equal(
-      fs.existsSync(path.join(dir, ".git", "dex-pending-promote")),
-      false,
-    );
+    assert.equal(fs.existsSync(path.join(dir, ".git", "dex-pending-promote")), false);
   } finally {
     rmTmp(dir);
   }
@@ -429,10 +429,10 @@ test("mergeToMain: dirty + force=save autosaves and proceeds", async () => {
     const r = await mergeToMain(dir, "dex/2026-05-04-qqqqqq", { force: "save" });
     assert.equal(r.ok, true);
     // Autosave commit landed on main before the merge — verify by subject.
-    const autosave = execSync(
-      `git log main --grep='^dex: pre-promote autosave' --oneline`,
-      { cwd: dir, encoding: "utf-8" },
-    ).trim();
+    const autosave = execSync(`git log main --grep='^dex: pre-promote autosave' --oneline`, {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
     assert.ok(autosave.length > 0, "expected pre-promote autosave commit on main");
   } finally {
     rmTmp(dir);

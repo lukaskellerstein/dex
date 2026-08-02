@@ -5,8 +5,8 @@
  */
 
 import type { AgentRunner } from "./agent/AgentRunner.js";
-import type { RunLogger } from "./log.js";
 import type { EmitFn } from "./events.js";
+import type { RunLogger } from "./log.js";
 import type { StepType } from "./types.js";
 
 /**

@@ -1,8 +1,4 @@
-import type {
-  TimelineSnapshot,
-  TimelineCommit,
-  StartingPoint,
-} from "../../../core/checkpoints.js";
+import type { StartingPoint, TimelineCommit, TimelineSnapshot } from "../../../core/checkpoints.js";
 
 /**
  * Git-tree timeline layout.
@@ -282,19 +278,14 @@ function allocateLanes(infos: BranchInfo[]): Map<string, number> {
   return branchLane;
 }
 
-export function layoutTimeline(
-  snapshot: TimelineSnapshot,
-  opts: LayoutOpts,
-): LayoutOutput {
+export function layoutTimeline(snapshot: TimelineSnapshot, opts: LayoutOpts): LayoutOutput {
   const padX = opts.padX ?? 24;
   const padY = opts.padY ?? 16;
   const headerHeight = opts.headerHeight ?? 8;
   const gutterGap = opts.gutterGap ?? 24;
   const rowHeight = opts.rowHeight;
 
-  const commits = [...snapshot.commits].sort((a, b) =>
-    a.timestamp.localeCompare(b.timestamp),
-  );
+  const commits = [...snapshot.commits].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   // Row assignment: row 0 reserved for the top-header badge strip; commits
   // start at row 1.
@@ -326,7 +317,7 @@ export function layoutTimeline(
     const lastRow = rowOf.get(lastCommit.sha)!;
     const forkParentSha = firstCommit.parentSha;
     const forkRow = forkParentSha
-      ? rowOf.get(forkParentSha) ?? Math.max(0, firstRow - 1)
+      ? (rowOf.get(forkParentSha) ?? Math.max(0, firstRow - 1))
       : Math.max(0, firstRow - 1);
     branchInfos.push({ branch, firstRow, lastRow, forkRow, forkParentSha });
   }
@@ -573,11 +564,7 @@ export function layoutTimeline(
   // dex's "every run forks fresh from main" pattern), draw its lane as a
   // continuous line from the trunk anchor to the bottom of the canvas so
   // the trunk is still visible in the layout.
-  if (
-    trunkLaneCol &&
-    !commitsByBranch.has(trunkLaneCol.branch) &&
-    commits.length > 0
-  ) {
+  if (trunkLaneCol && !commitsByBranch.has(trunkLaneCol.branch) && commits.length > 0) {
     const lastRow = FIRST_COMMIT_ROW + commits.length - 1;
     laneSegments.push({
       branch: trunkLaneCol.branch,

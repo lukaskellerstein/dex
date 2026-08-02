@@ -1,7 +1,7 @@
-import { CheckCircle, FileText, Loader2, Cog, Clock, DollarSign, Hash } from "lucide-react";
-import type { TaskPhase, Task } from "../../../core/types.js";
-import type { SpecSummary } from "../../hooks/useProject.js";
+import { CheckCircle, Clock, Cog, DollarSign, FileText, Hash, Loader2 } from "lucide-react";
 import { useState } from "react";
+import type { Task, TaskPhase } from "../../../core/types.js";
+import type { SpecSummary } from "../../hooks/useProject.js";
 
 function formatSpecDuration(ms: number): string {
   const sec = Math.floor(ms / 1000);
@@ -53,7 +53,14 @@ function MiniProgress({ done, total, color }: { done: number; total: number; col
   );
 }
 
-export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, activeTask }: SpecCardProps) {
+export function SpecCard({
+  summary,
+  onClick,
+  isActive,
+  isRunning,
+  activePhase,
+  activeTask,
+}: SpecCardProps) {
   const [hovered, setHovered] = useState(false);
   const isComplete = summary.doneTasks === summary.totalTasks && summary.totalTasks > 0;
   const displayName = summary.name.split("/").pop() ?? summary.name;
@@ -138,7 +145,14 @@ export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, a
             }}
           >
             <span style={{ fontWeight: 600 }}>TaskPhase {activePhase.number}</span>
-            <span style={{ color: "var(--foreground-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span
+              style={{
+                color: "var(--foreground-muted)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {activePhase.name}
             </span>
           </div>
@@ -161,9 +175,7 @@ export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, a
               <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.73rem", flexShrink: 0 }}>
                 {activeTask.id}
               </span>
-              <span>
-                {activeTask.description}
-              </span>
+              <span>{activeTask.description}</span>
             </div>
           )}
         </div>
@@ -197,7 +209,6 @@ export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, a
             done={summary.completedPhases}
             total={summary.totalPhases}
             color="var(--status-info)"
-
           />
         </div>
 
@@ -246,8 +257,7 @@ export function SpecCard({ summary, onClick, isActive, isRunning, activePhase, a
           >
             {summary.stats.totalCostUsd > 0 && (
               <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <DollarSign size={10} />
-                ${summary.stats.totalCostUsd.toFixed(2)}
+                <DollarSign size={10} />${summary.stats.totalCostUsd.toFixed(2)}
               </span>
             )}
             {summary.stats.totalDurationMs > 0 && (

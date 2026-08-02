@@ -1,14 +1,14 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import test from "node:test";
 import {
-  loadDexConfig,
-  DexConfigParseError,
-  DexConfigInvalidError,
-  dexConfigPath,
   DEFAULT_CONFLICT_RESOLVER_CONFIG,
+  DexConfigInvalidError,
+  DexConfigParseError,
+  dexConfigPath,
+  loadDexConfig,
 } from "../dexConfig.ts";
 
 function mkTmpProject(): string {
@@ -74,11 +74,14 @@ test("dexConfig: non-string 'agent' throws DexConfigInvalidError", () => {
   const dir = mkTmpProject();
   try {
     writeConfig(dir, '{ "agent": 42 }');
-    assert.throws(() => loadDexConfig(dir), (err: unknown) => {
-      assert.ok(err instanceof DexConfigInvalidError);
-      assert.match((err as Error).message, /'agent' must be a non-empty string/);
-      return true;
-    });
+    assert.throws(
+      () => loadDexConfig(dir),
+      (err: unknown) => {
+        assert.ok(err instanceof DexConfigInvalidError);
+        assert.match((err as Error).message, /'agent' must be a non-empty string/);
+        return true;
+      },
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -106,8 +109,14 @@ test("dexConfig: conflictResolver overrides merge field-by-field over defaults",
     assert.equal(cfg.conflictResolver.costCapUsd, 0.05);
     // Other fields stay at defaults.
     assert.equal(cfg.conflictResolver.model, DEFAULT_CONFLICT_RESOLVER_CONFIG.model);
-    assert.equal(cfg.conflictResolver.maxTurnsPerIteration, DEFAULT_CONFLICT_RESOLVER_CONFIG.maxTurnsPerIteration);
-    assert.equal(cfg.conflictResolver.verifyCommand, DEFAULT_CONFLICT_RESOLVER_CONFIG.verifyCommand);
+    assert.equal(
+      cfg.conflictResolver.maxTurnsPerIteration,
+      DEFAULT_CONFLICT_RESOLVER_CONFIG.maxTurnsPerIteration,
+    );
+    assert.equal(
+      cfg.conflictResolver.verifyCommand,
+      DEFAULT_CONFLICT_RESOLVER_CONFIG.verifyCommand,
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -116,10 +125,7 @@ test("dexConfig: conflictResolver overrides merge field-by-field over defaults",
 test("dexConfig: conflictResolver verifyCommand:null skips verification", () => {
   const dir = mkTmpProject();
   try {
-    writeConfig(
-      dir,
-      '{ "conflictResolver": { "verifyCommand": null } }',
-    );
+    writeConfig(dir, '{ "conflictResolver": { "verifyCommand": null } }');
     const cfg = loadDexConfig(dir);
     assert.equal(cfg.conflictResolver.verifyCommand, null);
   } finally {
@@ -130,10 +136,7 @@ test("dexConfig: conflictResolver verifyCommand:null skips verification", () => 
 test("dexConfig: conflictResolver empty-string verifyCommand normalises to null", () => {
   const dir = mkTmpProject();
   try {
-    writeConfig(
-      dir,
-      '{ "conflictResolver": { "verifyCommand": "" } }',
-    );
+    writeConfig(dir, '{ "conflictResolver": { "verifyCommand": "" } }');
     const cfg = loadDexConfig(dir);
     assert.equal(cfg.conflictResolver.verifyCommand, null);
   } finally {
@@ -144,10 +147,7 @@ test("dexConfig: conflictResolver empty-string verifyCommand normalises to null"
 test("dexConfig: conflictResolver invalid maxIterations throws", () => {
   const dir = mkTmpProject();
   try {
-    writeConfig(
-      dir,
-      '{ "conflictResolver": { "maxIterations": 0 } }',
-    );
+    writeConfig(dir, '{ "conflictResolver": { "maxIterations": 0 } }');
     assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -157,10 +157,7 @@ test("dexConfig: conflictResolver invalid maxIterations throws", () => {
 test("dexConfig: conflictResolver negative costCapUsd throws", () => {
   const dir = mkTmpProject();
   try {
-    writeConfig(
-      dir,
-      '{ "conflictResolver": { "costCapUsd": -1 } }',
-    );
+    writeConfig(dir, '{ "conflictResolver": { "costCapUsd": -1 } }');
     assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -181,10 +178,13 @@ test("dexConfig: parse error throws DexConfigParseError", () => {
   const dir = mkTmpProject();
   try {
     writeConfig(dir, "{ not valid json");
-    assert.throws(() => loadDexConfig(dir), (err: unknown) => {
-      assert.ok(err instanceof DexConfigParseError);
-      return true;
-    });
+    assert.throws(
+      () => loadDexConfig(dir),
+      (err: unknown) => {
+        assert.ok(err instanceof DexConfigParseError);
+        return true;
+      },
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

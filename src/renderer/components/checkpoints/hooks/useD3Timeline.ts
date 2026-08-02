@@ -1,11 +1,7 @@
+import { type ZoomTransform, zoomIdentity } from "d3-zoom";
 import { useMemo, useRef, useState } from "react";
-import { zoomIdentity, type ZoomTransform } from "d3-zoom";
-import {
-  layoutTimeline,
-  type LaidOutNode,
-  type LayoutOutput,
-} from "../timelineLayout";
 import type { TimelineSnapshot } from "../../../../core/checkpoints.js";
+import { type LaidOutNode, type LayoutOutput, layoutTimeline } from "../timelineLayout";
 
 const LAYOUT_OPTIONS = {
   laneWidth: 100,
@@ -28,15 +24,9 @@ export function useD3Timeline(snapshot: TimelineSnapshot) {
   const [hovered, setHovered] = useState<LaidOutNode | null>(null);
   const transform: ZoomTransform = zoomIdentity;
 
-  const layout: LayoutOutput = useMemo(
-    () => layoutTimeline(snapshot, LAYOUT_OPTIONS),
-    [snapshot],
-  );
+  const layout: LayoutOutput = useMemo(() => layoutTimeline(snapshot, LAYOUT_OPTIONS), [snapshot]);
 
-  const nodeById = useMemo(
-    () => new Map(layout.nodes.map((n) => [n.id, n])),
-    [layout.nodes],
-  );
+  const nodeById = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout.nodes]);
 
   return {
     svgRef,

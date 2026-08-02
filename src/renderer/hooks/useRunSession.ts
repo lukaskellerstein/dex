@@ -3,7 +3,7 @@
  * Not: Does not own loop-cycle state (useLoopState), live-trace state (useLiveTrace), user-question state, or prerequisites. Does not call IPC; subscribes to events only.
  * Deps: orchestratorService.subscribeEvents; OrchestratorEvent / Task types.
  */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrchestratorEvent, Task } from "../../core/types.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
@@ -92,9 +92,8 @@ export function useRunSession(): UseRunSessionResult {
         case "tasks_updated": {
           // Find the first in-progress task across all phases.
           const inProgress =
-            event.taskPhases
-              .flatMap((p) => p.tasks)
-              .find((t) => t.status === "in_progress") ?? null;
+            event.taskPhases.flatMap((p) => p.tasks).find((t) => t.status === "in_progress") ??
+            null;
           setActiveTask(inProgress);
           break;
         }

@@ -51,9 +51,11 @@ The orchestrator tracks loop state (current cycle, failure counts, cumulative co
 **Decision**: The gap analysis prompt instructs the agent to output exactly one of four structured lines. The orchestrator extracts this from the `result` message's text content using regex matching.
 
 **Rationale**: The `query()` result message includes a `result` field (string) with the agent's final output. A simple regex pattern can extract the decision:
+
 ```
 /^(NEXT_FEATURE|RESUME_FEATURE|REPLAN_FEATURE|GAPS_COMPLETE)(?::\s*(.+))?$/m
 ```
+
 For `NEXT_FEATURE`, the capture group contains `{name} | {description}`. For `RESUME_FEATURE`/`REPLAN_FEATURE`, it contains `{specDir}`.
 
 **Alternatives considered**:

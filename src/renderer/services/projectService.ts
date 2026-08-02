@@ -100,16 +100,11 @@ export const projectService = {
     return call(() => window.dexAPI.pickGoalFile(defaultDir));
   },
 
-  createProject(
-    parentDir: string,
-    name: string,
-  ): Promise<{ path: string } | { error: string }> {
+  createProject(parentDir: string, name: string): Promise<{ path: string } | { error: string }> {
     return call(() => window.dexAPI.createProject(parentDir, name));
   },
 
-  openProjectPath(
-    projectPath: string,
-  ): Promise<{ path: string } | { error: string }> {
+  openProjectPath(projectPath: string): Promise<{ path: string } | { error: string }> {
     return call(() => window.dexAPI.openProjectPath(projectPath));
   },
 

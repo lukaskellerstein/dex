@@ -4,8 +4,8 @@
 // reconcile.mjs and re-reconcile; hand-editing timeline.json is a dead end because the
 // next /demo-render overwrites it.
 
-export type CameraKind = 'static' | 'kenburns' | 'zoomTo' | 'punchIn';
-export type Surface = 'web' | 'electron' | 'still' | 'code' | 'titlecard';
+export type CameraKind = "static" | "kenburns" | "zoomTo" | "punchIn";
+export type Surface = "web" | "electron" | "still" | "code" | "titlecard";
 
 export interface Camera {
   kind: CameraKind;
@@ -16,7 +16,7 @@ export interface Camera {
 }
 
 export interface TransitionIn {
-  kind: 'cut' | 'crossfade' | 'fadeThroughBlack' | 'slide';
+  kind: "cut" | "crossfade" | "fadeThroughBlack" | "slide";
   seconds: number;
   /** Overlap with the previous section, already converted to frames. */
   frames: number;
@@ -82,7 +82,7 @@ export interface Timeline {
   width: number;
   height: number;
   durationInFrames: number;
-  captionsMode: 'none' | 'section' | 'word';
+  captionsMode: "none" | "section" | "word";
   sections: Section[];
   music?: Music;
   report?: {
@@ -105,17 +105,17 @@ export const dbToGain = (db: number): number => Math.min(1, 10 ** (db / 20));
  * looking exactly like a mis-chosen focus rather than a syntax error.
  */
 export const focusToOrigin = (focus: string): string => {
-  if (/^\d+(\.\d+)?%\s*,\s*\d+(\.\d+)?%$/.test(focus)) return focus.replace(/\s*,\s*/, ' ');
+  if (/^\d+(\.\d+)?%\s*,\s*\d+(\.\d+)?%$/.test(focus)) return focus.replace(/\s*,\s*/, " ");
   const map: Record<string, string> = {
-    center: '50% 50%',
-    'top-left': '20% 20%',
-    top: '50% 15%',
-    'top-right': '80% 20%',
-    left: '15% 50%',
-    right: '85% 50%',
-    'bottom-left': '20% 80%',
-    bottom: '50% 85%',
-    'bottom-right': '80% 80%',
+    center: "50% 50%",
+    "top-left": "20% 20%",
+    top: "50% 15%",
+    "top-right": "80% 20%",
+    left: "15% 50%",
+    right: "85% 50%",
+    "bottom-left": "20% 80%",
+    bottom: "50% 85%",
+    "bottom-right": "80% 80%",
   };
-  return map[focus] ?? '50% 50%';
+  return map[focus] ?? "50% 50%";
 };

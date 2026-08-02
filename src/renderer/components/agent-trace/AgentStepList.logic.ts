@@ -45,9 +45,7 @@ export function processSteps(
   showSubagentSteps?: boolean,
 ): AgentStep[] {
   const filtered = steps.filter(
-    (s) =>
-      s.type !== "subagent_result" &&
-      (showSubagentSteps || !s.metadata?.belongsToSubagent),
+    (s) => s.type !== "subagent_result" && (showSubagentSteps || !s.metadata?.belongsToSubagent),
   );
 
   if (!subagents || subagents.length === 0) return filtered;
@@ -101,11 +99,7 @@ export function groupToolCalls(processedSteps: AgentStep[]): GroupedStep[] {
   const callsByToolUseId = new Map<string, GroupedStep>();
 
   for (const step of processedSteps) {
-    if (
-      step.type === "tool_result" ||
-      step.type === "tool_error" ||
-      step.type === "skill_result"
-    ) {
+    if (step.type === "tool_result" || step.type === "tool_error" || step.type === "skill_result") {
       const toolUseId = step.metadata?.toolUseId as string | undefined;
       const matchingCall = toolUseId ? callsByToolUseId.get(toolUseId) : null;
       if (matchingCall) {

@@ -293,11 +293,13 @@ dex: <stage_type> completed [cycle:<N>] [feature:<name>] [cost:$<X.XX>]
 ## Changes to existing files
 
 ### `src/core/types.ts`
+
 - Remove `resumeRunId?: string` from `RunConfig` (line 173)
 - Add `resume?: boolean` to `RunConfig`
 - Export `DexState`, `ArtifactEntry`, `FeatureArtifacts`, `TasksArtifact`, `ReconciliationResult`
 
 ### `src/core/orchestrator.ts`
+
 - Import state functions from `state.ts`
 - **`run()` (~line 1291)**: After `createRun()`, call `saveState()` with initial state. In `finally` block: write `status="paused"` if stopped, `clearState()` if completed
 - **`runLoop()` (~line 1735-1759)**: Replace the `if (config.resumeRunId)` block with:
@@ -309,6 +311,7 @@ dex: <stage_type> completed [cycle:<N>] [feature:<name>] [cost:$<X.XX>]
 - **`stopRun()`**: Store `projectDir` in module-level var so finally block can write paused state
 
 ### `src/core/git.ts`
+
 - Add `commitCheckpoint(projectDir, stage, cycleNumber, featureName, cost): string` — stages `.dex/state.json` only (NOT `git add -A`), commits with structured message, returns new HEAD SHA
 - Add `getHeadSha(projectDir): string`
 - Add `countCommitsBetween(projectDir, fromSha, toSha): number`
@@ -316,21 +319,26 @@ dex: <stage_type> completed [cycle:<N>] [feature:<name>] [cost:$<X.XX>]
 - Update agent prompt building: replace `git add -A` with `git add -A -- ':!.dex/'` in all phase/stage prompts
 
 ### `src/main/ipc/orchestrator.ts`
+
 - Add `orchestrator:getProjectState` handler that reads state file for a given projectDir
 - Update `orchestrator:getRunState`: when not running, fall back to state file
 
 ### `src/main/preload.ts` + `src/renderer/electron.d.ts`
+
 - Add `getProjectState(dir: string)` to exposed API
 
 ### `src/renderer/hooks/useOrchestrator.ts`
+
 - Mount effect (line 132+): For paused state detection, call `getProjectState()` — no need to reverse-engineer from DB phase traces
 - Simplify `loadRunHistory()` — state file explicitly says status and position
 
 ### `src/renderer/App.tsx`
+
 - `handleStartLoop()` (line 198): Replace `resumeRunId?: string` with `resume?: boolean`
 - `handleStart()` (line 242): Pass `resume: true` instead of `resumeRunId`
 
 ### `src/core/database.ts`
+
 - **All writes stay** — DB is the audit trail
 - `getActiveRunState()` can be deprecated (no longer used for resume)
 - `failure_tracker` table writes stay for history but are not read for resume
@@ -507,9 +515,11 @@ if (agentCommitFiles.includes(".dex/state.json")) {
 
 - Additive fields (new optional properties): no version bump needed, handled by defaults in `loadState()`
 - Breaking changes (renamed/removed fields, semantic changes): bump version, add migration in `loadState()`:
+
   ```typescript
   if (raw.version === 1) { state = migrateV1toV2(raw); }
   ```
+
 - `loadState()` rejects unknown future versions (returns null → fresh start) rather than silently misinterpreting
 
 ---

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync, spawnSync } from "node:child_process";
 /**
  * Import generated narration into the pipeline's naming and write the
  * measurement sidecars reconcile.mjs reads.
@@ -11,21 +12,20 @@
  *
  * usage: node demo/prep/import-narration.mjs <id>=<wavPath> [...]
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // -16 LUFS with 1.5 dB of true-peak headroom: the quieter end of the web-video
 // range, which suits a lone speaking voice with no music bed under it.
-const LOUDNORM = 'loudnorm=I=-16:TP=-1.5:LRA=11';
+const LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11";
 
-const demoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const audioDir = path.join(demoDir, 'audio');
-const storyboard = JSON.parse(fs.readFileSync(path.join(demoDir, 'storyboard.json'), 'utf8'));
+const demoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const audioDir = path.join(demoDir, "audio");
+const storyboard = JSON.parse(fs.readFileSync(path.join(demoDir, "storyboard.json"), "utf8"));
 
 const pairs = process.argv.slice(2).map((a) => {
-  const eq = a.indexOf('=');
+  const eq = a.indexOf("=");
   if (eq === -1) {
     console.error(`bad argument "${a}" — expected <id>=<wavPath>`);
     process.exit(2);
@@ -33,7 +33,7 @@ const pairs = process.argv.slice(2).map((a) => {
   return { id: a.slice(0, eq), src: a.slice(eq + 1) };
 });
 if (!pairs.length) {
-  console.error('usage: import-narration.mjs <id>=<wavPath> [...]');
+  console.error("usage: import-narration.mjs <id>=<wavPath> [...]");
   process.exit(2);
 }
 
@@ -42,9 +42,9 @@ fs.mkdirSync(audioDir, { recursive: true });
 const probe = (file) =>
   Number(
     execFileSync(
-      'ffprobe',
-      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file],
-      { encoding: 'utf8' },
+      "ffprobe",
+      ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file],
+      { encoding: "utf8" },
     ).trim(),
   );
 
@@ -76,48 +76,63 @@ for (const { id, src } of pairs) {
   // banner and progress lines — hence spawnSync and a match for the trailing
   // object rather than reading stdout.
   const loudnormPass = spawnSync(
-    'ffmpeg',
-    ['-hide_banner', '-i', src, '-af', `${LOUDNORM}:print_format=json`, '-f', 'null', '-'],
-    { encoding: 'utf8' },
+    "ffmpeg",
+    ["-hide_banner", "-i", src, "-af", `${LOUDNORM}:print_format=json`, "-f", "null", "-"],
+    { encoding: "utf8" },
   );
   const json = loudnormPass.stderr.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
   if (!json) {
-    console.error(`could not read loudnorm measurement for ${id}:\n${loudnormPass.stderr.slice(-500)}`);
+    console.error(
+      `could not read loudnorm measurement for ${id}:\n${loudnormPass.stderr.slice(-500)}`,
+    );
     process.exit(1);
   }
   const measured = JSON.parse(json[0]);
-  execFileSync('ffmpeg', [
-    '-y', '-loglevel', 'error', '-i', src,
-    '-af',
+  execFileSync("ffmpeg", [
+    "-y",
+    "-loglevel",
+    "error",
+    "-i",
+    src,
+    "-af",
     `${LOUDNORM}:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}` +
       `:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:linear=true`,
-    '-codec:a', 'libmp3lame', '-b:a', '192k', dest,
+    "-codec:a",
+    "libmp3lame",
+    "-b:a",
+    "192k",
+    dest,
   ]);
 
   const durationSeconds = probe(dest);
   fs.writeFileSync(
     path.join(audioDir, `${id}.json`),
     `${JSON.stringify({ id, file: `audio/${id}.mp3`, durationSeconds }, null, 2)}\n`,
-    'utf8',
+    "utf8",
   );
 
   const target = section.targetSeconds;
   const driftPct = ((durationSeconds - target) / target) * 100;
-  const words = String(section.voiceover ?? '').trim().split(/\s+/).filter(Boolean).length;
+  const words = String(section.voiceover ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
   const wps = words / durationSeconds;
   // Over 20% off budget is the point where the reconciler stops being able to
   // hide the difference in playback rate alone.
-  const flag = Math.abs(driftPct) > 20 ? 'REWRITE' : Math.abs(driftPct) > 10 ? 'watch' : 'ok';
-  if (flag !== 'ok') warnings++;
+  const flag = Math.abs(driftPct) > 20 ? "REWRITE" : Math.abs(driftPct) > 10 ? "watch" : "ok";
+  if (flag !== "ok") warnings++;
   rows.push({ id, target, measured: durationSeconds, driftPct, wps, flag });
 }
 
 const pad = (s, n) => String(s).padEnd(n);
-console.log(`${pad('section', 12)} ${pad('target', 8)} ${pad('measured', 9)} ${pad('drift', 8)} ${pad('w/s', 6)} flag`);
+console.log(
+  `${pad("section", 12)} ${pad("target", 8)} ${pad("measured", 9)} ${pad("drift", 8)} ${pad("w/s", 6)} flag`,
+);
 for (const r of rows) {
   console.log(
     `${pad(r.id, 12)} ${pad(`${r.target}s`, 8)} ${pad(`${r.measured.toFixed(2)}s`, 9)} ` +
-      `${pad(`${r.driftPct >= 0 ? '+' : ''}${r.driftPct.toFixed(0)}%`, 8)} ${pad(r.wps.toFixed(2), 6)} ${r.flag}`,
+      `${pad(`${r.driftPct >= 0 ? "+" : ""}${r.driftPct.toFixed(0)}%`, 8)} ${pad(r.wps.toFixed(2), 6)} ${r.flag}`,
   );
 }
 

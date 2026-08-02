@@ -4,9 +4,9 @@
  * Deps: _helpers (safeExec, RunLoggerLike), tags.ts (parseCheckpointTag, labelFor, checkpointTagFor), ../types.js (StepType).
  */
 
-import { safeExec, type RunLoggerLike } from "./_helpers.js";
-import { checkpointTagFor, labelFor, parseCheckpointTag } from "./tags.js";
 import type { StepType } from "../types.js";
+import { type RunLoggerLike, safeExec } from "./_helpers.js";
+import { checkpointTagFor, labelFor, parseCheckpointTag } from "./tags.js";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -235,7 +235,9 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
 
   // for-each-ref's --format does not expand `%x09`. Use a delimiter git refnames
   // cannot legally contain ('|' is forbidden by git's check-ref-format).
-  const allBranchesRaw = sx(`git for-each-ref --format='%(refname:short)|%(committerdate:iso-strict)' refs/heads/`);
+  const allBranchesRaw = sx(
+    `git for-each-ref --format='%(refname:short)|%(committerdate:iso-strict)' refs/heads/`,
+  );
   const allBranches: Array<{ name: string; tipTime: string }> = [];
   for (const line of allBranchesRaw.split("\n").filter(Boolean)) {
     const [name, tipTime] = line.split("|");
@@ -288,9 +290,11 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
   // traceability, but it's a phase-level marker — not part of any
   // cycle's story. We flatten its cycleNumber to -1 so the layout
   // groups it under the "Run Complete" band instead of the last cycle.
-  function classifySubject(
-    subject: string,
-  ): { kind: "step" | "promote" | "user"; step?: StepType | "promote"; cycleNumber: number } {
+  function classifySubject(subject: string): {
+    kind: "step" | "promote" | "user";
+    step?: StepType | "promote";
+    cycleNumber: number;
+  } {
     const stepMatch = subject.match(/^dex: (\w+) completed \[cycle:(\d+)\]/);
     if (stepMatch) {
       const step = stepMatch[1] as StepType;
@@ -397,9 +401,7 @@ export function listTimeline(projectDir: string, rlog?: RunLoggerLike): Timeline
     const sourceBranch = m[1];
     if (sourceBranch === "main" || sourceBranch === "master") continue;
     for (const mergedParent of data.mergedParentShas) {
-      const exclusiveRaw = sx(
-        `git rev-list --first-parent ${mergedParent} ^${data.parentSha}`,
-      );
+      const exclusiveRaw = sx(`git rev-list --first-parent ${mergedParent} ^${data.parentSha}`);
       for (const orphanSha of exclusiveRaw.split("\n").filter(Boolean)) {
         if (!commitData.has(orphanSha)) continue;
         if (canonicalOf.has(orphanSha)) continue;

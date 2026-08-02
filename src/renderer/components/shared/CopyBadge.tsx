@@ -1,5 +1,5 @@
-import { useCallback, useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
+import { type ReactNode, useCallback, useState } from "react";
 
 interface CopyBadgeProps {
   /** Lazy-evaluated text to copy. Called at click time so payloads can be fresh. */
@@ -41,7 +41,7 @@ export function CopyBadge({
 
   return (
     <span
-      title={copied ? "Copied!" : title ?? "Click to copy"}
+      title={copied ? "Copied!" : (title ?? "Click to copy")}
       onClick={handleClick}
       style={{
         fontSize: "0.68rem",

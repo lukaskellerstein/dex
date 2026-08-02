@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { TimelinePanel } from "./TimelinePanel";
 import { checkpointService } from "../../services/checkpointService.js";
+import { TimelinePanel } from "./TimelinePanel";
 
 interface Props {
   projectDir: string;
@@ -43,9 +43,7 @@ export function TimelineView({ projectDir }: Props) {
           projectDir={projectDir}
           disabled={!repoReady}
           disabledReason={
-            !repoReady
-              ? "Initialize version control to enable the timeline."
-              : undefined
+            !repoReady ? "Initialize version control to enable the timeline." : undefined
           }
         />
       </div>

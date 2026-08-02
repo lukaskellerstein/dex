@@ -25,30 +25,37 @@
 All gaps from the original Ralph Wiggum comparison. Each is marked as resolved (addressed by our plan) or deferred.
 
 ### G1 — Resolved: Planning Mode
+
 **Ralph:** Separate PLANNING mode prompt for gap analysis and plan generation.
 **Our solution:** Planning is integrated into every loop cycle — gap analysis (step 1) decides what to build, then `/speckit.specify` → `/speckit.plan` → `/speckit.tasks` generate structured plans per feature. No separate mode needed.
 
 ### G2 — Resolved: Continuous Loop / Self-Correction
+
 **Ralph:** `while :; do ... ; done` — bash loop restarts with fresh context, picks next task, self-corrects.
 **Our solution:** `runLoop()` — each cycle is a fresh `query()` call per stage. Same philosophy (clean context per unit of work), but programmatic with abort control, cost tracking, and failure recovery.
 
 ### G3 — Resolved: Self-Improvement
+
 **Ralph:** Updates `AGENTS.md` with operational learnings each iteration. Knowledge persists across loops.
 **Our solution:** Learnings stage (step 7 of each cycle) writes to `.claude/rules/learnings.md`. Because the SDK loads `settingSources: ["project"]`, every subsequent `query()` call automatically receives the learnings. Same effect as AGENTS.md, using spec-kit's `.claude/rules/` convention.
 
 ### G4 — Resolved: "Don't Assume Not Implemented" Guard
+
 **Ralph:** Explicit guardrail — search codebase with subagents before implementing anything.
 **Our solution:** Added to implement prompt orient phase (0b) and instruction 1: "Before making changes, search the codebase using subagents — don't assume not implemented."
 
 ### G5 — Resolved: Per-Task Backpressure
+
 **Ralph:** Implement → test → fix → commit, all within same iteration. 1 subagent for validation.
 **Our solution:** Implement prompt instruction 2: "After implementing EACH task, run build/tests. Fix failures before moving on. All required tests must pass before marking a task [x]."
 
 ### G6 — Resolved: Subagent Parallelism Control
+
 **Ralph:** "Up to 500 subagents for search, 1 for build/test."
 **Our solution:** Same numbers in implement prompt: "You may use up to 500 parallel subagents for file searches and reads. Use only 1 subagent for build, test, or typecheck commands. Use Opus subagents when complex reasoning is needed."
 
 ### G7 — Resolved: Failed Feature Recovery
+
 **Ralph:** Operator throws out plan and regenerates via PLANNING mode.
 **Our solution:** Gap analysis outputs one of four decisions:
 - `NEXT_FEATURE` — no spec exists, create via full specify → plan → tasks cycle
@@ -59,49 +66,62 @@ All gaps from the original Ralph Wiggum comparison. Each is marked as resolved (
 Auto-trigger: 3 consecutive failures on same spec → force `REPLAN_FEATURE`. 3 re-plan failures → skip feature, log to `learnings.md`.
 
 ### G8 — Resolved: "Signs" Prompt Architecture
+
 **Ralph:** Numbered guardrails (999...N), orient phase (0a-0c), specific language patterns.
 **Our solution:** Step 8 implements full Ralph Wiggum-style prompts — orient phase (0a-0e), numbered guardrails, "study"/"don't assume"/"capture the why" language patterns.
 
 ### G9 — Resolved (Our Innovation): Interactive Clarification
+
 **Ralph:** Assumes operator provides correct specs upfront.
 **Our solution:** Phase A — thorough interactive clarification session with completeness checklist before the autonomous loop starts. Neither Ralph nor any other approach does this. Produces `.specify/full_plan.md` as read-only source of truth.
 
 ### G10 — Resolved: Functional Verification
+
 **Ralph:** Build + typecheck backpressure only.
 **Our solution:** Verify stage includes browser-based e2e — uses chrome-devtools-mcp or playwright MCP to open the app, navigate user flows, take screenshots, and verify functionality visually.
 
 ### G11 — Resolved: Spec-Kit Constitution
+
 **Ralph:** No constitution concept.
 **Our solution:** Step 0 of Phase B runs `/speckit.constitution` to create `.specify/constitution.md` from `full_plan.md`. All subsequent `/speckit.specify` calls inherit project-wide constraints.
 
 ### G12 — Deferred (P4): LLM-as-Judge Backpressure
+
 **Ralph playbook:** Proposes non-deterministic backpressure for subjective criteria (aesthetics, tone, UX).
 **Status:** Not yet addressed. Planned as future P4 work — `llm-review.ts` utility with binary pass/fail `createReview()` API, integrated as optional backpressure in the verify stage.
 
 ## 3. Advantages We Have Over Ralph
 
 ### A1: Real-Time Streaming UI
+
 Full desktop app with live agent trace, task board with progress, phase timeline, GSAP animations. Ralph's operator stares at terminal output and `git log`.
 
 ### A2: Structured Execution History
+
 SQLite persistence with runs, phases, steps, subagents. Enables replay, analysis, cost tracking, and crash recovery. Ralph has only git history.
 
 ### A3: Spec-Kit Integration (Phased Execution)
+
 Phases are structured with numbered tasks, user story tags, priority markers. More granular than Ralph's "pick one thing" approach. Enables progress visualization and phase-level cost attribution.
 
 ### A4: Programmatic SDK Integration
+
 Direct `query()` API with typed hooks vs bash pipe. Gives us abort control, session management, hook-based step capture, and error handling that bash can't provide.
 
 ### A5: State Management & Recovery
+
 HMR-safe state via `getRunState()`, orphaned run cleanup, two-path task tracking (TodoWrite + disk reconciliation). Ralph crashes = `git reset --hard` and restart.
 
 ### A6: Git Automation with Metrics
+
 Automated branch creation (`dex/{plan|build}/{date}-{id}`), PR generation with cost/duration/phase metrics. Ralph commits but doesn't automate PRs with analytics.
 
 ### A7: Abort / Graceful Stop
+
 `AbortController` integration for stopping a running agent mid-phase. Ralph's loop must be killed externally.
 
 ### A8: Multi-Spec Support
+
 Can discover and orchestrate multiple spec directories in a single run. Ralph operates on one spec set at a time.
 
 ## 4. Target Architecture: The Ralph Wiggum Loop
@@ -124,6 +144,7 @@ The clarification covers:
 - **Dependencies**: External services, third-party APIs, existing systems to integrate with
 
 **Clarification completeness signal** — before transitioning to Phase B, the agent must verify:
+
 ```
 - [ ] At least one user story with acceptance criteria for each major feature
 - [ ] Technology stack with specific versions
@@ -132,6 +153,7 @@ The clarification covers:
 - [ ] Testing strategy (unit, integration, e2e — which ones and with what tools)
 - [ ] Data model overview (entities, relationships)
 ```
+
 When ALL items are covered, write `.specify/full_plan.md` and declare `CLARIFICATION_COMPLETE`.
 If the user wants to stop early, note which items are incomplete in `full_plan.md`.
 
@@ -182,18 +204,22 @@ Each cycle is one feature, fully isolated:
 ### Implementation Steps
 
 #### Step 1: Extract `runBuild()` from `run()` (pure refactor)
+
 Move the existing spec-loop + phase-loop code into a new `runBuild()` function. `run()` calls it for modes `"plan"` and `"build"`. Zero behavior change.
 
 #### Step 2: Add new types
+
 - `RunConfig.mode`: add `"loop"` alongside `"plan" | "build"`
 - New fields: `description?`, `descriptionFile?`, `fullPlanPath?`, `maxLoopCycles?`, `maxBudgetUsd?`
 - New types: `LoopStage`, `GapAnalysisResult` (with `NEXT_FEATURE`, `RESUME_FEATURE`, `REPLAN_FEATURE`, `GAPS_COMPLETE` variants)
 - New events: `clarification_started/question/completed`, `loop_cycle_started/completed`, `stage_started/completed`, `loop_terminated`
 
 #### Step 3: Add `runStage()` function
+
 Lightweight `query()` wrapper for single-shot stages (gap analysis, specify, plan, tasks, verify, learnings). Similar to `runPhase()` but without RunTaskState. Captures and returns result text output.
 
 #### Step 4: Add prompt builders (`src/core/prompts.ts`)
+
 New file with all prompt construction:
 - `buildClarificationPrompt(description)` — thorough user interview via `AskUserQuestion`, with completeness checklist
 - `buildConstitutionPrompt(config, fullPlanPath)` — wraps `/speckit.constitution`
@@ -208,12 +234,15 @@ New file with all prompt construction:
 - `discoverNewSpecDir(projectDir, knownSpecs)` — find just-created spec dir
 
 #### Step 5: Add `runLoop()` function
+
 The main Ralph loop: clarification → constitution → [gap analysis → (specify → plan → tasks | resume | replan) → implement → verify → learnings → loop]. Wired into `run()` when `mode === "loop"`. Includes failure tracking per spec for automatic re-plan triggers.
 
 #### Step 6: Update `git.ts`
+
 Handle `"loop"` mode in branch names (`dex/loop/{date}-{id}`) and PR titles.
 
 #### Step 7: Update UI
+
 - Mode selector (Build / Loop) in App.tsx
 - Description input (textarea or file path) for loop mode
 - `ClarificationPanel.tsx` — chat-like Q&A interface for Phase A
@@ -222,7 +251,9 @@ Handle `"loop"` mode in branch names (`dex/loop/{date}-{id}`) and PR titles.
 - Hook state: `currentCycle`, `currentStage`, `isClarifying`, `loopMode`
 
 #### Step 8: Add guardrails to prompts ("Signs" architecture)
+
 Ralph Wiggum-style prompt structure for the implement stage:
+
 ```
 0a. Study the spec at {specPath}/spec.md
 0b. Study the existing codebase using subagents
@@ -248,6 +279,7 @@ Ralph Wiggum-style prompt structure for the implement stage:
 ```
 
 Verify stage prompt:
+
 ```
 1. Read .specify/full_plan.md for testing strategy.
 2. Run project build command. Fix failures.
@@ -261,6 +293,7 @@ Verify stage prompt:
 ```
 
 Gap analysis prompt:
+
 ```
 Study .specify/full_plan.md and compare against existing specs and implementation.
 
@@ -283,6 +316,7 @@ Output EXACTLY one of:
 ```
 
 Plan stage prompt addition (acceptance-driven test derivation):
+
 ```
 For each task, derive required tests from acceptance criteria in spec.md.
 Specify WHAT to verify (outcomes), not HOW to implement.

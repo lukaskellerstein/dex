@@ -44,10 +44,7 @@ export async function loadUiPrefs(projectDir: string): Promise<DexUiPrefs> {
   }
 }
 
-export async function updateUiPrefs(
-  projectDir: string,
-  patch: Partial<DexUiPrefs>,
-): Promise<void> {
+export async function updateUiPrefs(projectDir: string, patch: Partial<DexUiPrefs>): Promise<void> {
   ensureStateDir(projectDir);
   const current = await loadUiPrefs(projectDir);
   const updated = { ...current, ...patch };

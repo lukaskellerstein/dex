@@ -1,8 +1,8 @@
+import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 
 /**
  * Run a child-process command and return trimmed stdout. **stderr is
@@ -45,7 +45,11 @@ export function countCommitsBetween(projectDir: string, fromSha: string, toSha: 
   return parseInt(count, 10) || 0;
 }
 
-export function getCommittedFileContent(projectDir: string, ref: string, filePath: string): string | null {
+export function getCommittedFileContent(
+  projectDir: string,
+  ref: string,
+  filePath: string,
+): string | null {
   try {
     return exec(`git show ${ref}:${filePath}`, projectDir);
   } catch {
@@ -55,10 +59,7 @@ export function getCommittedFileContent(projectDir: string, ref: string, filePat
 
 // commitCheckpoint moved to src/core/checkpoints/commit.ts as part of 011-A0.
 
-export function createBranch(
-  projectDir: string,
-  mode: "plan" | "build" | "loop"
-): string {
+export function createBranch(projectDir: string, mode: "plan" | "build" | "loop"): string {
   const date = new Date().toISOString().slice(0, 10);
   const shortId = crypto.randomUUID().slice(0, 6);
   const branchName = `dex/${date}-${shortId}`;
@@ -74,7 +75,7 @@ export function createPullRequest(
   mode: "plan" | "build" | "loop",
   phasesCompleted: number,
   totalCost: number,
-  totalDurationMs: number
+  totalDurationMs: number,
 ): string | null {
   // Push the branch to remote
   try {
@@ -86,13 +87,10 @@ export function createPullRequest(
   // Gather commit log for the PR body
   const commitLog = exec(
     `git log ${baseBranch}..${branchName} --pretty=format:"- %s" --reverse`,
-    projectDir
+    projectDir,
   );
 
-  const diffStat = exec(
-    `git diff --stat ${baseBranch}..${branchName}`,
-    projectDir
-  );
+  const diffStat = exec(`git diff --stat ${baseBranch}..${branchName}`, projectDir);
 
   const durationMin = (totalDurationMs / 60_000).toFixed(1);
   const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "n/a";
@@ -125,13 +123,17 @@ ${diffStat || "No changes."}
     fs.writeFileSync(bodyFile, body, "utf-8");
     const prUrl = exec(
       `gh pr create --base ${baseBranch} --head ${branchName} --title "${title}" --body-file "${bodyFile}"`,
-      projectDir
+      projectDir,
     );
     return prUrl;
   } catch {
     return null;
   } finally {
-    try { fs.unlinkSync(bodyFile); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(bodyFile);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -146,7 +148,7 @@ export function createLoopPullRequest(
   featuresCompleted: string[],
   featuresSkipped: string[],
   totalCost: number,
-  totalDurationMs: number
+  totalDurationMs: number,
 ): string | null {
   try {
     exec(`git push -u origin ${branchName}`, projectDir);
@@ -156,25 +158,20 @@ export function createLoopPullRequest(
 
   const commitLog = exec(
     `git log ${baseBranch}..${branchName} --pretty=format:"- %s" --reverse`,
-    projectDir
+    projectDir,
   );
 
-  const diffStat = exec(
-    `git diff --stat ${baseBranch}..${branchName}`,
-    projectDir
-  );
+  const diffStat = exec(`git diff --stat ${baseBranch}..${branchName}`, projectDir);
 
   const durationMin = (totalDurationMs / 60_000).toFixed(1);
   const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "n/a";
 
   const title = `Dex loop: ${featuresCompleted.length} feature${featuresCompleted.length === 1 ? "" : "s"} completed`;
 
-  const completedList = featuresCompleted.length > 0
-    ? featuresCompleted.map((f) => `  - ${f}`).join("\n")
-    : "  _none_";
-  const skippedList = featuresSkipped.length > 0
-    ? featuresSkipped.map((f) => `  - ${f}`).join("\n")
-    : "  _none_";
+  const completedList =
+    featuresCompleted.length > 0 ? featuresCompleted.map((f) => `  - ${f}`).join("\n") : "  _none_";
+  const skippedList =
+    featuresSkipped.length > 0 ? featuresSkipped.map((f) => `  - ${f}`).join("\n") : "  _none_";
 
   const body = `## Summary
 
@@ -209,12 +206,16 @@ ${diffStat || "No changes."}
     fs.writeFileSync(bodyFile, body, "utf-8");
     const prUrl = exec(
       `gh pr create --base ${baseBranch} --head ${branchName} --title "${title}" --body-file "${bodyFile}"`,
-      projectDir
+      projectDir,
     );
     return prUrl;
   } catch {
     return null;
   } finally {
-    try { fs.unlinkSync(bodyFile); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(bodyFile);
+    } catch {
+      /* ignore */
+    }
   }
 }

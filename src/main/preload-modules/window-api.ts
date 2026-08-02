@@ -8,7 +8,6 @@ export const windowApi = {
   onMaximizedChange: (cb: (maximized: boolean) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, val: boolean) => cb(val);
     ipcRenderer.on("window-maximized-changed", handler);
-    return () =>
-      ipcRenderer.removeListener("window-maximized-changed", handler);
+    return () => ipcRenderer.removeListener("window-maximized-changed", handler);
   },
 };

@@ -1,23 +1,20 @@
-import type { OrchestratorEvent, TaskPhase, RunConfig, StepType } from "../core/types.js";
-import type { DexState } from "../core/state.js";
+import type { DexJsonShape, ProfileEntry } from "../core/agent-profile.js";
 import type {
-  RunRecord,
-  AgentRunRecord,
-  AgentStepRecord,
-  SubagentRecord,
-  SpecStats,
-} from "../core/runs.js";
-import type {
-  TimelineSnapshot,
-  JumpToResult,
   DeleteBranchResult,
+  JumpToResult,
   MergeToMainResult,
   PromoteSummary,
+  TimelineSnapshot,
 } from "../core/checkpoints.js";
 import type {
-  ProfileEntry,
-  DexJsonShape,
-} from "../core/agent-profile.js";
+  AgentRunRecord,
+  AgentStepRecord,
+  RunRecord,
+  SpecStats,
+  SubagentRecord,
+} from "../core/runs.js";
+import type { DexState } from "../core/state.js";
+import type { OrchestratorEvent, RunConfig, StepType, TaskPhase } from "../core/types.js";
 
 interface CheckpointsApi {
   listTimeline(projectDir: string): Promise<TimelineSnapshot>;
@@ -49,15 +46,15 @@ interface CheckpointsApi {
   abortResolverMerge(
     projectDir: string,
   ): Promise<
-    | { ok: true }
-    | { ok: false; error: string }
-    | { ok: false; error: "locked_by_other_instance" }
+    { ok: true } | { ok: false; error: string } | { ok: false; error: "locked_by_other_instance" }
   >;
   openInEditor(
     projectDir: string,
     files: string[],
   ): Promise<{ ok: true } | { ok: false; error: string }>;
-  syncStateFromHead(projectDir: string): Promise<
+  syncStateFromHead(
+    projectDir: string,
+  ): Promise<
     | { ok: true; updated: boolean; step?: string; cycle?: number }
     | { ok: false; error: string }
     | { ok: false; error: "locked_by_other_instance" }
@@ -68,9 +65,11 @@ interface CheckpointsApi {
     options?: { force?: "save" | "discard" },
   ): Promise<JumpToResult | { ok: false; error: "locked_by_other_instance" }>;
   initRepo(projectDir: string): Promise<{ ok: true } | { ok: false; error: string }>;
-  setIdentity(projectDir: string, name: string, email: string): Promise<
-    { ok: true } | { ok: false; error: string }
-  >;
+  setIdentity(
+    projectDir: string,
+    name: string,
+    email: string,
+  ): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 export interface DexAPI {
@@ -116,8 +115,16 @@ export interface DexAPI {
   getRun(projectDir: string, runId: string): Promise<RunRecord | null>;
   getLatestProjectRun(projectDir: string): Promise<RunRecord | null>;
   getAgentSteps(projectDir: string, runId: string, agentRunId: string): Promise<AgentStepRecord[]>;
-  getAgentRunSubagents(projectDir: string, runId: string, agentRunId: string): Promise<SubagentRecord[]>;
-  getLatestAgentRun(projectDir: string, specDir: string, taskPhaseNumber: number): Promise<AgentRunRecord | null>;
+  getAgentRunSubagents(
+    projectDir: string,
+    runId: string,
+    agentRunId: string,
+  ): Promise<SubagentRecord[]>;
+  getLatestAgentRun(
+    projectDir: string,
+    specDir: string,
+    taskPhaseNumber: number,
+  ): Promise<AgentRunRecord | null>;
   getSpecAgentRuns(projectDir: string, specDir: string): Promise<AgentRunRecord[]>;
   getSpecAggregateStats(projectDir: string, specDir: string): Promise<SpecStats>;
 
@@ -127,10 +134,12 @@ export interface DexAPI {
   // Agent profiles (010 — US4)
   profiles: {
     list(projectDir: string): Promise<ProfileEntry[]>;
-    saveDexJson(projectDir: string, name: string, dexJson: DexJsonShape): Promise<
-      | { ok: true }
-      | { ok: false; error: string }
-      | { ok: false; error: "locked_by_other_instance" }
+    saveDexJson(
+      projectDir: string,
+      name: string,
+      dexJson: DexJsonShape,
+    ): Promise<
+      { ok: true } | { ok: false; error: string } | { ok: false; error: "locked_by_other_instance" }
     >;
   };
 
@@ -158,5 +167,3 @@ declare global {
     dexAPI: DexAPI;
   }
 }
-
-export {};

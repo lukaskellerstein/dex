@@ -31,8 +31,8 @@ export function GoBackConfirm({ tag, files, onCancel, onChoose }: Props) {
       }
     >
       <p style={{ marginBottom: 10 }}>
-        You have uncommitted changes. Going back to <code>{tag}</code> will reset
-        them unless you choose <strong>Save</strong>.
+        You have uncommitted changes. Going back to <code>{tag}</code> will reset them unless you
+        choose <strong>Save</strong>.
       </p>
       <div
         style={{
@@ -46,15 +46,11 @@ export function GoBackConfirm({ tag, files, onCancel, onChoose }: Props) {
           background: "var(--surface-elevated)",
         }}
       >
-        {files.length === 0 ? (
-          <em>no files</em>
-        ) : (
-          files.map((f) => <div key={f}>{f}</div>)
-        )}
+        {files.length === 0 ? <em>no files</em> : files.map((f) => <div key={f}>{f}</div>)}
       </div>
       <p style={{ marginTop: 10, color: "var(--foreground-muted)", fontSize: 12 }}>
-        <strong>Save</strong> commits these changes to the current version so you can
-        keep working with them later.
+        <strong>Save</strong> commits these changes to the current version so you can keep working
+        with them later.
       </p>
     </CheckpointModal>
   );

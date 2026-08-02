@@ -15,43 +15,39 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import type {
-  RunConfig,
-  StepType,
-  GapAnalysisDecision,
-  TerminationReason,
-  LoopTermination,
-  FailureRecord,
-} from "../types.js";
-import { discoverNewSpecDir } from "../parser.js";
-import * as runs from "../runs.js";
-import { updateState, STEP_ORDER } from "../state.js";
-import {
-  loadManifest,
-  getNextFeature,
-  getActiveFeature,
-  updateFeatureStatus,
-  updateFeatureSpecDir,
-} from "../manifest.js";
-import {
-  buildSpecifyPrompt,
-  buildLoopPlanPrompt,
-  buildLoopTasksPrompt,
-  buildFeatureEvaluationPrompt,
-  GAP_ANALYSIS_SCHEMA,
-} from "../prompts.js";
-// Circular: orchestrator.ts and this module call each other's exports at call
-// time; both sides export functions/classes only, so ESM module init is safe.
-import {
-  runStage,
-  AbortError,
-  listSpecDirs,
-} from "../orchestrator.js";
-import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
 import {
   parseGapAnalysisDecision,
   shouldRunStage as shouldRunStageFromDecision,
 } from "../gap-analysis.js";
+import {
+  getActiveFeature,
+  getNextFeature,
+  loadManifest,
+  updateFeatureSpecDir,
+  updateFeatureStatus,
+} from "../manifest.js";
+// Circular: orchestrator.ts and this module call each other's exports at call
+// time; both sides export functions/classes only, so ESM module init is safe.
+import { AbortError, listSpecDirs, runStage } from "../orchestrator.js";
+import { discoverNewSpecDir } from "../parser.js";
+import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
+import {
+  buildFeatureEvaluationPrompt,
+  buildLoopPlanPrompt,
+  buildLoopTasksPrompt,
+  buildSpecifyPrompt,
+  GAP_ANALYSIS_SCHEMA,
+} from "../prompts.js";
+import * as runs from "../runs.js";
+import { STEP_ORDER, updateState } from "../state.js";
+import type {
+  FailureRecord,
+  GapAnalysisDecision,
+  LoopTermination,
+  RunConfig,
+  StepType,
+  TerminationReason,
+} from "../types.js";
 import { runImplementVerifyLearnings } from "./cycle-stages.js";
 
 export interface MainLoopResult {
@@ -107,15 +103,31 @@ export async function runMainLoop(
 
   const persistFailure = (specDir: string) => {
     const record = getOrCreateFailureRecord(specDir);
-    runs.upsertFailureCount(config.projectDir, runId, specDir, record.implFailures, record.replanFailures);
+    runs.upsertFailureCount(
+      config.projectDir,
+      runId,
+      specDir,
+      record.implFailures,
+      record.replanFailures,
+    );
     updateState(config.projectDir, {
-      failureCounts: { [specDir]: { implFailures: record.implFailures, replanFailures: record.replanFailures } },
-    }).catch(() => { /* state write failure shouldn't crash the run */ });
+      failureCounts: {
+        [specDir]: { implFailures: record.implFailures, replanFailures: record.replanFailures },
+      },
+    }).catch(() => {
+      /* state write failure shouldn't crash the run */
+    });
   };
 
   // Delegates to the consolidated helper in phase-lifecycle.ts (A6/T043 wire-in).
   const emitSkippedStep = (step: StepType, cycleNum = 0) => {
-    phaseEmitSkippedStep({ ctx, runId, agentRunId: crypto.randomUUID(), step, cycleNumber: cycleNum });
+    phaseEmitSkippedStep({
+      ctx,
+      runId,
+      agentRunId: crypto.randomUUID(),
+      step,
+      cycleNumber: cycleNum,
+    });
   };
 
   // ── Phase B: Autonomous Loop ────────────────────────────
@@ -135,7 +147,10 @@ export async function runMainLoop(
 
     // Check budget
     if (config.maxBudgetUsd && cumulativeCost >= config.maxBudgetUsd) {
-      rlog.run("INFO", `runLoop: budget exceeded ($${cumulativeCost.toFixed(2)} >= $${config.maxBudgetUsd})`);
+      rlog.run(
+        "INFO",
+        `runLoop: budget exceeded ($${cumulativeCost.toFixed(2)} >= $${config.maxBudgetUsd})`,
+      );
       break;
     }
 
@@ -161,11 +176,21 @@ export async function runMainLoop(
       // RESUME_FEATURE since implement/verify/learnings have their own
       // resume paths.
       if (resumeLastStage === "specify" || resumeLastStage === "plan") {
-        decision = { type: "RESUME_AT_STEP", specDir: resumeSpecDir, resumeAtStep: resumeLastStage };
-        rlog.run("INFO", `runLoop: resume — using RESUME_AT_STEP(${resumeLastStage}) for ${resumeSpecDir}`);
+        decision = {
+          type: "RESUME_AT_STEP",
+          specDir: resumeSpecDir,
+          resumeAtStep: resumeLastStage,
+        };
+        rlog.run(
+          "INFO",
+          `runLoop: resume — using RESUME_AT_STEP(${resumeLastStage}) for ${resumeSpecDir}`,
+        );
       } else {
         decision = { type: "RESUME_FEATURE", specDir: resumeSpecDir };
-        rlog.run("INFO", `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`);
+        rlog.run(
+          "INFO",
+          `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`,
+        );
       }
       const traceId = crypto.randomUUID();
       runs.startAgentRun(config.projectDir, runId, {
@@ -181,14 +206,28 @@ export async function runMainLoop(
         status: "running",
       });
       emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId });
-      runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-      emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
+      runs.completeAgentRun(config.projectDir, runId, traceId, {
+        status: "completed",
+        costUsd: 0,
+        durationMs: 0,
+      });
+      emit({
+        type: "step_completed",
+        runId,
+        cycleNumber,
+        step: "gap_analysis",
+        agentRunId: traceId,
+        costUsd: 0,
+        durationMs: 0,
+      });
       resumeSpecDir = null;
     } else {
       try {
         const manifest = loadManifest(config.projectDir);
         if (!manifest) {
-          throw new Error("Feature manifest not found — manifest extraction should have run before the loop");
+          throw new Error(
+            "Feature manifest not found — manifest extraction should have run before the loop",
+          );
         }
 
         if (currentRunState) {
@@ -213,9 +252,28 @@ export async function runMainLoop(
             startedAt: new Date().toISOString(),
             status: "running",
           });
-          emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, specDir });
-          runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-          emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
+          emit({
+            type: "step_started",
+            runId,
+            cycleNumber,
+            step: "gap_analysis",
+            agentRunId: traceId,
+            specDir,
+          });
+          runs.completeAgentRun(config.projectDir, runId, traceId, {
+            status: "completed",
+            costUsd: 0,
+            durationMs: 0,
+          });
+          emit({
+            type: "step_completed",
+            runId,
+            cycleNumber,
+            step: "gap_analysis",
+            agentRunId: traceId,
+            costUsd: 0,
+            durationMs: 0,
+          });
         };
 
         if (active) {
@@ -223,9 +281,18 @@ export async function runMainLoop(
             // Active feature with specDir — evaluate RESUME vs REPLAN (LLM call)
             const evaluationPrompt = buildFeatureEvaluationPrompt(config, active.specDir);
             const evalResult = await runStage(
-              config, evaluationPrompt, emit, rlog, runId, cycleNumber,
-              "gap_analysis", active.specDir,
-              { type: "json_schema", schema: GAP_ANALYSIS_SCHEMA as unknown as Record<string, unknown> }
+              config,
+              evaluationPrompt,
+              emit,
+              rlog,
+              runId,
+              cycleNumber,
+              "gap_analysis",
+              active.specDir,
+              {
+                type: "json_schema",
+                schema: GAP_ANALYSIS_SCHEMA as unknown as Record<string, unknown>,
+              },
             );
             cumulativeCost += evalResult.cost;
             // Delegate to gap-analysis.parseGapAnalysisDecision (A5 wire-in).
@@ -267,11 +334,12 @@ export async function runMainLoop(
     // Record the cycle
     const decisionType = decision.type;
     const featureName = decision.type === "NEXT_FEATURE" ? decision.name : null;
-    let specDir = decision.type === "RESUME_FEATURE"
-      || decision.type === "REPLAN_FEATURE"
-      || decision.type === "RESUME_AT_STEP"
-      ? decision.specDir
-      : null;
+    let specDir =
+      decision.type === "RESUME_FEATURE" ||
+      decision.type === "REPLAN_FEATURE" ||
+      decision.type === "RESUME_AT_STEP"
+        ? decision.specDir
+        : null;
     let cycleFailed = false;
 
     void cycleId;
@@ -371,7 +439,13 @@ export async function runMainLoop(
         // right after specify still persists the new dir for resume.
         let newSpecDir: string | null = null;
         const specifyResult = await runStage(
-          config, specifyPrompt, emit, rlog, runId, cycleNumber, "specify",
+          config,
+          specifyPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "specify",
           undefined,
           undefined,
           async () => {
@@ -383,7 +457,18 @@ export async function runMainLoop(
             if (activeProjectDir) {
               await updateState(activeProjectDir, {
                 currentSpecDir: newSpecDir,
-                artifacts: { features: { [newSpecDir]: { specDir: newSpecDir, status: "specifying", spec: null, plan: null, tasks: null, lastImplementedPhase: 0 } } },
+                artifacts: {
+                  features: {
+                    [newSpecDir]: {
+                      specDir: newSpecDir,
+                      status: "specifying",
+                      spec: null,
+                      plan: null,
+                      tasks: null,
+                      lastImplementedPhase: 0,
+                    },
+                  },
+                },
               } as never).catch(() => {});
             }
           },
@@ -414,7 +499,16 @@ export async function runMainLoop(
           } as never).catch(() => {});
         }
         const planPrompt = buildLoopPlanPrompt(config, specPath);
-        const planResult = await runStage(config, planPrompt, emit, rlog, runId, cycleNumber, "plan", targetSpecDir);
+        const planResult = await runStage(
+          config,
+          planPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "plan",
+          targetSpecDir,
+        );
         cycleCost += planResult.cost;
 
         if (abortController?.signal.aborted) throw new AbortError();
@@ -433,7 +527,16 @@ export async function runMainLoop(
           currentRunState.currentStep = "tasks";
         }
         const tasksPrompt = buildLoopTasksPrompt(config, specPath);
-        const tasksResult = await runStage(config, tasksPrompt, emit, rlog, runId, cycleNumber, "tasks", targetSpecDir);
+        const tasksResult = await runStage(
+          config,
+          tasksPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "tasks",
+          targetSpecDir,
+        );
         cycleCost += tasksResult.cost;
       }
 
@@ -442,8 +545,13 @@ export async function runMainLoop(
       // ── Implement → Verify → Learnings (extracted to stages/cycle-stages.ts in 011-A4.5) ──
       const implSpecDir = specDir!;
       const ivlResult = await runImplementVerifyLearnings({
-        ctx, config, runId, cycleNumber,
-        specDir: implSpecDir, fullPlanPath, rlog,
+        ctx,
+        config,
+        runId,
+        cycleNumber,
+        specDir: implSpecDir,
+        fullPlanPath,
+        rlog,
       });
       cycleCost += ivlResult.cycleCost;
       const verification = { passed: ivlResult.verifyPassed };
@@ -485,7 +593,6 @@ export async function runMainLoop(
           cumulativeCostUsd: cumulativeCost + cycleCost,
         }).catch(() => {});
       }
-
     } catch (err) {
       // AbortError is a clean exit — not a stage failure
       if (err instanceof AbortError) {
@@ -504,11 +611,19 @@ export async function runMainLoop(
           cycleNumber,
           cyclesCompleted,
           decision: decision.type,
-          decisionDetail: decision.type === "RESUME_FEATURE" || decision.type === "REPLAN_FEATURE" || decision.type === "RESUME_AT_STEP"
-            ? { specDir: decision.specDir, ...(decision.type === "RESUME_AT_STEP" ? { resumeAtStep: decision.resumeAtStep } : {}) }
-            : decision.type === "NEXT_FEATURE"
-              ? { name: decision.name, featureId: decision.featureId }
-              : null,
+          decisionDetail:
+            decision.type === "RESUME_FEATURE" ||
+            decision.type === "REPLAN_FEATURE" ||
+            decision.type === "RESUME_AT_STEP"
+              ? {
+                  specDir: decision.specDir,
+                  ...(decision.type === "RESUME_AT_STEP"
+                    ? { resumeAtStep: decision.resumeAtStep }
+                    : {}),
+                }
+              : decision.type === "NEXT_FEATURE"
+                ? { name: decision.name, featureId: decision.featureId }
+                : null,
           specDir,
           currentStep: currentRunState?.currentStep ?? null,
           stack: err instanceof Error ? err.stack : undefined,
@@ -612,7 +727,10 @@ export async function runMainLoop(
     if (abortController?.signal.aborted) break;
     if (config.maxBudgetUsd && cumulativeCost >= config.maxBudgetUsd) break;
     if (config.maxLoopCycles && cyclesCompleted >= config.maxLoopCycles) break;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) { rlog.run("ERROR", `runLoop: ${consecutiveFailures} consecutive cycle failures — aborting`); break; }
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      rlog.run("ERROR", `runLoop: ${consecutiveFailures} consecutive cycle failures — aborting`);
+      break;
+    }
   }
 
   // ── Termination (T042) ──
@@ -637,7 +755,10 @@ export async function runMainLoop(
   };
 
   emit({ type: "loop_terminated", runId, termination });
-  rlog.run("INFO", `runLoop: terminated — reason=${terminationReason}, cycles=${cyclesCompleted}, features=${featuresCompleted.length}/${featuresSkipped.length}`);
+  rlog.run(
+    "INFO",
+    `runLoop: terminated — reason=${terminationReason}, cycles=${cyclesCompleted}, features=${featuresCompleted.length}/${featuresSkipped.length}`,
+  );
 
   return { cyclesCompleted, cumulativeCost, featuresCompleted, featuresSkipped, termination };
 }

@@ -1,15 +1,15 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import test from "node:test";
 import {
-  checkpointTagFor,
-  labelFor,
-  isParallelizable,
-  listTimeline,
   CHECKPOINT_MESSAGE_PREFIX,
+  checkpointTagFor,
+  isParallelizable,
+  labelFor,
+  listTimeline,
 } from "../checkpoints.ts";
 
 // Inline tag promotion — used to be `promoteToCheckpoint` from recordMode.ts
@@ -18,6 +18,7 @@ import {
 function tagAt(dir: string, tag: string, sha: string): void {
   execSync(`git tag -f ${tag} ${sha}`, { cwd: dir });
 }
+
 import type { StepType } from "../types.ts";
 
 const STAGES: StepType[] = [
@@ -243,4 +244,3 @@ test("listTimeline: surfaces step-commits from a sibling branch", () => {
     rmTmp(dir);
   }
 });
-

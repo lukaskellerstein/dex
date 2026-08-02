@@ -4,9 +4,9 @@
  * Deps: useOrchestrator types (UiLoopCycle), TaskPhase / StepType from core/types, lucide-react.
  */
 import { RotateCw } from "lucide-react";
-import type { TaskPhase, StepType } from "../../core/types.js";
-import type { UiLoopCycle } from "../hooks/useOrchestrator.js";
 import type { ReactNode } from "react";
+import type { StepType, TaskPhase } from "../../core/types.js";
+import type { UiLoopCycle } from "../hooks/useOrchestrator.js";
 
 export interface AppBreadcrumbsProps {
   mode: string | null;
@@ -43,7 +43,8 @@ export function AppBreadcrumbs({
 
   // Resolve the spec name for the middle crumb from: selected spec → current cycle → last cycle with a specDir.
   // Survives pause, which clears currentCycle via run_completed.
-  const currentCycleObj = currentCycle != null ? loopCycles.find((c) => c.cycleNumber === currentCycle) : null;
+  const currentCycleObj =
+    currentCycle != null ? loopCycles.find((c) => c.cycleNumber === currentCycle) : null;
   const fallbackCycle = [...loopCycles].reverse().find((c) => !!c.specDir);
   const specName =
     selectedSpec ??

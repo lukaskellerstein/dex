@@ -9,23 +9,27 @@ Replaces the hybrid in-memory + SQLite resume mechanism with a single `.dex/stat
 ## Key Concepts
 
 ### State File (`.dex/state.json`)
+
 - Lives in the project directory (not `~/.dex/`)
 - Committed to the branch after each stage
 - Contains: position cursor, accumulators, failure counts, artifact hashes, checkpoint SHA
 - Single source of truth for pause/resume
 
 ### Checkpoint Commits
+
 - State-only git commits (just `.dex/state.json`, not `git add -A`)
 - One per stage completion
 - Message format: `dex: <stage> completed [cycle:<N>] [feature:<name>] [cost:$<X.XX>]`
 
 ### Reconciliation
+
 - Runs on every resume
 - Compares artifact hashes on disk vs manifest in state
 - Detects: missing files, modified files, unchecked tasks, extra commits
 - Computes minimum rollback point — never starts over
 
 ### Agent Isolation
+
 - Agent prompts use `git add -A -- ':!.dex/'` to exclude state directory
 - Prevents agents from committing stale state
 - Verified by build-time and runtime guards
@@ -46,16 +50,19 @@ Replaces the hybrid in-memory + SQLite resume mechanism with a single `.dex/stat
 ## How to Test
 
 ### Basic pause/resume
+
 1. Start a loop, let 2+ stages complete
 2. Pause (or kill the process)
 3. Resume — verify correct stage, no duplicates
 
 ### Artifact drift
+
 1. Pause a run
 2. Delete a spec folder or uncheck tasks
 3. Resume — verify reconciliation adjusts the plan
 
 ### Crash recovery
+
 1. Start a loop, trigger a user question
 2. Kill the process
 3. Restart — verify the question reappears

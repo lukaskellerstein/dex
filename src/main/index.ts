@@ -1,13 +1,13 @@
-import { app, BrowserWindow, ipcMain, globalShortcut } from "electron";
-import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { registerProjectHandlers } from "./ipc/project.js";
-import { registerOrchestratorHandlers } from "./ipc/orchestrator.js";
-import { registerHistoryHandlers } from "./ipc/history.js";
-import { registerCheckpointsHandlers } from "./ipc/checkpoints.js";
-import { registerProfilesHandlers } from "./ipc/profiles.js";
+import path from "node:path";
+import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
 import { registerAppConfigHandlers } from "./ipc/appConfig.js";
+import { registerCheckpointsHandlers } from "./ipc/checkpoints.js";
+import { registerHistoryHandlers } from "./ipc/history.js";
+import { registerOrchestratorHandlers } from "./ipc/orchestrator.js";
+import { registerProfilesHandlers } from "./ipc/profiles.js";
+import { registerProjectHandlers } from "./ipc/project.js";
 
 // One-shot cleanup of the legacy SQLite directory retired in 007-sqlite-removal.
 // Audit trail now lives per-project in <projectDir>/.dex/runs/.
@@ -25,9 +25,7 @@ let mainWindow: BrowserWindow | null = null;
 const args = process.argv.slice(2);
 const isDev = args.includes("--dev");
 const vitePortIdx = args.indexOf("--vite-port");
-const vitePort = vitePortIdx !== -1 && args[vitePortIdx + 1]
-  ? args[vitePortIdx + 1]
-  : "5173";
+const vitePort = vitePortIdx !== -1 && args[vitePortIdx + 1] ? args[vitePortIdx + 1] : "5173";
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -62,9 +60,7 @@ function createWindow(): void {
     }
   });
   ipcMain.handle("window-close", () => mainWindow?.close());
-  ipcMain.handle("window-is-maximized", () =>
-    mainWindow?.isMaximized() ?? false
-  );
+  ipcMain.handle("window-is-maximized", () => mainWindow?.isMaximized() ?? false);
 
   // Forward window state changes to renderer
   mainWindow.on("maximize", () => {
@@ -90,9 +86,7 @@ function createWindow(): void {
   ipcMain.on("dev:renderer-error", (_e, payload: unknown) => {
     const p = (payload ?? {}) as Record<string, unknown>;
     const tag = p.type === "unhandledrejection" ? "unhandled-rejection" : "error";
-    const where = p.source
-      ? ` (${String(p.source)}:${p.line ?? "?"}:${p.col ?? "?"})`
-      : "";
+    const where = p.source ? ` (${String(p.source)}:${p.line ?? "?"}:${p.col ?? "?"})` : "";
     const stack = typeof p.stack === "string" && p.stack ? `\n${p.stack}` : "";
     console.error(`[renderer:${tag}] ${String(p.message ?? "")}${where}${stack}`);
   });

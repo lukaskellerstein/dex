@@ -1,8 +1,8 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as crypto from "node:crypto";
 import { LOGS_ROOT } from "./paths.js";
-import type { StepType, AgentStep } from "./types.js";
+import type { AgentStep, StepType } from "./types.js";
 
 // ── Types ──
 
@@ -126,7 +126,10 @@ export function listRuns(projectDir: string, limit = 50): RunRecord[] {
 // to current shape (agentRuns[]/agentRunId/cyclesCompleted/taskPhasesCompleted).
 // Mutates and returns the input record.
 function migrateLegacyRun(raw: Record<string, unknown>): RunRecord {
-  if (Array.isArray((raw as { phases?: unknown }).phases) && !(raw as { agentRuns?: unknown }).agentRuns) {
+  if (
+    Array.isArray((raw as { phases?: unknown }).phases) &&
+    !(raw as { agentRuns?: unknown }).agentRuns
+  ) {
     const legacyPhases = (raw as { phases: Array<Record<string, unknown>> }).phases;
     (raw as { agentRuns: Record<string, unknown>[] }).agentRuns = legacyPhases.map((p) => {
       const out: Record<string, unknown> = { ...p };
@@ -150,12 +153,22 @@ function migrateLegacyRun(raw: Record<string, unknown>): RunRecord {
     });
     delete (raw as { phases?: unknown }).phases;
   }
-  if ((raw as { loopsCompleted?: unknown }).loopsCompleted !== undefined && (raw as { cyclesCompleted?: unknown }).cyclesCompleted === undefined) {
-    (raw as { cyclesCompleted: unknown }).cyclesCompleted = (raw as { loopsCompleted: unknown }).loopsCompleted;
+  if (
+    (raw as { loopsCompleted?: unknown }).loopsCompleted !== undefined &&
+    (raw as { cyclesCompleted?: unknown }).cyclesCompleted === undefined
+  ) {
+    (raw as { cyclesCompleted: unknown }).cyclesCompleted = (
+      raw as { loopsCompleted: unknown }
+    ).loopsCompleted;
     delete (raw as { loopsCompleted?: unknown }).loopsCompleted;
   }
-  if ((raw as { phasesCompleted?: unknown }).phasesCompleted !== undefined && (raw as { taskPhasesCompleted?: unknown }).taskPhasesCompleted === undefined) {
-    (raw as { taskPhasesCompleted: unknown }).taskPhasesCompleted = (raw as { phasesCompleted: unknown }).phasesCompleted;
+  if (
+    (raw as { phasesCompleted?: unknown }).phasesCompleted !== undefined &&
+    (raw as { taskPhasesCompleted?: unknown }).taskPhasesCompleted === undefined
+  ) {
+    (raw as { taskPhasesCompleted: unknown }).taskPhasesCompleted = (
+      raw as { phasesCompleted: unknown }
+    ).phasesCompleted;
     delete (raw as { phasesCompleted?: unknown }).phasesCompleted;
   }
   if ((raw as { descriptionFile?: unknown }).descriptionFile === undefined) {
@@ -261,7 +274,11 @@ interface StartAgentRunInput {
   status: AgentRunStatus;
 }
 
-export function startAgentRun(projectDir: string, runId: string, agentRun: StartAgentRunInput): void {
+export function startAgentRun(
+  projectDir: string,
+  runId: string,
+  agentRun: StartAgentRunInput,
+): void {
   updateRun(projectDir, runId, (r) => {
     r.agentRuns.push({
       ...agentRun,
@@ -441,7 +458,10 @@ export function readAgentSteps(
   taskPhaseSlug: string,
   taskPhaseNumber: number,
 ): AgentStepRecord[] {
-  const file = path.join(agentRunLogDir(projectDir, runId, taskPhaseSlug, taskPhaseNumber), "steps.jsonl");
+  const file = path.join(
+    agentRunLogDir(projectDir, runId, taskPhaseSlug, taskPhaseNumber),
+    "steps.jsonl",
+  );
   if (!fs.existsSync(file)) return [];
   const text = fs.readFileSync(file, "utf8");
   const out: AgentStepRecord[] = [];
@@ -464,7 +484,10 @@ export function readAgentSteps(
 
 // ── Derived views ──
 
-export function latestAgentRunsForSpec(projectRuns: RunRecord[], specDir: string): AgentRunRecord[] {
+export function latestAgentRunsForSpec(
+  projectRuns: RunRecord[],
+  specDir: string,
+): AgentRunRecord[] {
   const latest = new Map<number, AgentRunRecord>();
   for (const run of projectRuns) {
     for (const ar of run.agentRuns) {
@@ -502,5 +525,8 @@ export function getSpecAggregateStats(projectRuns: RunRecord[], specDir: string)
 // ── Utilities ──
 
 export function slugForTaskPhaseName(taskPhaseName: string): string {
-  return taskPhaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return taskPhaseName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }

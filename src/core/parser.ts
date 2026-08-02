@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { TaskPhase, Task } from "./types.js";
+import type { Task, TaskPhase } from "./types.js";
 
 const PHASE_HEADER = /^## (?:TaskPhase|Phase) (\d+): (.+)$/;
 const PURPOSE_LINE = /^\*\*Purpose\*\*: (.+)$/;
@@ -29,22 +29,22 @@ function extractTags(raw: string): {
   }
 
   // Strip matched tags from description
-  const description = raw.replace(BRACKET_TAG, (full, tag) => {
-    if (/^US\d+$/i.test(tag) || /^P\d?$/.test(tag)) return "";
-    return full;
-  }).trim();
+  const description = raw
+    .replace(BRACKET_TAG, (full, tag) => {
+      if (/^US\d+$/i.test(tag) || /^P\d?$/.test(tag)) return "";
+      return full;
+    })
+    .trim();
 
   return { userStory, priority, description };
 }
 
-export function deriveTaskPhaseStatus(
-  tasks: Task[]
-): "complete" | "partial" | "not_started" {
+export function deriveTaskPhaseStatus(tasks: Task[]): "complete" | "partial" | "not_started" {
   if (tasks.length === 0) return "not_started";
   const allDone = tasks.every((t) => t.status === "done");
   if (allDone) return "complete";
   const anyStarted = tasks.some(
-    (t) => t.status === "done" || t.status === "code_exists" || t.status === "in_progress"
+    (t) => t.status === "done" || t.status === "code_exists" || t.status === "in_progress",
   );
   return anyStarted ? "partial" : "not_started";
 }
@@ -151,14 +151,8 @@ export function extractTaskIds(content: string): string[] {
 
 // ── T015: Discover New Spec Directory ──
 
-export function discoverNewSpecDir(
-  projectDir: string,
-  knownSpecs: string[]
-): string | null {
-  const candidates = [
-    path.join(projectDir, "specs"),
-    path.join(projectDir, ".specify", "specs"),
-  ];
+export function discoverNewSpecDir(projectDir: string, knownSpecs: string[]): string | null {
+  const candidates = [path.join(projectDir, "specs"), path.join(projectDir, ".specify", "specs")];
 
   for (const specsRoot of candidates) {
     if (fs.existsSync(specsRoot)) {
@@ -176,10 +170,7 @@ export function discoverNewSpecDir(
   return null;
 }
 
-export function parseTasksFile(
-  projectDir: string,
-  specDir: string
-): TaskPhase[] {
+export function parseTasksFile(projectDir: string, specDir: string): TaskPhase[] {
   const tasksPath = path.join(projectDir, specDir, "tasks.md");
   const content = fs.readFileSync(tasksPath, "utf-8");
   return parseTasksMd(content);

@@ -10,19 +10,19 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { gitExec, safeExec, log, type RunLoggerLike } from "./_helpers.js";
-import { parseCheckpointTag, labelFor } from "./tags.js";
+import type { AgentRunner } from "../agent/AgentRunner.js";
+import { type ResolverFailReason, resolveConflicts } from "../conflict-resolver.js";
+import type { ConflictResolverConfig } from "../dexConfig.js";
+import type { RunLogger } from "../log.js";
+import type { EmitFn, RunConfig } from "../types.js";
+import { gitExec, log, type RunLoggerLike, safeExec } from "./_helpers.js";
 import {
   classifyUnmergedPaths,
+  finalizeMergeSuccess,
   gatherCommitSubjects,
   readGoalText,
-  finalizeMergeSuccess,
 } from "./_mergeHelpers.js";
-import { resolveConflicts, type ResolverFailReason } from "../conflict-resolver.js";
-import type { AgentRunner } from "../agent/AgentRunner.js";
-import type { ConflictResolverConfig } from "../dexConfig.js";
-import type { EmitFn, RunConfig } from "../types.js";
-import type { RunLogger } from "../log.js";
+import { labelFor, parseCheckpointTag } from "./tags.js";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -318,26 +318,17 @@ export interface MergeToMainResolverDeps {
  * to the merge-base", not "what is different between the two tips" — that
  * way a moving primary doesn't change the summary.
  */
-export function computePromoteSummary(
-  projectDir: string,
-  sourceBranch: string,
-): PromoteSummary {
+export function computePromoteSummary(projectDir: string, sourceBranch: string): PromoteSummary {
   const primary = findPrimaryFallback(projectDir);
   if (!primary) {
     return { fileCount: 0, added: 0, removed: 0, topPaths: [], fullPaths: [] };
   }
-  const stat = safeExec(
-    `git diff --shortstat ${primary}...${sourceBranch}`,
-    projectDir,
-  );
+  const stat = safeExec(`git diff --shortstat ${primary}...${sourceBranch}`, projectDir);
   // shortstat shape: " 4 files changed, 120 insertions(+), 38 deletions(-)"
   const fileCount = Number((stat.match(/(\d+) files? changed/) ?? [, "0"])[1]);
   const added = Number((stat.match(/(\d+) insertions?\(\+\)/) ?? [, "0"])[1]);
   const removed = Number((stat.match(/(\d+) deletions?\(-\)/) ?? [, "0"])[1]);
-  const fullPathsRaw = safeExec(
-    `git diff --name-only ${primary}...${sourceBranch}`,
-    projectDir,
-  );
+  const fullPathsRaw = safeExec(`git diff --name-only ${primary}...${sourceBranch}`, projectDir);
   const fullPaths = fullPathsRaw.split("\n").filter(Boolean);
   return {
     fileCount,
@@ -442,7 +433,10 @@ export async function mergeToMain(
   // Inspect `git status --porcelain` for unmerged paths.
   const unmergedClassified = classifyUnmergedPaths(projectDir);
 
-  if (unmergedClassified.contentConflicts.length === 0 && unmergedClassified.nonContentKinds.length === 0) {
+  if (
+    unmergedClassified.contentConflicts.length === 0 &&
+    unmergedClassified.nonContentKinds.length === 0
+  ) {
     // Drop per-spec runtime files from the squash — both ride dex/* branches but don't belong on main.
     safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`, projectDir);
     try {
@@ -478,8 +472,7 @@ export async function mergeToMain(
     return {
       ok: false,
       error: "git_error",
-      message:
-        "merge produced content conflicts but no resolver was supplied; merge aborted",
+      message: "merge produced content conflicts but no resolver was supplied; merge aborted",
     };
   }
 
@@ -561,10 +554,7 @@ function pendingPromotePath(projectDir: string): string {
   return path.join(projectDir, ".git", "dex-pending-promote");
 }
 
-export function writePendingPromote(
-  projectDir: string,
-  pending: PendingPromote,
-): void {
+export function writePendingPromote(projectDir: string, pending: PendingPromote): void {
   fs.writeFileSync(pendingPromotePath(projectDir), JSON.stringify(pending));
 }
 
@@ -574,10 +564,7 @@ export function readPendingPromote(projectDir: string): PendingPromote | null {
   try {
     const raw = fs.readFileSync(p, "utf-8");
     const parsed = JSON.parse(raw);
-    if (
-      typeof parsed?.sourceBranch === "string" &&
-      typeof parsed?.primary === "string"
-    ) {
+    if (typeof parsed?.sourceBranch === "string" && typeof parsed?.primary === "string") {
       return { sourceBranch: parsed.sourceBranch, primary: parsed.primary };
     }
     return null;
@@ -597,4 +584,3 @@ export function clearPendingPromote(projectDir: string): void {
     }
   }
 }
-

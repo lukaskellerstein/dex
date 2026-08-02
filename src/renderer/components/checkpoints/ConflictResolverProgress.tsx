@@ -1,11 +1,8 @@
 import { useEffect, useReducer } from "react";
-import { CheckpointModal } from "./Modal";
-import {
-  RESOLVER_PROGRESS_TITLE,
-  RESOLVER_PROGRESS_ITERATION,
-} from "./branchOps/copy";
-import { orchestratorService } from "../../services/orchestratorService.js";
 import type { OrchestratorEvent } from "../../../core/types.js";
+import { orchestratorService } from "../../services/orchestratorService.js";
+import { RESOLVER_PROGRESS_ITERATION, RESOLVER_PROGRESS_TITLE } from "./branchOps/copy";
+import { CheckpointModal } from "./Modal";
 
 interface Props {
   /** Resolved when terminal `done` event arrives. Caller (TimelinePanel) handles routing to success toast / failure modal. */
@@ -120,11 +117,7 @@ export function ConflictResolverProgress({ onDone, onCancel, seed = null }: Prop
       title={RESOLVER_PROGRESS_TITLE}
       onClose={onCancel}
       footer={
-        <button
-          className="btn-secondary"
-          onClick={onCancel}
-          data-testid="resolver-progress-cancel"
-        >
+        <button className="btn-secondary" onClick={onCancel} data-testid="resolver-progress-cancel">
           Cancel
         </button>
       }
@@ -161,11 +154,7 @@ export function ConflictResolverProgress({ onDone, onCancel, seed = null }: Prop
       )}
       <div style={{ fontSize: 11, color: "var(--foreground-dim)" }}>
         Resolved {state.resolvedFiles.length} / {total}
-        {state.failedFiles.length > 0 && (
-          <>
-            {" "}· failed {state.failedFiles.length}
-          </>
-        )}
+        {state.failedFiles.length > 0 && <> · failed {state.failedFiles.length}</>}
       </div>
     </CheckpointModal>
   );

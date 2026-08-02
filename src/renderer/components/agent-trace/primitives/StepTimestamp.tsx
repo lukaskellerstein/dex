@@ -23,9 +23,7 @@ export function StepTimestamp({ timestamp, delta }: StepTimestampProps) {
       }}
     >
       <span>{timestamp}</span>
-      {delta && (
-        <span style={{ color: "var(--primary)", opacity: 0.8 }}>{delta}</span>
-      )}
+      {delta && <span style={{ color: "var(--primary)", opacity: 0.8 }}>{delta}</span>}
     </span>
   );
 }

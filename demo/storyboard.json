@@ -13,9 +13,7 @@
     "electron": {
       "cwd": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex",
       "executablePath": "/Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
-      "args": [
-        "dist/main/index.js"
-      ],
+      "args": ["dist/main/index.js"],
       "env": {
         "NODE_ENV": "production"
       },

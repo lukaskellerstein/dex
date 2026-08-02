@@ -165,7 +165,9 @@ try {
     console.log(JSON.stringify({ reloaded: true }));
   } else {
     console.error("unknown cmd: " + cmd);
-    console.error("usage: test-014-cdp.mjs <open|snap|eval|click|rclick|modal|wait|reload> [args...]");
+    console.error(
+      "usage: test-014-cdp.mjs <open|snap|eval|click|rclick|modal|wait|reload> [args...]",
+    );
     process.exit(2);
   }
 } finally {

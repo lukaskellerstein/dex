@@ -1,3 +1,2 @@
 
-
-Github: https://github.com/github/spec-kit
+Github: <https://github.com/github/spec-kit>

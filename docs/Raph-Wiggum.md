@@ -1,4 +1,4 @@
 
-Documentation: https://ghuntley.com/ralph/
+Documentation: <https://ghuntley.com/ralph/>
 
-Github: https://github.com/ghuntley/how-to-ralph-wiggum
+Github: <https://github.com/ghuntley/how-to-ralph-wiggum>

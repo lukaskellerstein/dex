@@ -43,6 +43,7 @@ Each reset puts `dex-ecommerce` on a fresh `attempt-<ts>` branch derived from th
 4. **MCP**: `mcp__electron-chrome__click` on that testid.
 5. Expect: timeline refreshes within 2 seconds, the `dex/*` badge is gone, no modal appeared (the branch had no unique commits relative to other tracked refs).
 6. **Shell verify**:
+
    ```sh
    cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
    git rev-parse --abbrev-ref HEAD       # → main
@@ -69,10 +70,12 @@ Each reset puts `dex-ecommerce` on a fresh `attempt-<ts>` branch derived from th
 **Maps to**: US1-AS2, FR-003.
 
 1. After Recipe 1A's reset and before any deletion, in the terminal:
+
    ```sh
    cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
    git checkout dex/<the-branch>
    ```
+
    so HEAD is on the to-be-deleted branch.
 2. In Dex, click delete on that badge.
 3. Expect: HEAD switches to `main` *before* the branch is removed; both happen inside one IPC call.
@@ -83,10 +86,12 @@ Each reset puts `dex-ecommerce` on a fresh `attempt-<ts>` branch derived from th
 
 1. **MCP**: `take_snapshot` on a fresh project. Search for testids matching `delete-branch-main`, `delete-branch-master`. Expect: none rendered.
 2. Manually create a user branch:
+
    ```sh
    cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
    git checkout -b feature/foo
    ```
+
 3. Refresh Dex timeline. Expect: no delete control on `feature/foo`'s badge.
 
 ### Recipe 1E — Refusal mid-run
@@ -111,6 +116,7 @@ Each reset puts `dex-ecommerce` on a fresh `attempt-<ts>` branch derived from th
 4. Click it. `<PromoteConfirm>` opens with diff summary (e.g. "12 files changed · +340 -82") and the top-5 paths.
 5. Click "Make this the new main". Expect: success toast "<source> is now main. The old version has been removed."
 6. **Shell verify**:
+
    ```sh
    git -C dex-ecommerce log --oneline -5         # newest is "dex: promoted <source> to main"
    git -C dex-ecommerce log --merges -1 --format='%P'  # has TWO parents (no fast-forward)
@@ -118,6 +124,7 @@ Each reset puts `dex-ecommerce` on a fresh `attempt-<ts>` branch derived from th
    git -C dex-ecommerce tag -l 'checkpoint/promoted-*'  # MUST be empty (regression)
    git -C dex-ecommerce rev-parse --abbrev-ref HEAD     # → main
    ```
+
 7. Visual check: timeline shows fork-and-rejoin shape (the `dex/*` lane converges back into `main`).
 
 ### Recipe 2B — Mid-run refusal

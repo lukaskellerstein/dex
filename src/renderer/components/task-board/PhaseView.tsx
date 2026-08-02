@@ -1,18 +1,18 @@
-import { useState } from "react";
 import {
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
-  CheckCircle2,
   Circle,
   Loader2,
   Pause,
   ScrollText,
 } from "lucide-react";
-import type { TaskPhase } from "../../../core/types.js";
+import { useState } from "react";
 import type { AgentRunRecord } from "../../../core/runs.js";
-import { TaskRow } from "./TaskRow.js";
-import { StatsBar } from "../shared/StatsBar.js";
+import type { TaskPhase } from "../../../core/types.js";
 import type { AgentStats } from "../../utils/computeStats.js";
+import { StatsBar } from "../shared/StatsBar.js";
+import { TaskRow } from "./TaskRow.js";
 
 interface PhaseViewProps {
   phase: TaskPhase;
@@ -22,15 +22,15 @@ interface PhaseViewProps {
   onViewTrace?: (phase: TaskPhase) => void;
 }
 
-function PhaseStatusIcon({ status, isRunning }: { status: TaskPhase["status"]; isRunning: boolean }) {
+function PhaseStatusIcon({
+  status,
+  isRunning,
+}: {
+  status: TaskPhase["status"];
+  isRunning: boolean;
+}) {
   if (isRunning) {
-    return (
-      <Loader2
-        size={16}
-        color="#7c3aed"
-        style={{ animation: "spin 1s linear infinite" }}
-      />
-    );
+    return <Loader2 size={16} color="#7c3aed" style={{ animation: "spin 1s linear infinite" }} />;
   }
   switch (status) {
     case "complete":
@@ -42,7 +42,13 @@ function PhaseStatusIcon({ status, isRunning }: { status: TaskPhase["status"]; i
   }
 }
 
-export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrace }: PhaseViewProps) {
+export function PhaseView({
+  phase,
+  isRunning,
+  isSelected,
+  traceStats,
+  onViewTrace,
+}: PhaseViewProps) {
   const highlighted = isRunning || isSelected;
   const [expanded, setExpanded] = useState(true);
 
@@ -53,9 +59,7 @@ export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrac
       style={{
         borderRadius: "var(--radius-lg)",
         border: `1px solid ${highlighted ? "var(--primary)" : "var(--border)"}`,
-        background: highlighted
-          ? "rgba(124, 58, 237, 0.05)"
-          : "var(--surface)",
+        background: highlighted ? "rgba(124, 58, 237, 0.05)" : "var(--surface)",
         overflow: "hidden",
         flexShrink: 0,
         transition: "border-color 0.2s",
@@ -208,25 +212,29 @@ export function PhaseView({ phase, isRunning, isSelected, traceStats, onViewTrac
       )}
 
       {/* TaskPhase stats from historical trace — hide for not-started and currently-running phases */}
-      {expanded && traceStats && phase.status !== "not_started" && !isRunning && (traceStats.costUsd != null || traceStats.durationMs != null) && (
-        <div style={{ padding: "0 14px 8px 44px" }}>
-          <StatsBar
-            compact
-            stats={{
-              durationMs: traceStats.durationMs,
-              costUsd: traceStats.costUsd,
-              inputTokens: traceStats.inputTokens,
-              outputTokens: traceStats.outputTokens,
-              stepCount: 0,
-              toolCount: 0,
-              mcpCount: 0,
-              subagentCount: 0,
-              skillCount: 0,
-              errorCount: 0,
-            }}
-          />
-        </div>
-      )}
+      {expanded &&
+        traceStats &&
+        phase.status !== "not_started" &&
+        !isRunning &&
+        (traceStats.costUsd != null || traceStats.durationMs != null) && (
+          <div style={{ padding: "0 14px 8px 44px" }}>
+            <StatsBar
+              compact
+              stats={{
+                durationMs: traceStats.durationMs,
+                costUsd: traceStats.costUsd,
+                inputTokens: traceStats.inputTokens,
+                outputTokens: traceStats.outputTokens,
+                stepCount: 0,
+                toolCount: 0,
+                mcpCount: 0,
+                subagentCount: 0,
+                skillCount: 0,
+                errorCount: 0,
+              }}
+            />
+          </div>
+        )}
 
       {/* Tasks */}
       {expanded && (

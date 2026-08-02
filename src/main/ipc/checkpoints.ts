@@ -1,32 +1,32 @@
-import { ipcMain, BrowserWindow } from "electron";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { BrowserWindow, ipcMain } from "electron";
+import { createAgentRunner } from "../../core/agent/index.js";
 import {
-  listTimeline,
-  jumpTo,
-  deleteBranch,
-  mergeToMain,
-  computePromoteSummary,
-  syncStateFromHead,
-  readPendingPromote,
   clearPendingPromote,
+  computePromoteSummary,
+  type DeleteBranchOpts,
+  type DeleteBranchResult,
+  deleteBranch,
   ensureDexGitignore,
   type JumpToResult,
-  type DeleteBranchResult,
-  type DeleteBranchOpts,
-  type MergeToMainResult,
+  jumpTo,
+  listTimeline,
   type MergeToMainOpts,
   type MergeToMainResolverDeps,
+  type MergeToMainResult,
+  mergeToMain,
   type PromoteSummary,
+  readPendingPromote,
+  syncStateFromHead,
 } from "../../core/checkpoints.js";
+import { loadDexConfig } from "../../core/dexConfig.js";
+import type { RunLogger } from "../../core/log.js";
+import type { OrchestratorEvent, RunConfig } from "../../core/types.js";
 import { withLock } from "./lock-utils.js";
 import { createIpcLogger } from "./logger.js";
-import { createAgentRunner } from "../../core/agent/index.js";
-import { loadDexConfig } from "../../core/dexConfig.js";
-import type { RunConfig, OrchestratorEvent } from "../../core/types.js";
-import type { RunLogger } from "../../core/log.js";
 
 const ipcLogger = createIpcLogger("checkpoints-ipc");
 
@@ -132,11 +132,7 @@ function emitLoopReset(senderWebContentsId: number): void {
  * regressing to the kickoff form (state.json may have been null pre-jump
  * after a squash-merge).
  */
-function emitHeadChanged(
-  senderWebContentsId: number,
-  branch: string,
-  sha: string,
-): void {
+function emitHeadChanged(senderWebContentsId: number, branch: string, sha: string): void {
   const wc = BrowserWindow.getAllWindows()
     .map((w) => w.webContents)
     .find((c) => c.id === senderWebContentsId);
@@ -303,7 +299,10 @@ export function registerCheckpointsHandlers(): void {
 
   ipcMain.handle(
     "checkpoints:acceptResolverResult",
-    async (e, projectDir: string): Promise<{ ok: true; mergeSha: string } | { ok: false; error: string }> =>
+    async (
+      e,
+      projectDir: string,
+    ): Promise<{ ok: true; mergeSha: string } | { ok: false; error: string }> =>
       withLock(projectDir, () => {
         try {
           // Recover the in-flight squash-merge target from the sidecar
@@ -324,7 +323,10 @@ export function registerCheckpointsHandlers(): void {
           // doesn't belong on `main`. `--ignore-unmatch` is no-op-safe when
           // a file was never tracked (legacy-branch safety net).
           try {
-            gitExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`, projectDir);
+            gitExec(
+              `git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`,
+              projectDir,
+            );
           } catch {
             // best-effort — fall through to commit
           }
@@ -377,7 +379,8 @@ export function registerCheckpointsHandlers(): void {
       try {
         const editor = process.env.EDITOR;
         const platform = process.platform;
-        const fallback = platform === "darwin" ? "open" : platform === "linux" ? "xdg-open" : "notepad";
+        const fallback =
+          platform === "darwin" ? "open" : platform === "linux" ? "xdg-open" : "notepad";
         const cmd = editor || fallback;
         const args = [...files];
         const cp = await import("node:child_process");
@@ -393,10 +396,8 @@ export function registerCheckpointsHandlers(): void {
     },
   );
 
-  ipcMain.handle(
-    "checkpoints:syncStateFromHead",
-    async (_e, projectDir: string) =>
-      withLock(projectDir, () => syncStateFromHead(projectDir, ipcLogger)),
+  ipcMain.handle("checkpoints:syncStateFromHead", async (_e, projectDir: string) =>
+    withLock(projectDir, () => syncStateFromHead(projectDir, ipcLogger)),
   );
 
   ipcMain.handle(
@@ -432,27 +433,25 @@ export function registerCheckpointsHandlers(): void {
     },
   );
 
-  ipcMain.handle(
-    "checkpoints:initRepo",
-    async (_e, projectDir: string) =>
-      withLock(projectDir, () => {
-        try {
-          if (!fs.existsSync(path.join(projectDir, ".git"))) {
-            gitExec(`git init`, projectDir);
-          }
-          ensureDexGitignore(projectDir);
-          // Initial commit if repo is empty
-          try {
-            gitExecSilent(`git rev-parse HEAD`, projectDir);
-          } catch {
-            gitExec(`git add -A`, projectDir);
-            gitExec(`git commit -m "chore: initial dex commit"`, projectDir);
-          }
-          return { ok: true as const };
-        } catch (err) {
-          return { ok: false as const, error: String(err) };
+  ipcMain.handle("checkpoints:initRepo", async (_e, projectDir: string) =>
+    withLock(projectDir, () => {
+      try {
+        if (!fs.existsSync(path.join(projectDir, ".git"))) {
+          gitExec(`git init`, projectDir);
         }
-      }),
+        ensureDexGitignore(projectDir);
+        // Initial commit if repo is empty
+        try {
+          gitExecSilent(`git rev-parse HEAD`, projectDir);
+        } catch {
+          gitExec(`git add -A`, projectDir);
+          gitExec(`git commit -m "chore: initial dex commit"`, projectDir);
+        }
+        return { ok: true as const };
+      } catch (err) {
+        return { ok: false as const, error: String(err) };
+      }
+    }),
   );
 
   ipcMain.handle(

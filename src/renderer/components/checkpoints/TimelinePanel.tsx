@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTimeline } from "./hooks/useTimeline";
-import { GoBackConfirm } from "./GoBackConfirm";
-import { TimelineGraph } from "./TimelineGraph";
-import { DeleteBranchConfirm } from "./DeleteBranchConfirm";
-import { BranchContextMenu } from "./BranchContextMenu";
-import { PromoteConfirm } from "./PromoteConfirm";
-import { ConflictResolverProgress, type ResolverSeed } from "./ConflictResolverProgress";
-import { ResolverFailureModal } from "./ResolverFailureModal";
+import type { LostStep, PromoteSummary } from "../../../core/checkpoints.js";
 import { checkpointService } from "../../services/checkpointService.js";
 import { orchestratorService } from "../../services/orchestratorService.js";
+import { BranchContextMenu } from "./BranchContextMenu";
 import {
   DELETE_FAILED,
   DELETE_MID_RUN,
@@ -19,10 +13,16 @@ import {
   PROMOTE_MID_RUN_BRANCH,
   PROMOTE_MID_RUN_MAIN,
   PROMOTE_NON_CONTENT_CONFLICT,
-  RESOLVER_SUCCESS_TOAST,
   RESOLVER_FAILURE_TITLE,
+  RESOLVER_SUCCESS_TOAST,
 } from "./branchOps/copy";
-import type { LostStep, PromoteSummary } from "../../../core/checkpoints.js";
+import { ConflictResolverProgress, type ResolverSeed } from "./ConflictResolverProgress";
+import { DeleteBranchConfirm } from "./DeleteBranchConfirm";
+import { GoBackConfirm } from "./GoBackConfirm";
+import { useTimeline } from "./hooks/useTimeline";
+import { PromoteConfirm } from "./PromoteConfirm";
+import { ResolverFailureModal } from "./ResolverFailureModal";
+import { TimelineGraph } from "./TimelineGraph";
 
 interface Props {
   projectDir: string;
@@ -74,11 +74,7 @@ function isDexOwnedBranch(branch: string): boolean {
  * 010 — full-width Timeline canvas. Single-click on a node calls jumpTo.
  * No side detail panel, no bottom past-attempts list.
  */
-export function TimelinePanel({
-  projectDir,
-  disabled,
-  disabledReason,
-}: Props) {
+export function TimelinePanel({ projectDir, disabled, disabledReason }: Props) {
   const { snapshot, refresh } = useTimeline(projectDir);
   const [dirty, setDirty] = useState<DirtyEnvelope | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmEnvelope | null>(null);
@@ -227,9 +223,7 @@ export function TimelinePanel({
         x,
         y,
         enabled: dexOwned && !alreadyMerged,
-        disabledReason: alreadyMerged
-          ? PROMOTE_MENU_ALREADY_MERGED_TOOLTIP
-          : undefined,
+        disabledReason: alreadyMerged ? PROMOTE_MENU_ALREADY_MERGED_TOOLTIP : undefined,
       });
     },
     [mergedBranches],

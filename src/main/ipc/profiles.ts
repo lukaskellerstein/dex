@@ -1,9 +1,5 @@
 import { ipcMain } from "electron";
-import {
-  listProfiles,
-  saveDexJson,
-  type DexJsonShape,
-} from "../../core/agent-profile.js";
+import { type DexJsonShape, listProfiles, saveDexJson } from "../../core/agent-profile.js";
 import { withLock } from "./lock-utils.js";
 
 export function registerProfilesHandlers(): void {

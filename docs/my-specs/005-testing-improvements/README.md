@@ -100,10 +100,12 @@ There is no generator — fixtures are captured from a real orchestrator run:
 2. Start the loop as normal via the welcome screen + Automatic Clarification on.
 3. When the orchestrator emits `stage_completed` for `manifest_extraction` (visible in the trace), click **Pause**. The orchestrator's pause path already persists `state.json` atomically.
 4. On the example repo:
+
    ```bash
    git add -A && git commit -m "fixture: after-clarification"
    git branch -f fixture/after-clarification HEAD
    ```
+
 5. Un-pause and let the loop continue until `tasks` is complete for the first feature. Pause again.
 6. `git add -A && git commit -m "fixture: after-tasks" && git branch -f fixture/after-tasks HEAD`.
 

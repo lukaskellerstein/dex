@@ -5,16 +5,13 @@
  */
 import { Play } from "lucide-react";
 import { useLoopStartForm } from "../../hooks/useLoopStartForm.js";
-import { LoopStartForm } from "./LoopStartForm.js";
 import { cardSurface } from "../../styles/tokens.js";
+import { LoopStartForm } from "./LoopStartForm.js";
 
 interface LoopStartPanelProps {
   projectDir: string;
   isRunning: boolean;
-  onStart: (config: {
-    descriptionFile?: string;
-    autoClarification?: boolean;
-  }) => void;
+  onStart: (config: { descriptionFile?: string; autoClarification?: boolean }) => void;
 }
 
 export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPanelProps) {
@@ -125,7 +122,8 @@ export function LoopStartPanel({ projectDir, isRunning, onStart }: LoopStartPane
               marginTop: 2,
             }}
           >
-            Skip interactive Q&A — agent auto-selects recommended options based on the goal-file context
+            Skip interactive Q&A — agent auto-selects recommended options based on the goal-file
+            context
           </div>
         </div>
       </div>

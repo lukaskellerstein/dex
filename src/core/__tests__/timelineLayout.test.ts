@@ -1,7 +1,7 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import type { TimelineSnapshot, TimelineCommit } from "../checkpoints.ts";
+import test from "node:test";
 import { layoutTimeline } from "../../renderer/components/checkpoints/timelineLayout.ts";
+import type { TimelineCommit, TimelineSnapshot } from "../checkpoints.ts";
 
 // ── Fixture helpers ─────────────────────────────────────
 
@@ -180,7 +180,12 @@ test("layoutTimeline: branch titles — every lane's tenant is top-pinned at the
 test("layoutTimeline: selected-* lane flagged isSelectedLane", () => {
   const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
   const sel = STEP_COMMIT(
-    "s".repeat(40), "selected-x", a.sha, "specify", 1, "2026-04-25T10:02:00Z",
+    "s".repeat(40),
+    "selected-x",
+    a.sha,
+    "specify",
+    1,
+    "2026-04-25T10:02:00Z",
   );
   const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, sel] };
   const out = layoutTimeline(snap, OPTS);
@@ -197,12 +202,22 @@ test("layoutTimeline: selected-* always lands on the rightmost lane", () => {
   // the rightmost column, regardless of when it forked.
   const baseline = STEP_COMMIT("a".repeat(40), "main", null, "specify", 0, "2026-05-04T10:00:00Z");
   const dexTip = STEP_COMMIT(
-    "b".repeat(40), "dex/2026-05-04-clean", baseline.sha, "specify", 1, "2026-05-04T10:01:00Z",
+    "b".repeat(40),
+    "dex/2026-05-04-clean",
+    baseline.sha,
+    "specify",
+    1,
+    "2026-05-04T10:01:00Z",
   );
   // selected-* forks from baseline (earlier than dex's fork from baseline,
   // by tiebreaker). Without the rule, this lands at lane 1 (left of dex).
   const selTip = STEP_COMMIT(
-    "c".repeat(40), "selected-041", baseline.sha, "specify", 0, "2026-05-04T10:00:00Z",
+    "c".repeat(40),
+    "selected-041",
+    baseline.sha,
+    "specify",
+    0,
+    "2026-05-04T10:00:00Z",
   );
   const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [baseline, dexTip, selTip] };
   const out = layoutTimeline(snap, OPTS);
@@ -222,10 +237,38 @@ test("layoutTimeline: a third branch forking last gets the rightmost lane", () =
   // same trunk row at increasing fork rows. Whichever forks last must land
   // on the highest lane index.
   const m = STEP_COMMIT("m".repeat(40), "main", null, "plan", 1, "2026-04-25T10:00:00Z");
-  const a1 = STEP_COMMIT("a1".padEnd(40, "0"), "dex/featA", m.sha, "specify", 1, "2026-04-25T10:01:00Z");
-  const a2 = STEP_COMMIT("a2".padEnd(40, "0"), "dex/featA", a1.sha, "verify", 1, "2026-04-25T10:02:00Z");
-  const b1 = STEP_COMMIT("b1".padEnd(40, "0"), "dex/featB", a2.sha, "specify", 1, "2026-04-25T10:03:00Z");
-  const c1 = STEP_COMMIT("c1".padEnd(40, "0"), "dex/featC", b1.sha, "specify", 1, "2026-04-25T10:04:00Z");
+  const a1 = STEP_COMMIT(
+    "a1".padEnd(40, "0"),
+    "dex/featA",
+    m.sha,
+    "specify",
+    1,
+    "2026-04-25T10:01:00Z",
+  );
+  const a2 = STEP_COMMIT(
+    "a2".padEnd(40, "0"),
+    "dex/featA",
+    a1.sha,
+    "verify",
+    1,
+    "2026-04-25T10:02:00Z",
+  );
+  const b1 = STEP_COMMIT(
+    "b1".padEnd(40, "0"),
+    "dex/featB",
+    a2.sha,
+    "specify",
+    1,
+    "2026-04-25T10:03:00Z",
+  );
+  const c1 = STEP_COMMIT(
+    "c1".padEnd(40, "0"),
+    "dex/featC",
+    b1.sha,
+    "specify",
+    1,
+    "2026-04-25T10:04:00Z",
+  );
   const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [m, a1, a2, b1, c1] };
   const out = layoutTimeline(snap, OPTS);
 
@@ -255,8 +298,22 @@ test("layoutTimeline: dotted column markers — one per non-trunk lane, full can
 test("layoutTimeline: lane segments — one per branch with ≥2 commits, colored by branch", () => {
   const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
   const b = STEP_COMMIT("b".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:02:00Z");
-  const x1 = STEP_COMMIT("x1".padEnd(40, "x"), "feature/x", a.sha, "specify", 1, "2026-04-25T10:03:00Z");
-  const x2 = STEP_COMMIT("x2".padEnd(40, "x"), "feature/x", x1.sha, "plan", 1, "2026-04-25T10:04:00Z");
+  const x1 = STEP_COMMIT(
+    "x1".padEnd(40, "x"),
+    "feature/x",
+    a.sha,
+    "specify",
+    1,
+    "2026-04-25T10:03:00Z",
+  );
+  const x2 = STEP_COMMIT(
+    "x2".padEnd(40, "x"),
+    "feature/x",
+    x1.sha,
+    "plan",
+    1,
+    "2026-04-25T10:04:00Z",
+  );
   const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, b, x1, x2] };
   const out = layoutTimeline(snap, OPTS);
   const mainSeg = out.laneSegments.find((s) => s.branch === "main")!;
@@ -274,8 +331,15 @@ test("layoutTimeline: merge commit on main — hollow flag + merge edge from mer
   const a = STEP_COMMIT("a".repeat(40), "main", null, "plan", 1, "2026-04-25T10:01:00Z");
   const x1 = STEP_COMMIT("x".repeat(40), "feature/x", a.sha, "specify", 1, "2026-04-25T10:02:00Z");
   const m = STEP_COMMIT(
-    "m".repeat(40), "main", a.sha, "tasks", 1, "2026-04-25T10:03:00Z",
-    false, undefined, [x1.sha],
+    "m".repeat(40),
+    "main",
+    a.sha,
+    "tasks",
+    1,
+    "2026-04-25T10:03:00Z",
+    false,
+    undefined,
+    [x1.sha],
   );
   const snap: TimelineSnapshot = { ...EMPTY_SNAP, commits: [a, x1, m] };
   const out = layoutTimeline(snap, OPTS);
@@ -302,9 +366,7 @@ test("layoutTimeline: promote step on main — main lane extends to merge tip, s
   // main lane reaches all the way to the merge row (so the `main` badge
   // sits on the actual HEAD) and the source-branch lane gets its own
   // column with a merge edge into main.
-  const baseline = STEP_COMMIT(
-    "a".repeat(40), "main", null, "specify", 0, "2026-05-04T17:45:16Z",
-  );
+  const baseline = STEP_COMMIT("a".repeat(40), "main", null, "specify", 0, "2026-05-04T17:45:16Z");
   const sideTip = STEP_COMMIT(
     "b".repeat(40),
     "dex/2026-05-04-clean",
@@ -371,12 +433,26 @@ test("layoutTimeline: color states — selected (blue), kept (red), both, defaul
   const snap: TimelineSnapshot = {
     ...EMPTY_SNAP,
     checkpoints: [
-      { tag: "checkpoint/cycle-1-after-tasks", label: "tasks", sha: b.sha,
-        step: "tasks", cycleNumber: 1, featureSlug: null, commitMessage: "",
-        timestamp: "2026-04-25T10:02:00Z" },
-      { tag: "checkpoint/cycle-1-after-implement", label: "implement", sha: c.sha,
-        step: "implement", cycleNumber: 1, featureSlug: null, commitMessage: "",
-        timestamp: "2026-04-25T10:03:00Z" },
+      {
+        tag: "checkpoint/cycle-1-after-tasks",
+        label: "tasks",
+        sha: b.sha,
+        step: "tasks",
+        cycleNumber: 1,
+        featureSlug: null,
+        commitMessage: "",
+        timestamp: "2026-04-25T10:02:00Z",
+      },
+      {
+        tag: "checkpoint/cycle-1-after-implement",
+        label: "implement",
+        sha: c.sha,
+        step: "implement",
+        cycleNumber: 1,
+        featureSlug: null,
+        commitMessage: "",
+        timestamp: "2026-04-25T10:03:00Z",
+      },
     ],
     commits: [a, b, c, d],
     selectedPath: [a.sha, c.sha],

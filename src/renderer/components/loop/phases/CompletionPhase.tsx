@@ -1,4 +1,4 @@
-import { CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import type { LoopTermination } from "../../../../core/types.js";
 
 const REASON_CONFIG: Record<
@@ -7,27 +7,20 @@ const REASON_CONFIG: Record<
 > = {
   gaps_complete: {
     heading: "All Features Implemented",
-    label:
-      "The loop completed successfully — all planned features were implemented.",
+    label: "The loop completed successfully — all planned features were implemented.",
     icon: <CheckCircle size={28} style={{ color: "var(--status-success)" }} />,
     color: "var(--status-success)",
   },
   budget_exceeded: {
     heading: "Budget Limit Reached",
-    label:
-      "The loop stopped because the configured budget limit was exceeded.",
-    icon: (
-      <AlertCircle size={28} style={{ color: "var(--status-warning, #f59e0b)" }} />
-    ),
+    label: "The loop stopped because the configured budget limit was exceeded.",
+    icon: <AlertCircle size={28} style={{ color: "var(--status-warning, #f59e0b)" }} />,
     color: "var(--status-warning, #f59e0b)",
   },
   max_cycles_reached: {
     heading: "Max Cycles Reached",
-    label:
-      "The loop stopped after reaching the maximum number of configured cycles.",
-    icon: (
-      <AlertCircle size={28} style={{ color: "var(--status-warning, #f59e0b)" }} />
-    ),
+    label: "The loop stopped after reaching the maximum number of configured cycles.",
+    icon: <AlertCircle size={28} style={{ color: "var(--status-warning, #f59e0b)" }} />,
     color: "var(--status-warning, #f59e0b)",
   },
   user_abort: {
@@ -97,8 +90,7 @@ interface CompletionPhaseProps {
 
 export function CompletionPhase({ termination }: CompletionPhaseProps) {
   const reason = REASON_CONFIG[termination.reason] ?? REASON_CONFIG.user_abort;
-  const totalFeatures =
-    termination.featuresCompleted.length + termination.featuresSkipped.length;
+  const totalFeatures = termination.featuresCompleted.length + termination.featuresSkipped.length;
 
   return (
     <div style={{ padding: "28px 32px", overflow: "auto", flex: 1, maxWidth: 640 }}>
@@ -140,26 +132,15 @@ export function CompletionPhase({ termination }: CompletionPhaseProps) {
         <StatCard
           value={termination.featuresCompleted.length}
           label="Completed"
-          color={
-            termination.featuresCompleted.length > 0
-              ? "var(--status-success)"
-              : undefined
-          }
+          color={termination.featuresCompleted.length > 0 ? "var(--status-success)" : undefined}
         />
         <StatCard
           value={termination.featuresSkipped.length}
           label="Skipped"
-          color={
-            termination.featuresSkipped.length > 0
-              ? "var(--status-error)"
-              : undefined
-          }
+          color={termination.featuresSkipped.length > 0 ? "var(--status-error)" : undefined}
         />
         {termination.totalCostUsd > 0 && (
-          <StatCard
-            value={`$${termination.totalCostUsd.toFixed(2)}`}
-            label="Total Cost"
-          />
+          <StatCard value={`$${termination.totalCostUsd.toFixed(2)}`} label="Total Cost" />
         )}
       </div>
 
@@ -246,10 +227,7 @@ export function CompletionPhase({ termination }: CompletionPhaseProps) {
                     gap: 8,
                   }}
                 >
-                  <XCircle
-                    size={12}
-                    style={{ color: "var(--status-error)", flexShrink: 0 }}
-                  />
+                  <XCircle size={12} style={{ color: "var(--status-error)", flexShrink: 0 }} />
                   {f}
                 </div>
               ))}

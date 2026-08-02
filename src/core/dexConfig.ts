@@ -40,7 +40,9 @@ export interface DexConfig {
 export class DexConfigParseError extends Error {
   readonly filePath: string;
   constructor(filePath: string, cause: unknown) {
-    super(`DexConfigParseError: failed to parse ${filePath}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    super(
+      `DexConfigParseError: failed to parse ${filePath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
     this.name = "DexConfigParseError";
     this.filePath = filePath;
   }
@@ -102,33 +104,28 @@ export function loadDexConfig(projectDir: string): DexConfig {
   };
 }
 
-function parseConflictResolver(
-  file: string,
-  raw: unknown,
-): ConflictResolverConfig {
+function parseConflictResolver(file: string, raw: unknown): ConflictResolverConfig {
   if (raw === undefined || raw === null) {
     return { ...DEFAULT_CONFLICT_RESOLVER_CONFIG };
   }
   if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new DexConfigInvalidError(
-      file,
-      "'conflictResolver' must be an object if present",
-    );
+    throw new DexConfigInvalidError(file, "'conflictResolver' must be an object if present");
   }
   const r = raw as Record<string, unknown>;
   const out: ConflictResolverConfig = { ...DEFAULT_CONFLICT_RESOLVER_CONFIG };
 
   if ("model" in r) {
     if (r.model !== null && typeof r.model !== "string") {
-      throw new DexConfigInvalidError(
-        file,
-        "'conflictResolver.model' must be a string or null",
-      );
+      throw new DexConfigInvalidError(file, "'conflictResolver.model' must be a string or null");
     }
     out.model = r.model as string | null;
   }
   if ("maxIterations" in r) {
-    if (typeof r.maxIterations !== "number" || !Number.isInteger(r.maxIterations) || r.maxIterations < 1) {
+    if (
+      typeof r.maxIterations !== "number" ||
+      !Number.isInteger(r.maxIterations) ||
+      r.maxIterations < 1
+    ) {
       throw new DexConfigInvalidError(
         file,
         "'conflictResolver.maxIterations' must be an integer >= 1",
@@ -137,7 +134,11 @@ function parseConflictResolver(
     out.maxIterations = r.maxIterations;
   }
   if ("maxTurnsPerIteration" in r) {
-    if (typeof r.maxTurnsPerIteration !== "number" || !Number.isInteger(r.maxTurnsPerIteration) || r.maxTurnsPerIteration < 1) {
+    if (
+      typeof r.maxTurnsPerIteration !== "number" ||
+      !Number.isInteger(r.maxTurnsPerIteration) ||
+      r.maxTurnsPerIteration < 1
+    ) {
       throw new DexConfigInvalidError(
         file,
         "'conflictResolver.maxTurnsPerIteration' must be an integer >= 1",

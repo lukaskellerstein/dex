@@ -1,4 +1,4 @@
-import { CheckCircle, Circle, Loader2, Cog } from "lucide-react";
+import { CheckCircle, Circle, Cog, Loader2 } from "lucide-react";
 import type { Task } from "../../../core/types.js";
 
 interface TaskRowProps {
@@ -11,11 +11,7 @@ function StatusIcon({ status }: { status: Task["status"] }) {
       return <CheckCircle size={14} color="var(--status-success)" />;
     case "in_progress":
       return (
-        <Cog
-          size={14}
-          color="var(--primary)"
-          style={{ animation: "spin 2s linear infinite" }}
-        />
+        <Cog size={14} color="var(--primary)" style={{ animation: "spin 2s linear infinite" }} />
       );
     case "code_exists":
       return (
@@ -42,12 +38,8 @@ export function TaskRow({ task }: TaskRowProps) {
         borderRadius: "var(--radius)",
         transition: "background 0.1s",
       }}
-      onMouseEnter={(e) =>
-        (e.currentTarget.style.background = "var(--surface-hover)")
-      }
-      onMouseLeave={(e) =>
-        (e.currentTarget.style.background = "transparent")
-      }
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-hover)")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       <StatusIcon status={task.status} />
       <span
@@ -93,10 +85,7 @@ export function TaskRow({ task }: TaskRowProps) {
       )}
       <span
         style={{
-          color:
-            task.status === "done"
-              ? "var(--foreground-dim)"
-              : "var(--foreground-muted)",
+          color: task.status === "done" ? "var(--foreground-dim)" : "var(--foreground-muted)",
           textDecoration: task.status === "done" ? "line-through" : "none",
           flex: 1,
           overflow: "hidden",

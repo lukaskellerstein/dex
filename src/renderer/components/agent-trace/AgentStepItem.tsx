@@ -1,18 +1,18 @@
-import type { CSSProperties } from "react";
 import {
-  Brain,
-  MessageSquare,
-  CheckCircle,
   AlertTriangle,
+  Brain,
+  CheckCircle,
   CornerDownRight,
+  MessageSquare,
   Sparkles,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { AgentStep } from "../../../core/types.js";
-import { ToolCard } from "./ToolCard.js";
-import { StepTimestamp } from "./primitives/StepTimestamp.js";
 import { CollapsibleText } from "./primitives/CollapsibleText.js";
+import { StepTimestamp } from "./primitives/StepTimestamp.js";
 import { DebugStep } from "./steps/DebugStep.js";
 import { SubagentLifecycleStep } from "./steps/SubagentLifecycleStep.js";
+import { ToolCard } from "./ToolCard.js";
 
 interface AgentStepItemProps {
   step: AgentStep;
@@ -22,7 +22,13 @@ interface AgentStepItemProps {
   onSubagentClick?: (subagentId: string) => void;
 }
 
-export function AgentStepItem({ step, resultSteps, timestamp, delta, onSubagentClick }: AgentStepItemProps) {
+export function AgentStepItem({
+  step,
+  resultSteps,
+  timestamp,
+  delta,
+  onSubagentClick,
+}: AgentStepItemProps) {
   const content = step.content ?? "";
 
   switch (step.type) {
@@ -213,16 +219,11 @@ export function AgentStepItem({ step, resultSteps, timestamp, delta, onSubagentC
         <div
           style={{
             borderLeft: `2px solid ${
-              step.type === "tool_error"
-                ? "var(--status-error)"
-                : "var(--border)"
+              step.type === "tool_error" ? "var(--status-error)" : "var(--border)"
             }`,
             paddingLeft: 10,
             fontSize: "0.85rem",
-            color:
-              step.type === "tool_error"
-                ? "var(--status-error)"
-                : "var(--foreground-dim)",
+            color: step.type === "tool_error" ? "var(--status-error)" : "var(--foreground-dim)",
           }}
         >
           <CollapsibleText text={content} threshold={120} />
@@ -323,9 +324,7 @@ export function AgentStepItem({ step, resultSteps, timestamp, delta, onSubagentC
           }}
         >
           <CheckCircle size={16} color="var(--status-success)" />
-          <span style={{ fontWeight: 500, color: "var(--status-success)" }}>
-            Completed
-          </span>
+          <span style={{ fontWeight: 500, color: "var(--status-success)" }}>Completed</span>
           <StepTimestamp timestamp={timestamp} delta={delta} />
         </div>
       );
@@ -344,9 +343,7 @@ export function AgentStepItem({ step, resultSteps, timestamp, delta, onSubagentC
           }}
         >
           <AlertTriangle size={16} color="var(--status-error)" />
-          <span style={{ color: "var(--status-error)" }}>
-            {content || "Unknown error"}
-          </span>
+          <span style={{ color: "var(--status-error)" }}>{content || "Unknown error"}</span>
           <StepTimestamp timestamp={timestamp} delta={delta} />
         </div>
       );

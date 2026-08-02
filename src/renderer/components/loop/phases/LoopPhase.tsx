@@ -1,10 +1,6 @@
 import { Clock, DollarSign } from "lucide-react";
 import type { StepType } from "../../../../core/types.js";
-import type {
-  UiLoopCycle,
-  UiLoopStage,
-  LatestAction,
-} from "../../../hooks/useOrchestrator.js";
+import type { LatestAction, UiLoopCycle, UiLoopStage } from "../../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../../hooks/useProject.js";
 import { CycleTimeline } from "../CycleTimeline.js";
 

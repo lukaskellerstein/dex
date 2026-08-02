@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { type LaidOutNode, type LaidOutEdge, type ColorState } from "./timelineLayout";
-import type { TimelineSnapshot, TimelineCommit } from "../../../core/checkpoints.js";
+import type { TimelineCommit, TimelineSnapshot } from "../../../core/checkpoints.js";
 import { useD3Timeline } from "./hooks/useD3Timeline.js";
+import type { ColorState, LaidOutEdge, LaidOutNode } from "./timelineLayout";
 
 const DEFAULT_DISPLAY_LIMIT = 50;
 const LOAD_MORE_INCREMENT = 50;
@@ -37,10 +37,7 @@ const FOCUS_DIMMED = "var(--foreground-dim, #6c7086)";
 const MARKER_COLOR = "#4a4d63";
 const SURFACE_COLOR = "var(--surface, #0e1120)";
 
-const BAND_TINTS: [string, string] = [
-  "rgba(255, 255, 255, 0.025)",
-  "rgba(255, 255, 255, 0.060)",
-];
+const BAND_TINTS: [string, string] = ["rgba(255, 255, 255, 0.025)", "rgba(255, 255, 255, 0.060)"];
 
 function displayColor(originalColor: string, branch: string, focused: string | null): string {
   if (focused === null) return originalColor;
@@ -74,9 +71,12 @@ function badgeText(branch: string): string {
  * The function inspects elbow.y vs source.y to decide which leg comes first.
  */
 function rightAnglePath(
-  sx: number, sy: number,
-  ex: number, ey: number,
-  dx: number, dy: number,
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+  dx: number,
+  dy: number,
   r = CORNER_R,
 ): string {
   const horizontalFirst = ey === sy;
@@ -230,9 +230,7 @@ export function TimelineGraph({
           <button
             type="button"
             data-testid="timeline-load-more"
-            onClick={() =>
-              setDisplayLimit((n) => Math.min(totalCommits, n + LOAD_MORE_INCREMENT))
-            }
+            onClick={() => setDisplayLimit((n) => Math.min(totalCommits, n + LOAD_MORE_INCREMENT))}
             style={{
               fontSize: 11,
               fontFamily: "var(--font, sans-serif)",
@@ -262,7 +260,13 @@ export function TimelineGraph({
             const bandWidth = Math.max(layout.width, 480);
             return (
               <g key={`band-${i}-${band.cycleNumber}`} style={{ pointerEvents: "none" }}>
-                <rect x={0} y={band.y} width={bandWidth} height={band.height} fill={BAND_TINTS[band.tintIndex]} />
+                <rect
+                  x={0}
+                  y={band.y}
+                  width={bandWidth}
+                  height={band.height}
+                  fill={BAND_TINTS[band.tintIndex]}
+                />
                 {band.height >= 18 && (
                   <text
                     x={bandWidth - 8}
@@ -321,8 +325,14 @@ export function TimelineGraph({
           {/* Branch badges. Top-pinned (row 0) for first tenant of each lane;
               mid-canvas (at fork row) for recycled lane tenants. */}
           {layout.branchTitles.map((title) => {
-            const col = layout.columns.find((c) => c.columnIndex !== undefined && layout.nodes.some((n) => n.branch === title.branch && n.columnIndex === c.columnIndex)) ??
-              layout.columns.find((c) => c.branch === title.branch);
+            const col =
+              layout.columns.find(
+                (c) =>
+                  c.columnIndex !== undefined &&
+                  layout.nodes.some(
+                    (n) => n.branch === title.branch && n.columnIndex === c.columnIndex,
+                  ),
+              ) ?? layout.columns.find((c) => c.branch === title.branch);
             if (!col) return null;
             const text = badgeText(title.branch);
             const isFocused = focused === title.branch;
@@ -333,8 +343,7 @@ export function TimelineGraph({
             // don't produce duplicate testids or click targets. Shown on every
             // Dex-owned lane (`dex/*` + `selected-*`); hidden on protected
             // and user branches.
-            const showDelete =
-              isDexOwnedBranch(title.branch) && !!onDeleteBranch && !title.isTail;
+            const showDelete = isDexOwnedBranch(title.branch) && !!onDeleteBranch && !title.isTail;
             const xBtnW = showDelete ? 16 : 0;
             const padInner = 6;
             const labelW = Math.max(text.length * charW, 28) + padInner * 2 + xBtnW;
@@ -428,12 +437,10 @@ export function TimelineGraph({
             // milestones at a glance even in a sea of user commits.
             const baseOpacity = isUser ? 0.6 : 1;
             const dotOpacity = displayOpacity(n.branch, focused, baseOpacity);
-            const shortSha = n.node.kind === "step-commit"
-              ? (n.node.data as TimelineCommit).shortSha
-              : "";
-            const testid = n.node.kind === "start"
-              ? "timeline-anchor"
-              : `timeline-node-${shortSha}`;
+            const shortSha =
+              n.node.kind === "step-commit" ? (n.node.data as TimelineCommit).shortSha : "";
+            const testid =
+              n.node.kind === "start" ? "timeline-anchor" : `timeline-node-${shortSha}`;
             const headOffset = isHead ? 2 : 0;
             // User diamonds slightly smaller than dex circles, but big
             // enough to read as their own shape. All commits are jump
@@ -522,7 +529,11 @@ export function TimelineGraph({
                 */}
                 {(n.colorState === "selected" || n.colorState === "selected+kept" || isHead) && (
                   <circle
-                    r={n.isMerge ? Math.max(1.5, effectiveDotR - 4) : Math.max(2, effectiveDotR - 1.5)}
+                    r={
+                      n.isMerge
+                        ? Math.max(1.5, effectiveDotR - 4)
+                        : Math.max(2, effectiveDotR - 1.5)
+                    }
                     fill="#ff0000"
                   />
                 )}
@@ -560,7 +571,10 @@ export function TimelineGraph({
                     y={4}
                   >
                     {c.shortSha}
-                    <tspan fill="var(--foreground-dim, #64748b)" fontFamily="var(--font, sans-serif)">
+                    <tspan
+                      fill="var(--foreground-dim, #64748b)"
+                      fontFamily="var(--font, sans-serif)"
+                    >
                       {isUser
                         ? `  ${userSubject}`
                         : `  ${c.step ?? ""}${c.cycleNumber > 0 ? ` · cycle ${c.cycleNumber}` : ""}`}

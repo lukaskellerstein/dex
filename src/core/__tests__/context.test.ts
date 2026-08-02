@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { createContext, type OrchestrationContext, type RunState } from "../context.ts";
 
 // Minimal fakes — context.ts is a pure builder, so we only need a shape that
@@ -73,7 +73,11 @@ test("createContext: state field is mutable (mirrors orchestrator.ts:380 mutatio
   ctx.state.agentRunId = "phase-1";
   ctx.state.taskPhaseNumber = 1;
   assert.equal(ctx.state.agentRunId, "phase-1");
-  assert.equal(initialState.agentRunId, "phase-1", "state object identity preserved — mutations visible through both refs");
+  assert.equal(
+    initialState.agentRunId,
+    "phase-1",
+    "state object identity preserved — mutations visible through both refs",
+  );
 });
 
 test("createContext: abort signal flows through ctx", () => {

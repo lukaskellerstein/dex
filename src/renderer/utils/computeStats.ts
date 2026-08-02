@@ -20,7 +20,7 @@ export interface AgentStats {
  */
 export function computeStats(
   steps: AgentStep[],
-  overrides?: { durationMs?: number | null }
+  overrides?: { durationMs?: number | null },
 ): AgentStats {
   let toolCount = 0;
   const mcpServers = new Set<string>();

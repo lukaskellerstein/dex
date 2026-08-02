@@ -6,30 +6,30 @@
 import { useCallback, useEffect, useRef } from "react";
 import type {
   AgentStep,
-  SubagentInfo,
-  TaskPhase,
-  Task,
-  StepType,
   LoopTermination,
   PrerequisiteCheck,
+  StepType,
+  SubagentInfo,
+  Task,
+  TaskPhase,
 } from "../../core/types.js";
 import { historyService } from "../services/historyService.js";
-import { projectService } from "../services/projectService.js";
 import { orchestratorService } from "../services/orchestratorService.js";
-import { useRunSession } from "./useRunSession.js";
-import { usePrerequisites } from "./usePrerequisites.js";
-import { useUserQuestion, type PendingQuestion } from "./useUserQuestion.js";
+import { projectService } from "../services/projectService.js";
+import { type LatestAction, useLiveTrace } from "./useLiveTrace.js";
 import {
-  useLoopState,
-  type UiLoopStage,
-  type UiLoopCycle,
   type ImplementSubPhase,
+  type UiLoopCycle,
+  type UiLoopStage,
+  useLoopState,
 } from "./useLoopState.js";
-import { useLiveTrace, type LatestAction } from "./useLiveTrace.js";
+import { usePrerequisites } from "./usePrerequisites.js";
+import { useRunSession } from "./useRunSession.js";
+import { type PendingQuestion, useUserQuestion } from "./useUserQuestion.js";
 
-// Re-export shape consumers depend on
-export type { UiLoopStage, UiLoopCycle, ImplementSubPhase } from "./useLoopState.js";
 export type { LatestAction } from "./useLiveTrace.js";
+// Re-export shape consumers depend on
+export type { ImplementSubPhase, UiLoopCycle, UiLoopStage } from "./useLoopState.js";
 export type { PendingQuestion } from "./useUserQuestion.js";
 
 interface OrchestratorHook {
@@ -274,9 +274,7 @@ export function useOrchestrator(): OrchestratorHook {
 
       // Build cycle entries — derive cycle status from grouped phases.
       const cycles: UiLoopCycle[] = [];
-      const sortedEntries = Array.from(cycleStageMap.entries()).sort(
-        (a, b) => a[0] - b[0],
-      );
+      const sortedEntries = Array.from(cycleStageMap.entries()).sort((a, b) => a[0] - b[0]);
       const maxCycleNumber =
         sortedEntries.length > 0 ? sortedEntries[sortedEntries.length - 1][0] : 0;
 
@@ -339,11 +337,7 @@ export function useOrchestrator(): OrchestratorHook {
 
   const loadPhaseTrace = useCallback(
     async (projectDir: string, specDir: string, taskPhase: TaskPhase) => {
-      const t = await historyService.getLatestAgentRun(
-        projectDir,
-        specDir,
-        taskPhase.number,
-      );
+      const t = await historyService.getLatestAgentRun(projectDir, specDir, taskPhase.number);
       if (!t) return false;
 
       const [stepRows, subagentRows] = await Promise.all([

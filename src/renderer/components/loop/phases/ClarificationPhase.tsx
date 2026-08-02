@@ -1,6 +1,6 @@
 import type { UiLoopStage } from "../../../hooks/useOrchestrator.js";
-import { VerticalStepper, type StepItem } from "../VerticalStepper.js";
 import { MetaBadge } from "../../shared/MetaBadge.js";
+import { type StepItem, VerticalStepper } from "../VerticalStepper.js";
 
 interface ClarificationPhaseProps {
   preCycleStages: UiLoopStage[];

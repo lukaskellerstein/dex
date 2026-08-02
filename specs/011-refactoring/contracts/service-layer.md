@@ -64,9 +64,11 @@ grep -rn 'throw new Error\|throw new [A-Z][a-zA-Z]*Error' src/main/ipc/ src/core
 
 1. **Single point of `window.dexAPI` reference per service.** Each service file references `window.dexAPI` exactly at its module-import surface (or via a thin internal helper); consumers never reach in.
 2. **No `window.dexAPI` reference outside `src/renderer/services/`.** Enforced by the wave gate:
+
    ```bash
    grep -rn 'window\.dexAPI' src/renderer | grep -v '^src/renderer/services/'
    ```
+
    Returns zero matches at the end of Wave C. Non-zero is a refactor failure.
 3. **All 14 current consumers migrate in Wave C.** The list (12 components + `useProject` + `useTimeline`) is enumerated up-front from a grep in Pre-Wave. Half-migration is forbidden.
 4. **Typed errors are part of the exported surface.** Consumers `import { CheckpointError } from "@/services/checkpointService"` and use `switch (err.code)` for exhaustiveness checking.

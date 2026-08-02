@@ -1,6 +1,6 @@
-import React from 'react';
-import { Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { theme } from '../lib/theme';
+import type React from "react";
+import { Easing, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { theme } from "../lib/theme";
 
 /**
  * The label that names what the viewer is looking at.
@@ -22,13 +22,13 @@ export const LowerThird: React.FC<{
 
   const dur = Math.round(fps * 0.42);
   const enter = interpolate(frame, [inFrame, inFrame + dur], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
     easing: Easing.bezier(0.22, 0.61, 0.36, 1),
   });
   const exit = interpolate(frame, [outFrame - dur, outFrame], [1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
     easing: Easing.bezier(0.4, 0, 1, 1),
   });
   const opacity = Math.min(enter, exit);
@@ -37,24 +37,24 @@ export const LowerThird: React.FC<{
   return (
     <div
       style={{
-        position: 'absolute',
+        position: "absolute",
         bottom: theme.lowerThird.bottom,
         right: theme.safeArea.x,
-        display: 'flex',
-        alignItems: 'center',
+        display: "flex",
+        alignItems: "center",
         gap: 12,
-        padding: '9px 16px 9px 13px',
+        padding: "9px 16px 9px 13px",
         borderRadius: theme.radius.sm,
         background: theme.lowerThird.background,
         border: theme.lowerThird.border,
-        backdropFilter: 'blur(12px)',
+        backdropFilter: "blur(12px)",
         fontFamily: theme.font.mono,
         color: theme.lowerThird.color,
         fontSize: theme.lowerThird.fontSize,
         fontWeight: 500,
         // Mono at small sizes reads tight; a little tracking keeps URLs and
         // bracketed tags like [checkpoint:plan:1] scannable at a glance.
-        letterSpacing: '0.01em',
+        letterSpacing: "0.01em",
         opacity,
         // Slides in from the right rather than up: the caption below animates
         // vertically, and two overlays rising together look like one block.

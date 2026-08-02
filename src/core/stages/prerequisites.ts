@@ -4,13 +4,13 @@
  * Deps: OrchestrationContext, runs.startAgentRun/completeAgentRun, waitForUserInput (clarification IPC), node:child_process (execSync for CLI probes).
  */
 
+import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import type { OrchestrationContext } from "../context.js";
-import type { PrerequisiteCheck, PrerequisiteCheckName } from "../types.js";
 import * as runs from "../runs.js";
+import type { PrerequisiteCheck, PrerequisiteCheckName } from "../types.js";
 import { waitForUserInput } from "../userInput.js";
 
 // ── Local helpers (unique to prereqs; private) ──────────────
@@ -64,10 +64,7 @@ type CheckFinalStatus = "pass" | "fail" | "fixed";
  * Runs all 5 prerequisite checks in order. Mutates `ctx.state` only via
  * `runs.*` (audit trail) — no direct state mutations. Throws on abort.
  */
-export async function runPrerequisites(
-  ctx: OrchestrationContext,
-  runId: string,
-): Promise<void> {
+export async function runPrerequisites(ctx: OrchestrationContext, runId: string): Promise<void> {
   const { projectDir, emit, rlog } = ctx;
 
   rlog.run("INFO", "runPrerequisites: starting prerequisites checks");
@@ -96,7 +93,8 @@ export async function runPrerequisites(
   });
 
   const startTime = Date.now();
-  const emitCheck = (check: PrerequisiteCheck) => emit({ type: "prerequisites_check", runId, check });
+  const emitCheck = (check: PrerequisiteCheck) =>
+    emit({ type: "prerequisites_check", runId, check });
   const results = new Map<PrerequisiteCheckName, CheckFinalStatus>();
 
   // Check ordering matters: specify_cli → speckit_init (auto-init needs the CLI),
@@ -120,12 +118,19 @@ export async function runPrerequisites(
   if (failed.length > 0) {
     const failedNames = failed.map(([name]) => name).join(", ");
     rlog.run("WARN", `runPrerequisites: ${failed.length} check(s) failed: ${failedNames}`);
-    await waitForUserInput(projectDir, emit, runId, [{
-      question: `${failed.length} prerequisite check(s) failed: ${failedNames}. You can continue, but the loop may not work correctly.`,
-      header: "Prerequisites incomplete",
-      options: [{ label: "Continue anyway", description: "Proceed to clarification despite failed checks" }],
-      multiSelect: false,
-    }]);
+    await waitForUserInput(projectDir, emit, runId, [
+      {
+        question: `${failed.length} prerequisite check(s) failed: ${failedNames}. You can continue, but the loop may not work correctly.`,
+        header: "Prerequisites incomplete",
+        options: [
+          {
+            label: "Continue anyway",
+            description: "Proceed to clarification despite failed checks",
+          },
+        ],
+        multiSelect: false,
+      },
+    ]);
   }
 
   const allPassed = failed.length === 0;
@@ -172,15 +177,21 @@ async function checkClaudeCli(
 
   while (true) {
     if (ctx.abort.signal.aborted) return false;
-    const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [{
-      question: "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
-      header: "Missing: Claude CLI",
-      options: [
-        { label: "I've installed it — check again", description: "Re-run the check after you've installed Claude Code" },
-        { label: "Skip this check", description: "Proceed without verifying (not recommended)" },
-      ],
-      multiSelect: false,
-    }]);
+    const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
+      {
+        question:
+          "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
+        header: "Missing: Claude CLI",
+        options: [
+          {
+            label: "I've installed it — check again",
+            description: "Re-run the check after you've installed Claude Code",
+          },
+          { label: "Skip this check", description: "Proceed without verifying (not recommended)" },
+        ],
+        multiSelect: false,
+      },
+    ]);
     const answer = Object.values(answers)[0];
     if (answer === "Skip this check") {
       emitCheck({ name: "claude_cli", status: "fixed", message: "Skipped by user" });
@@ -193,7 +204,11 @@ async function checkClaudeCli(
       results.set("claude_cli", "pass");
       return true;
     }
-    emitCheck({ name: "claude_cli", status: "fail", message: "Still not found — please check your PATH" });
+    emitCheck({
+      name: "claude_cli",
+      status: "fail",
+      message: "Still not found — please check your PATH",
+    });
   }
 }
 
@@ -216,15 +231,24 @@ async function checkSpecifyCli(
 
   while (true) {
     if (ctx.abort.signal.aborted) return false;
-    const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [{
-      question: "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
-      header: "Missing: Spec-Kit CLI",
-      options: [
-        { label: "I've installed it — check again", description: "Re-run the check after you've installed spec-kit" },
-        { label: "Skip this check", description: "Proceed without spec-kit (the loop will likely fail)" },
-      ],
-      multiSelect: false,
-    }]);
+    const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
+      {
+        question:
+          "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
+        header: "Missing: Spec-Kit CLI",
+        options: [
+          {
+            label: "I've installed it — check again",
+            description: "Re-run the check after you've installed spec-kit",
+          },
+          {
+            label: "Skip this check",
+            description: "Proceed without spec-kit (the loop will likely fail)",
+          },
+        ],
+        multiSelect: false,
+      },
+    ]);
     const answer = Object.values(answers)[0];
     if (answer === "Skip this check") {
       emitCheck({ name: "specify_cli", status: "fixed", message: "Skipped by user" });
@@ -237,7 +261,11 @@ async function checkSpecifyCli(
       results.set("specify_cli", "pass");
       return true;
     }
-    emitCheck({ name: "specify_cli", status: "fail", message: "Still not found — please check your PATH" });
+    emitCheck({
+      name: "specify_cli",
+      status: "fail",
+      message: "Still not found — please check your PATH",
+    });
   }
 }
 
@@ -263,7 +291,11 @@ async function checkGitInit(
       results.set("git_init", "pass");
     } else {
       ctx.rlog.run("WARN", "runPrerequisites: git init ran but .git/ not found");
-      emitCheck({ name: "git_init", status: "fail", message: "git init ran but .git/ directory was not created" });
+      emitCheck({
+        name: "git_init",
+        status: "fail",
+        message: "git init ran but .git/ directory was not created",
+      });
       results.set("git_init", "fail");
     }
   } catch (err) {
@@ -290,7 +322,11 @@ async function checkSpeckitInit(
   }
   if (!specifyOk) {
     ctx.rlog.run("WARN", "runPrerequisites: cannot init spec-kit — specify CLI not available");
-    emitCheck({ name: "speckit_init", status: "fail", message: "Cannot initialize — specify CLI not available" });
+    emitCheck({
+      name: "speckit_init",
+      status: "fail",
+      message: "Cannot initialize — specify CLI not available",
+    });
     results.set("speckit_init", "fail");
     return;
   }
@@ -309,7 +345,11 @@ async function checkSpeckitInit(
       results.set("speckit_init", "pass");
     } else {
       ctx.rlog.run("WARN", "runPrerequisites: specify init ran but integration.json not found");
-      emitCheck({ name: "speckit_init", status: "fail", message: "specify init ran but .specify/integration.json was not created" });
+      emitCheck({
+        name: "speckit_init",
+        status: "fail",
+        message: "specify init ran but .specify/integration.json was not created",
+      });
       results.set("speckit_init", "fail");
     }
   } catch (err) {
@@ -333,7 +373,9 @@ async function checkGithubRepo(
       cwd: ctx.projectDir,
       stdio: "pipe",
       timeout: 5_000,
-    }).toString().trim();
+    })
+      .toString()
+      .trim();
     hasRemote = remote.length > 0;
   } catch {
     // No remote configured.
@@ -346,7 +388,11 @@ async function checkGithubRepo(
   }
   if (!isCommandOnPath("gh")) {
     ctx.rlog.run("INFO", "runPrerequisites: gh CLI not found, skipping GitHub repo setup");
-    emitCheck({ name: "github_repo", status: "fixed", message: "GitHub CLI (gh) not installed — skipped" });
+    emitCheck({
+      name: "github_repo",
+      status: "fixed",
+      message: "GitHub CLI (gh) not installed — skipped",
+    });
     results.set("github_repo", "fixed");
     return;
   }
@@ -359,21 +405,30 @@ async function checkGithubRepo(
   }
   if (!ghAuthed) {
     ctx.rlog.run("INFO", "runPrerequisites: gh not authenticated, skipping GitHub repo setup");
-    emitCheck({ name: "github_repo", status: "fixed", message: "GitHub CLI not authenticated — run 'gh auth login' to enable" });
+    emitCheck({
+      name: "github_repo",
+      status: "fixed",
+      message: "GitHub CLI not authenticated — run 'gh auth login' to enable",
+    });
     results.set("github_repo", "fixed");
     return;
   }
 
   if (ctx.abort.signal.aborted) return;
-  const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [{
-    question: "Would you like to create a GitHub repository for this project?",
-    header: "GitHub Repository (optional)",
-    options: [
-      { label: "Yes — create a new repo", description: "Create a GitHub repository and push this project" },
-      { label: "No — skip", description: "Continue without a GitHub remote" },
-    ],
-    multiSelect: false,
-  }]);
+  const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
+    {
+      question: "Would you like to create a GitHub repository for this project?",
+      header: "GitHub Repository (optional)",
+      options: [
+        {
+          label: "Yes — create a new repo",
+          description: "Create a GitHub repository and push this project",
+        },
+        { label: "No — skip", description: "Continue without a GitHub remote" },
+      ],
+      multiSelect: false,
+    },
+  ]);
   const answer = Object.values(answers)[0];
   if (answer === "No — skip") {
     emitCheck({ name: "github_repo", status: "fixed", message: "Skipped by user" });
@@ -382,12 +437,14 @@ async function checkGithubRepo(
   }
 
   if (ctx.abort.signal.aborted) return;
-  const repoAnswers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [{
-    question: "Enter the name for your new GitHub repository:",
-    header: "Repository Name",
-    options: [{ label: path.basename(ctx.projectDir), description: "Use project folder name" }],
-    multiSelect: false,
-  }]);
+  const repoAnswers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
+    {
+      question: "Enter the name for your new GitHub repository:",
+      header: "Repository Name",
+      options: [{ label: path.basename(ctx.projectDir), description: "Use project folder name" }],
+      multiSelect: false,
+    },
+  ]);
   const repoName = Object.values(repoAnswers)[0];
 
   ctx.rlog.run("INFO", `runPrerequisites: creating GitHub repo '${repoName}'`);

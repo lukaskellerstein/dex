@@ -61,12 +61,16 @@ export function StageSummary({
     >
       <div>
         <strong>{step}</strong>
-        {cycleNumber > 0 && <span style={{ color: "var(--foreground-muted)" }}> · cycle {cycleNumber}</span>}
+        {cycleNumber > 0 && (
+          <span style={{ color: "var(--foreground-muted)" }}> · cycle {cycleNumber}</span>
+        )}
         {featureSlug && <span style={{ color: "var(--foreground-muted)" }}> · {featureSlug}</span>}
       </div>
       <div style={{ color: "var(--foreground-muted)" }}>{STAGE_HEADLINES[step] ?? step}</div>
       {(cost !== undefined || durationMs !== undefined) && (
-        <div style={{ color: "var(--foreground-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <div
+          style={{ color: "var(--foreground-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}
+        >
           {cost !== undefined && <span>cost ${cost.toFixed(2)} · </span>}
           {durationMs !== undefined && <span>duration {formatDuration(durationMs)}</span>}
         </div>

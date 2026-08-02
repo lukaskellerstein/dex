@@ -1,5 +1,5 @@
+import { Bot, Bug, Package, Server, Zap } from "lucide-react";
 import type { CSSProperties } from "react";
-import { Bug, Server, Zap, Bot, Package } from "lucide-react";
 import type { AgentStep } from "../../../../core/types.js";
 import { StepTimestamp } from "../primitives/StepTimestamp.js";
 
@@ -114,9 +114,7 @@ export function DebugStep({ step, timestamp, delta }: DebugStepProps) {
             {model}
           </span>
         )}
-        <span style={{ ...countBadgeStyle, marginLeft: "auto" }}>
-          {toolCount} tools
-        </span>
+        <span style={{ ...countBadgeStyle, marginLeft: "auto" }}>{toolCount} tools</span>
         <StepTimestamp timestamp={timestamp} delta={delta} />
       </div>
       <div

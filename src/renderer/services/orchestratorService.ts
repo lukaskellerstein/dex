@@ -3,8 +3,9 @@
  * Not: Does not own loop/trace/question/run-session state — those are renderer hooks (Wave B). Does not transform events.
  * Deps: window.dexAPI orchestrator + getProjectState; OrchestratorEvent / RunConfig / DexState types.
  */
-import type { OrchestratorEvent, RunConfig } from "../../core/types.js";
+
 import type { DexState } from "../../core/state.js";
+import type { OrchestratorEvent, RunConfig } from "../../core/types.js";
 
 export type OrchestratorErrorCode =
   | "ABORTED"

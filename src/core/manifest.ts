@@ -68,7 +68,7 @@ export function getActiveFeature(manifest: FeatureManifest): FeatureManifestEntr
 export function updateFeatureStatus(
   projectDir: string,
   featureId: number,
-  status: ManifestFeatureStatus
+  status: ManifestFeatureStatus,
 ): void {
   const manifest = loadManifest(projectDir);
   if (!manifest) throw new Error("Cannot update feature status: manifest not found");
@@ -78,11 +78,7 @@ export function updateFeatureStatus(
   saveManifest(projectDir, manifest);
 }
 
-export function updateFeatureSpecDir(
-  projectDir: string,
-  featureId: number,
-  specDir: string
-): void {
+export function updateFeatureSpecDir(projectDir: string, featureId: number, specDir: string): void {
   const manifest = loadManifest(projectDir);
   if (!manifest) throw new Error("Cannot update specDir: manifest not found");
   const entry = manifest.features.find((f) => f.id === featureId);
@@ -96,7 +92,7 @@ export function updateFeatureSpecDir(
 export function checkSourceDrift(
   projectDir: string,
   manifest: FeatureManifest,
-  goalPath: string
+  goalPath: string,
 ): boolean {
   // Treat v1 manifests (no sourcePath) as drifted — they predate path tracking
   // and the safest assumption is that they were extracted from a different file.
@@ -109,10 +105,7 @@ export function checkSourceDrift(
 // ── Learnings ──
 
 function normalizeInsight(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ");
+  return text.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
 interface LearningEntry {
@@ -124,13 +117,10 @@ interface LearningEntry {
 export function appendLearnings(
   projectDir: string,
   insights: LearningEntry[],
-  maxPerCategory = 20
+  maxPerCategory = 20,
 ): void {
   const filePath = path.join(projectDir, ".dex", "learnings.md");
-  migrateIfNeeded(
-    path.join(projectDir, ".claude", "rules", "learnings.md"),
-    filePath,
-  );
+  migrateIfNeeded(path.join(projectDir, ".claude", "rules", "learnings.md"), filePath);
 
   let existingContent = "";
   if (fs.existsSync(filePath)) {
@@ -172,9 +162,8 @@ export function appendLearnings(
   // Cap each category, keeping newest
   const finalEntries: LearningEntry[] = [];
   for (const [, entries] of byCategory) {
-    const capped = entries.length > maxPerCategory
-      ? entries.slice(entries.length - maxPerCategory)
-      : entries;
+    const capped =
+      entries.length > maxPerCategory ? entries.slice(entries.length - maxPerCategory) : entries;
     finalEntries.push(...capped);
   }
 

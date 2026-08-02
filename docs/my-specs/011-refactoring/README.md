@@ -245,7 +245,7 @@ Split by domain. Each hook owns one slice of state and one slice of event subscr
 
 1. **State→hook matrix** (below).
 2. **Event→hook matrix** (below).
-3. **`event-order.md`** — canonical emit sequence per stage (run_started → prerequisites_* → clarification_* → loop_cycle_started → task_phase_* → step_* → … → loop_terminated → run_completed). Without this, the golden-trace check's "tolerable reorder" exemption is undefined. ~30 lines; live-capture from one baseline run.
+3. **`event-order.md`** — canonical emit sequence per stage (run_started → prerequisites_*→ clarification_* → loop_cycle_started → task_phase_*→ step_* → … → loop_terminated → run_completed). Without this, the golden-trace check's "tolerable reorder" exemption is undefined. ~30 lines; live-capture from one baseline run.
 
 **State → owning hook (all 21 must be assigned):**
 

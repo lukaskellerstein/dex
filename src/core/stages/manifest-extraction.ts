@@ -6,16 +6,16 @@
 
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import type { RunConfig } from "../types.js";
 import type { RunLogger } from "../log.js";
-import { buildManifestExtractionPrompt, MANIFEST_SCHEMA } from "../prompts.js";
 import {
+  checkSourceDrift,
+  type FeatureManifest,
+  hashFile as hashManifestFile,
   loadManifest,
   saveManifest,
-  checkSourceDrift,
-  hashFile as hashManifestFile,
-  type FeatureManifest,
 } from "../manifest.js";
+import { buildManifestExtractionPrompt, MANIFEST_SCHEMA } from "../prompts.js";
+import type { RunConfig } from "../types.js";
 import { runStage } from "./run-stage.js";
 
 export async function ensureManifest(
@@ -44,10 +44,7 @@ export async function ensureManifest(
       // `gaps_complete` against features that aren't in this spec at all.
       // Re-extract from the new plan and overwrite — completion state for
       // the OLD spec is preserved in `.dex/runs/<runId>.json` audit records.
-      rlog.run(
-        "WARN",
-        `${clarifiedName} has changed since manifest was created — re-extracting`,
-      );
+      rlog.run("WARN", `${clarifiedName} has changed since manifest was created — re-extracting`);
       emit({ type: "manifest_drift_detected", runId });
       manifest = null;
     } else {
@@ -61,26 +58,44 @@ export async function ensureManifest(
     try {
       const prompt = buildManifestExtractionPrompt(fullPlanPath);
       const result = await runStage(
-        config, prompt, emit, rlog, runId, 0,
-        "manifest_extraction", undefined,
+        config,
+        prompt,
+        emit,
+        rlog,
+        runId,
+        0,
+        "manifest_extraction",
+        undefined,
         { type: "json_schema", schema: MANIFEST_SCHEMA as unknown as Record<string, unknown> },
       );
       cumulativeCost += result.cost;
       extracted = result.structuredOutput as ManifestExtraction | null;
       if (!extracted) {
         rlog.run("WARN", `Manifest extraction attempt ${attempt}: structured_output was null`);
-        if (attempt === 2) throw new Error(`Manifest extraction failed after 2 attempts — structured output was null. Check ${clarifiedName} format.`);
+        if (attempt === 2)
+          throw new Error(
+            `Manifest extraction failed after 2 attempts — structured output was null. Check ${clarifiedName} format.`,
+          );
         continue;
       }
       if (!extracted.features?.length) {
         rlog.run("WARN", `Manifest extraction attempt ${attempt}: empty features array`);
-        if (attempt === 2) throw new Error(`Manifest extraction failed after 2 attempts — extracted zero features. Check ${clarifiedName} format.`);
+        if (attempt === 2)
+          throw new Error(
+            `Manifest extraction failed after 2 attempts — extracted zero features. Check ${clarifiedName} format.`,
+          );
         continue;
       }
       break;
     } catch (err) {
-      rlog.run("ERROR", `Manifest extraction attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`);
-      if (attempt === 2) throw new Error(`Manifest extraction failed after 2 attempts — cannot proceed without a feature manifest. Check ${clarifiedName} format.`);
+      rlog.run(
+        "ERROR",
+        `Manifest extraction attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      if (attempt === 2)
+        throw new Error(
+          `Manifest extraction failed after 2 attempts — cannot proceed without a feature manifest. Check ${clarifiedName} format.`,
+        );
     }
   }
 

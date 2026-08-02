@@ -1,8 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  PROMOTE_MENU_ITEM,
-  PROMOTE_MENU_DISABLED_TOOLTIP,
-} from "./branchOps/copy";
+import { PROMOTE_MENU_DISABLED_TOOLTIP, PROMOTE_MENU_ITEM } from "./branchOps/copy";
 
 interface Props {
   /** Anchor coordinates in viewport pixels (typically the right-click event's clientX/Y). */

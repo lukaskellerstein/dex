@@ -14,27 +14,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { gitExec } from "./_helpers.js";
 
-const RUNTIME_CACHE_ENTRIES = [
-  ".dex/state.lock",
-  ".dex/ui.json",
-] as const;
+const RUNTIME_CACHE_ENTRIES = [".dex/state.lock", ".dex/ui.json"] as const;
 
 // Legacy entries that previous versions added to projects' `.gitignore`. They
 // are now committed (so `git checkout -B selected-<ts> <sha>` restores them
 // correctly on a Timeline jump). Strip them on every run-start to migrate
 // projects that pulled the change in.
-const LEGACY_IGNORE_ENTRIES = [
-  ".dex/state.json",
-  ".dex/feature-manifest.json",
-] as const;
+const LEGACY_IGNORE_ENTRIES = [".dex/state.json", ".dex/feature-manifest.json"] as const;
 
 // Files that flipped from gitignored to tracked. If they exist on disk and
 // aren't tracked yet, `git add` them so the next checkpoint commit absorbs
 // them. The 014 fork-resume reconciliation depends on these riding checkout.
-const TRACK_TARGETS = [
-  ".dex/state.json",
-  ".dex/feature-manifest.json",
-] as const;
+const TRACK_TARGETS = [".dex/state.json", ".dex/feature-manifest.json"] as const;
 
 /**
  * Append any missing Dex runtime-cache entries to `<projectDir>/.gitignore`,

@@ -7,68 +7,57 @@
 // ── Sub-file re-exports ─────────────────────────────────
 
 export {
-  CHECKPOINT_MESSAGE_PREFIX,
-  PATHS_BY_STEP,
-  checkpointTagFor,
-  selectedBranchName,
-  labelFor,
-  isParallelizable,
-  parseCheckpointTag,
-} from "./tags.js";
-
-export { syncStateFromHead } from "./syncState.js";
-
-export {
-  jumpTo,
-  type JumpToResult,
-} from "./jumpTo.js";
-
-export {
-  deleteBranch,
-  mergeToMain,
-  computePromoteSummary,
-  readPendingPromote,
   clearPendingPromote,
+  computePromoteSummary,
   type DeleteBranchOpts,
   type DeleteBranchResult,
+  deleteBranch,
   type LostStep,
   type MergeToMainOpts,
-  type MergeToMainResult,
   type MergeToMainResolverDeps,
+  type MergeToMainResult,
+  mergeToMain,
   type NonContentConflictKind,
   type PendingPromote,
   type PromoteSummary,
+  readPendingPromote,
 } from "./branchOps.js";
-
 export {
-  listTimeline,
+  commitCheckpoint,
+  readPauseAfterStage,
+} from "./commit.js";
+export { ensureDexGitignore } from "./gitignore.js";
+export {
+  type JumpToResult,
+  jumpTo,
+} from "./jumpTo.js";
+export { syncStateFromHead } from "./syncState.js";
+export {
+  CHECKPOINT_MESSAGE_PREFIX,
+  checkpointTagFor,
+  isParallelizable,
+  labelFor,
+  PATHS_BY_STEP,
+  parseCheckpointTag,
+  selectedBranchName,
+} from "./tags.js";
+export {
   type CheckpointInfo,
+  listTimeline,
   type PendingCandidate,
   type StartingPoint,
   type TimelineCommit,
   type TimelineSnapshot,
 } from "./timeline.js";
 
-export {
-  commitCheckpoint,
-  readPauseAfterStage,
-} from "./commit.js";
-
-export { ensureDexGitignore } from "./gitignore.js";
-
 // ── Namespace object ────────────────────────────────────
 
-import {
-  checkpointTagFor,
-  labelFor,
-  isParallelizable,
-  parseCheckpointTag,
-} from "./tags.js";
-import { syncStateFromHead } from "./syncState.js";
-import { jumpTo } from "./jumpTo.js";
-import { deleteBranch, mergeToMain, computePromoteSummary } from "./branchOps.js";
-import { listTimeline } from "./timeline.js";
+import { computePromoteSummary, deleteBranch, mergeToMain } from "./branchOps.js";
 import { commitCheckpoint, readPauseAfterStage } from "./commit.js";
+import { jumpTo } from "./jumpTo.js";
+import { syncStateFromHead } from "./syncState.js";
+import { checkpointTagFor, isParallelizable, labelFor, parseCheckpointTag } from "./tags.js";
+import { listTimeline } from "./timeline.js";
 
 /**
  * Single-import surface for the checkpoint API. New code:

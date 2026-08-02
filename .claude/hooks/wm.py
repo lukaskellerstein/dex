@@ -26,7 +26,7 @@ import signal
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 STATE_DIR = Path(tempfile.gettempdir()) / "playwright-hooks"
 SCRATCH_STATE = STATE_DIR / "scratch-space.json"
@@ -78,7 +78,7 @@ YABAI_ADOPTABLE_LABELS = frozenset({"playwright", "claude", "scratch"})
 # --------------------------------------------------------------------------
 
 
-def run(cmd: list[str], timeout: int = 5) -> Optional[str]:
+def run(cmd: list[str], timeout: int = 5) -> str | None:
     """Run a command; return stdout on success, None on any failure."""
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -116,7 +116,7 @@ def _ancestors_linux(pid: int) -> list[str]:
     return names
 
 
-_PROCESS_TABLE: Optional[dict[int, tuple[int, str]]] = None
+_PROCESS_TABLE: dict[int, tuple[int, str]] | None = None
 
 
 def _process_table() -> dict[int, tuple[int, str]]:
@@ -165,7 +165,7 @@ def _command_line(pid: int) -> str:
     return raw.replace(b"\0", b" ").decode("utf-8", "replace").strip().lower()
 
 
-def is_playwright_browser(pid: Optional[int]) -> bool:
+def is_playwright_browser(pid: int | None) -> bool:
     """True when this browser was spawned by Playwright rather than by the user."""
     if not pid:
         return False
@@ -173,14 +173,8 @@ def is_playwright_browser(pid: Optional[int]) -> bool:
     if any(marker in _command_line(pid) for marker in PLAYWRIGHT_COMMAND_MARKERS):
         return True
 
-    ancestors = (
-        _ancestors_darwin(pid)
-        if platform.system() == "Darwin"
-        else _ancestors_linux(pid)
-    )
-    return any(
-        indicator in name for name in ancestors for indicator in PLAYWRIGHT_ANCESTORS
-    )
+    ancestors = _ancestors_darwin(pid) if platform.system() == "Darwin" else _ancestors_linux(pid)
+    return any(indicator in name for name in ancestors for indicator in PLAYWRIGHT_ANCESTORS)
 
 
 # --------------------------------------------------------------------------
@@ -234,7 +228,7 @@ class I3(WindowManager):
 
         windows: list[dict] = []
 
-        def walk(node: dict, workspace: Optional[int]) -> None:
+        def walk(node: dict, workspace: int | None) -> None:
             if node.get("type") == "workspace":
                 workspace = node.get("num")
             app = (node.get("window_properties", {}).get("class") or "").lower()
@@ -254,7 +248,7 @@ class I3(WindowManager):
         return windows
 
     @staticmethod
-    def _pid(window_id: Optional[int]) -> Optional[int]:
+    def _pid(window_id: int | None) -> int | None:
         """X11 windows do not carry their PID in the i3 tree; ask xprop."""
         if not window_id:
             return None
@@ -270,7 +264,7 @@ class I3(WindowManager):
     def _workspaces(self) -> list[dict]:
         return run_json(["i3-msg", "-t", "get_workspaces"]) or []
 
-    def focus_token(self) -> Optional[str]:
+    def focus_token(self) -> str | None:
         for workspace in self._workspaces():
             if workspace.get("focused"):
                 return workspace.get("name")
@@ -313,7 +307,7 @@ class Yabai(WindowManager):
     def __init__(self) -> None:
         # Space indices shift whenever spaces are added or removed, so the
         # scratch space is remembered by uuid and resolved to an index once.
-        self._index: Optional[int] = None
+        self._index: int | None = None
         self._resolved = False
 
     def browser_windows(self) -> list[dict]:
@@ -334,7 +328,7 @@ class Yabai(WindowManager):
     def _spaces() -> list[dict]:
         return run_json(["yabai", "-m", "query", "--spaces"]) or []
 
-    def focus_token(self) -> Optional[int]:
+    def focus_token(self) -> int | None:
         window = run_json(["yabai", "-m", "query", "--windows", "--window"])
         return window.get("id") if isinstance(window, dict) else None
 
@@ -342,7 +336,7 @@ class Yabai(WindowManager):
         if token:
             run(["yabai", "-m", "window", str(token), "--focus"])
 
-    def _remembered_index(self) -> Optional[int]:
+    def _remembered_index(self) -> int | None:
         """Resolve the previously recorded scratch space to a current index."""
         if self._resolved:
             return self._index
@@ -356,7 +350,7 @@ class Yabai(WindowManager):
                     break
         return self._index
 
-    def scratch(self) -> Optional[int]:
+    def scratch(self) -> int | None:
         """Index of the scratch space -- remembered, adopted, or freshly created."""
         remembered = self._remembered_index()
         if remembered is not None:
@@ -370,7 +364,7 @@ class Yabai(WindowManager):
 
         return self._create_scratch({s.get("uuid") for s in spaces})
 
-    def _create_scratch(self, known_uuids: set) -> Optional[int]:
+    def _create_scratch(self, known_uuids: set) -> int | None:
         """Create + label a space. Returns None when the SA is not loaded.
 
         `space --create` exits 0 even without the scripting addition, so the
@@ -382,9 +376,7 @@ class Yabai(WindowManager):
             return None
 
         space = created[0]
-        run(
-            ["yabai", "-m", "space", str(space.get("index")), "--label", YABAI_SCRATCH_LABEL]
-        )
+        run(["yabai", "-m", "space", str(space.get("index")), "--label", YABAI_SCRATCH_LABEL])
         self._adopt(space, created=True)
         return self._index
 
@@ -401,9 +393,7 @@ class Yabai(WindowManager):
         for window in windows:
             run(["yabai", "-m", "window", str(window["id"]), "--space", str(scratch)])
 
-        landed = {
-            w["id"] for w in self.browser_windows() if w["workspace"] == scratch
-        }
+        landed = {w["id"] for w in self.browser_windows() if w["workspace"] == scratch}
         return [w for w in windows if w["id"] not in landed]
 
     def stash(self, window: dict) -> None:
@@ -439,14 +429,14 @@ class Yabai(WindowManager):
                 return
 
     @staticmethod
-    def _read_state() -> Optional[dict]:
+    def _read_state() -> dict | None:
         try:
             return json.loads(SCRATCH_STATE.read_text())
         except Exception:
             return None
 
     @staticmethod
-    def _write_state(uuid: Optional[str], created: bool) -> None:
+    def _write_state(uuid: str | None, created: bool) -> None:
         try:
             STATE_DIR.mkdir(parents=True, exist_ok=True)
             SCRATCH_STATE.write_text(json.dumps({"uuid": uuid, "created": created}))

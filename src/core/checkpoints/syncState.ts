@@ -4,10 +4,10 @@
  * Deps: _helpers (gitExec, log, RunLoggerLike), ../state.js (loadState, updateState, DexState), ../types.js (StepType).
  */
 
-import { gitExec, log, type RunLoggerLike } from "./_helpers.js";
-import { loadState, updateState } from "../state.js";
 import type { DexState } from "../state.js";
+import { loadState, updateState } from "../state.js";
 import type { StepType } from "../types.js";
+import { gitExec, log, type RunLoggerLike } from "./_helpers.js";
 
 /**
  * Force the loaded state into the `paused` status so the orchestrator's
@@ -30,7 +30,9 @@ import type { StepType } from "../types.js";
 export async function syncStateFromHead(
   projectDir: string,
   rlog?: RunLoggerLike,
-): Promise<{ ok: true; updated: boolean; step?: StepType; cycle?: number } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; updated: boolean; step?: StepType; cycle?: number } | { ok: false; error: string }
+> {
   let subject: string;
   try {
     subject = gitExec(`git log -1 --format=%s HEAD`, projectDir);
@@ -44,7 +46,9 @@ export async function syncStateFromHead(
   // Subject pattern: `dex: <step> completed [cycle:N] [feature:<slug-or-->]`
   const m = subject.match(/^dex: (\w+) completed \[cycle:(\d+)\](?: \[feature:([^\]]+)\])?/);
   if (!m) {
-    log(rlog, "INFO", `syncStateFromHead: HEAD is not a step-commit, leaving state.json alone`, { subject });
+    log(rlog, "INFO", `syncStateFromHead: HEAD is not a step-commit, leaving state.json alone`, {
+      subject,
+    });
     return { ok: true, updated: false };
   }
   const step = m[1] as StepType;
@@ -70,11 +74,16 @@ export async function syncStateFromHead(
     await updateState(projectDir, patch);
     const postState = await loadState(projectDir);
     const postSnapshot = postState ? snapshotResumeFields(postState) : null;
-    log(rlog, "INFO", `syncStateFromHead: synced step=${step} cycle=${cycleNumber} feature=${featureSlug}`, {
-      patchedFields: Object.keys(patch),
-      pre: preSnapshot,
-      post: postSnapshot,
-    });
+    log(
+      rlog,
+      "INFO",
+      `syncStateFromHead: synced step=${step} cycle=${cycleNumber} feature=${featureSlug}`,
+      {
+        patchedFields: Object.keys(patch),
+        pre: preSnapshot,
+        post: postSnapshot,
+      },
+    );
     return { ok: true, updated: true, step, cycle: cycleNumber };
   } catch (err) {
     log(rlog, "ERROR", `syncStateFromHead: updateState failed`, {

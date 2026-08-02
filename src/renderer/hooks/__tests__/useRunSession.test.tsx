@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrchestratorEvent } from "../../../core/types.js";
 
 type EventHandler = (event: OrchestratorEvent) => void;
@@ -95,8 +95,12 @@ describe("useRunSession", () => {
     emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
     emit({
       type: "step_completed",
-      runId: "r-1", cycleNumber: 1, step: "specify", agentRunId: "ar-1",
-      costUsd: 0.1, durationMs: 1000,
+      runId: "r-1",
+      cycleNumber: 1,
+      step: "specify",
+      agentRunId: "ar-1",
+      costUsd: 0.1,
+      durationMs: 1000,
     });
     expect(result.current.totalDuration).toBe(1000);
     emit({

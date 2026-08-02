@@ -4,11 +4,11 @@
  * Deps: window.dexAPI.checkpoints, error-codes.md vocabulary, core/checkpoints types.
  */
 import type {
-  TimelineSnapshot,
-  JumpToResult,
   DeleteBranchResult,
+  JumpToResult,
   MergeToMainResult,
   PromoteSummary,
+  TimelineSnapshot,
 } from "../../core/checkpoints.js";
 
 export type CheckpointErrorCode =
@@ -77,15 +77,11 @@ export const checkpointService = {
     branchName: string,
     opts?: { confirmedLoss?: boolean },
   ): Promise<DeleteBranchResult | { ok: false; error: "locked_by_other_instance" }> {
-    return call(() =>
-      window.dexAPI.checkpoints.deleteBranch(projectDir, branchName, opts),
-    );
+    return call(() => window.dexAPI.checkpoints.deleteBranch(projectDir, branchName, opts));
   },
 
   promoteSummary(projectDir: string, sourceBranch: string): Promise<PromoteSummary> {
-    return call(() =>
-      window.dexAPI.checkpoints.promoteSummary(projectDir, sourceBranch),
-    );
+    return call(() => window.dexAPI.checkpoints.promoteSummary(projectDir, sourceBranch));
   },
 
   mergeToMain(
@@ -93,9 +89,7 @@ export const checkpointService = {
     sourceBranch: string,
     opts?: { force?: "save" | "discard" },
   ): Promise<MergeToMainResult | { ok: false; error: "locked_by_other_instance" }> {
-    return call(() =>
-      window.dexAPI.checkpoints.mergeToMain(projectDir, sourceBranch, opts),
-    );
+    return call(() => window.dexAPI.checkpoints.mergeToMain(projectDir, sourceBranch, opts));
   },
 
   acceptResolverResult(
@@ -111,9 +105,7 @@ export const checkpointService = {
   abortResolverMerge(
     projectDir: string,
   ): Promise<
-    | { ok: true }
-    | { ok: false; error: string }
-    | { ok: false; error: "locked_by_other_instance" }
+    { ok: true } | { ok: false; error: string } | { ok: false; error: "locked_by_other_instance" }
   > {
     return call(() => window.dexAPI.checkpoints.abortResolverMerge(projectDir));
   },
@@ -125,7 +117,9 @@ export const checkpointService = {
     return call(() => window.dexAPI.checkpoints.openInEditor(projectDir, files));
   },
 
-  syncStateFromHead(projectDir: string): Promise<
+  syncStateFromHead(
+    projectDir: string,
+  ): Promise<
     | { ok: true; updated: boolean; step?: string; cycle?: number }
     | { ok: false; error: string }
     | { ok: false; error: "locked_by_other_instance" }
@@ -138,14 +132,10 @@ export const checkpointService = {
     targetSha: string,
     options?: { force?: "save" | "discard" },
   ): Promise<JumpToResult | { ok: false; error: "locked_by_other_instance" }> {
-    return call(() =>
-      window.dexAPI.checkpoints.jumpTo(projectDir, targetSha, options),
-    );
+    return call(() => window.dexAPI.checkpoints.jumpTo(projectDir, targetSha, options));
   },
 
-  initRepo(
-    projectDir: string,
-  ): Promise<{ ok: true } | { ok: false; error: string }> {
+  initRepo(projectDir: string): Promise<{ ok: true } | { ok: false; error: string }> {
     return call(() => window.dexAPI.checkpoints.initRepo(projectDir));
   },
 
