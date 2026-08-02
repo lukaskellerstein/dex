@@ -23,16 +23,10 @@ Dex is an Electron desktop app that automates feature implementation using the [
 
 Each pillar alone has critical gaps. Dex exists because the combination eliminates what each one lacks:
 
-| Used alone | What breaks |
-|---|---|
-| **Ralph Wiggum loop** | No structured specs — the agent picks tasks from a free-form TODO, builds the wrong thing, and burns budget. No UI, no abort, no cost tracking, no failure recovery beyond "kill the terminal." |
-| **Spec-kit** | No autonomous loop — specs are great but someone has to manually run each phase, check results, and decide what's next. It's a sequential human-driven workflow. |
-| **Claude Code (interactive)** | Single session degrades after ~100K tokens. No persistent memory across sessions. No structured planning. No verification beyond "it compiles." One task at a time, human-driven. |
+| Used alone            | What breaks                                                                                                                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ralph Wiggum loop** | No structured specs — the agent picks tasks from a free-form TODO, builds the wrong thing, and burns budget. No UI, no abort, no cost tracking, no failure recovery beyond "kill the terminal." |     | **Spec-kit** | No autonomous loop — specs are great but someone has to manually run each phase, check results, and decide what's next. It's a sequential human-driven workflow. |     | **Claude Code (interactive)** | Single session degrades after ~100K tokens. No persistent memory across sessions. No structured planning. No verification beyond "it compiles." One task at a time, human-driven. | **Dex fuses all three:** **Ralph's loop** provides context isolation and self-improvement — fresh `query()` per stage, learnings persist via filesystem **Spec-kit** provides structured planning — specs with acceptance criteria before any code is written, constitution-governed consistency |
 
-**Dex fuses all three:**
-
-- **Ralph's loop** provides context isolation and self-improvement — fresh `query()` per stage, learnings persist via filesystem
-- **Spec-kit** provides structured planning — specs with acceptance criteria before any code is written, constitution-governed consistency
 - **Claude Agent SDK** provides programmatic control — typed hooks, abort, MCP browser verification, session management
 
 The result: describe a project, clarify it into a complete plan, then walk away. Dex autonomously specs, plans, implements, verifies (including browser E2E), and recovers from failures — feature by feature, stage by stage.
@@ -64,13 +58,13 @@ completion
 
 `gap_analysis` is the loop's brain. It emits exactly one decision per cycle:
 
-| Decision | Meaning |
-|---|---|
-| `NEXT_FEATURE` | Start the next feature from the manifest |
-| `RESUME_FEATURE` | Continue an in-flight feature from its spec dir |
+| Decision         | Meaning                                                  |
+| ---------------- | -------------------------------------------------------- |
+| `NEXT_FEATURE`   | Start the next feature from the manifest                 |
+| `RESUME_FEATURE` | Continue an in-flight feature from its spec dir          |
 | `RESUME_AT_STEP` | Re-enter a partially-completed cycle at a specific stage |
-| `REPLAN_FEATURE` | The plan is wrong — regenerate plan + tasks |
-| `GAPS_COMPLETE` | Nothing left in the manifest; terminate |
+| `REPLAN_FEATURE` | The plan is wrong — regenerate plan + tasks              |
+| `GAPS_COMPLETE`  | Nothing left in the manifest; terminate                  |
 
 Feature selection itself does **not** call an LLM. `manifest_extraction` runs once and writes `.dex/feature-manifest.json`; every later cycle picks the first pending entry deterministically.
 
@@ -93,10 +87,10 @@ Three gestures, no git knowledge required:
 
 The branch namespace is deliberately small — two families and nothing else:
 
-| Ref | Purpose |
-|---|---|
-| `dex/<date>-<id>` | One per autonomous loop run |
-| `selected-<ts>` | Transient navigation fork from a mid-branch jump (auto-pruned when left empty) |
+| Ref               | Purpose                                                                        |
+| ----------------- | ------------------------------------------------------------------------------ |
+| `dex/<date>-<id>` | One per autonomous loop run                                                    |
+| `selected-<ts>`   | Transient navigation fork from a mid-branch jump (auto-pruned when left empty) |
 
 Named `checkpoint/<name>` tags still exist as a git-level convention, but the running app no longer creates them. They are minted out-of-band by `scripts/promote-checkpoint.sh` for CI fixtures and shared baselines, and travel via `git push --tags` like any other tag.
 
@@ -234,17 +228,17 @@ Stop is a pause, not a kill. Resume re-enters at the next uncompleted stage of t
 
 `RunConfig` (per run):
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `mode` | `loop` (autonomous), `build` (implement existing specs), `plan` (plan only) | — |
-| `model` | Claude model to use | SDK default |
-| `maxTurns` | Max agent turns per stage | `200` |
-| `maxIterations` | Max iterations within a stage | — |
-| `taskPhases` | `"all"` or specific phase numbers `[1, 3]` | `"all"` |
-| `maxLoopCycles` | Cycle ceiling for loop mode | — |
-| `maxBudgetUsd` | Spend ceiling — loop stops when exhausted | — |
-| `stepMode` | Pause after every stage, resume from the dashboard | `false` |
-| `agent` | Backend name — `claude` or `mock` | `claude` |
+| Setting         | Description                                                                 | Default     |
+| --------------- | --------------------------------------------------------------------------- | ----------- |
+| `mode`          | `loop` (autonomous), `build` (implement existing specs), `plan` (plan only) | —           |
+| `model`         | Claude model to use                                                         | SDK default |
+| `maxTurns`      | Max agent turns per stage                                                   | `200`       |
+| `maxIterations` | Max iterations within a stage                                               | —           |
+| `taskPhases`    | `"all"` or specific phase numbers `[1, 3]`                                  | `"all"`     |
+| `maxLoopCycles` | Cycle ceiling for loop mode                                                 | —           |
+| `maxBudgetUsd`  | Spend ceiling — loop stops when exhausted                                   | —           |
+| `stepMode`      | Pause after every stage, resume from the dashboard                          | `false`     |
+| `agent`         | Backend name — `claude` or `mock`                                           | `claude`    |
 
 `.dex/dex-config.json` (per project, gitignored) selects the default agent backend and configures the conflict resolver.
 
@@ -292,15 +286,15 @@ No file in `src/` exceeds 600 LOC. That limit is enforced in CI — see [Testing
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop | Electron 41 (frameless BrowserWindow) |
-| UI | React 18, CSS Custom Properties, GSAP, Lucide React, d3-shape / d3-zoom / d3-selection |
-| Engine | Pure Node.js orchestrator, Claude Agent SDK `^0.1.45` |
-| Data | Filesystem only — per-project JSON + git refs. No database. |
-| Build | Vite 6, TypeScript 5.6 (strict mode) |
-| Test | `node --test` (core), Vitest + Testing Library + jsdom (renderer) |
-| Git | GitHub CLI (`gh`) for automated PRs |
+| Layer   | Technology                                                                             |
+| ------- | -------------------------------------------------------------------------------------- |
+| Desktop | Electron 41 (frameless BrowserWindow)                                                  |
+| UI      | React 18, CSS Custom Properties, GSAP, Lucide React, d3-shape / d3-zoom / d3-selection |
+| Engine  | Pure Node.js orchestrator, Claude Agent SDK `^0.1.45`                                  |
+| Data    | Filesystem only — per-project JSON + git refs. No database.                            |
+| Build   | Vite 6, TypeScript 5.6 (strict mode)                                                   |
+| Test    | `node --test` (core), Vitest + Testing Library + jsdom (renderer)                      |
+| Git     | GitHub CLI (`gh`) for automated PRs                                                    |
 
 ## Testing
 

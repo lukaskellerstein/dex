@@ -43,7 +43,10 @@ interface DebugContext {
 // Mirrors core/runs.ts `slugForTaskPhaseName` — duplicated here because core/runs
 // pulls in node:fs and can't be imported from the renderer.
 function phaseSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
 function projectName(projectDir: string): string {
@@ -102,13 +105,17 @@ export default function App() {
   const orchestrator = useOrchestrator();
   const [currentView, setCurrentView] = useState<View>("overview");
   const [topTab, setTopTab] = useState<TopTab>("timeline");
-  const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
+  const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(
+    null,
+  );
 
   // Derive selectedSubagent from live data so completedAt updates propagate
   const selectedSubagent = useMemo(
     () =>
       selectedSubagentId
-        ? (orchestrator.subagents.find((s) => s.subagentId === selectedSubagentId) ?? null)
+        ? (orchestrator.subagents.find(
+            (s) => s.subagentId === selectedSubagentId,
+          ) ?? null)
         : null,
     [selectedSubagentId, orchestrator.subagents],
   );
@@ -152,7 +159,10 @@ export default function App() {
     async (step: import("./hooks/useOrchestrator.js").UiLoopStage) => {
       if (!project.projectDir || !orchestrator.currentRunId) return;
       if (step.status === "running") {
-        await orchestrator.switchToLive(project.projectDir, orchestrator.currentRunId);
+        await orchestrator.switchToLive(
+          project.projectDir,
+          orchestrator.currentRunId,
+        );
       } else {
         await orchestrator.loadStageTrace(
           project.projectDir,
@@ -183,7 +193,11 @@ export default function App() {
       );
       setCurrentView("trace");
     },
-    [project.projectDir, orchestrator.currentRunId, orchestrator.loadStageTrace],
+    [
+      project.projectDir,
+      orchestrator.currentRunId,
+      orchestrator.loadStageTrace,
+    ],
   );
 
   // Auto-refresh phases when a phase completes or tasks change mid-phase
@@ -192,7 +206,11 @@ export default function App() {
       // During loop implement, updateSpecSummary (from onTasksUpdated) is the
       // authoritative source.  refreshProject() would overwrite with disk data
       // that may not reflect in-memory TodoWrite updates yet.
-      if (orchestrator.mode === "loop" && orchestrator.currentStage === "implement") return;
+      if (
+        orchestrator.mode === "loop" &&
+        orchestrator.currentStage === "implement"
+      )
+        return;
       project.refreshProject();
     });
     orchestrator.onTasksUpdated((phases) => {
@@ -209,7 +227,11 @@ export default function App() {
   useEffect(() => {
     const prev = prevStageRef.current;
     prevStageRef.current = orchestrator.currentStage;
-    if (orchestrator.currentStage === "implement" && prev !== "implement" && project.projectDir) {
+    if (
+      orchestrator.currentStage === "implement" &&
+      prev !== "implement" &&
+      project.projectDir
+    ) {
       project.refreshProject();
     }
   }, [orchestrator.currentStage]);
@@ -267,10 +289,13 @@ export default function App() {
     orchestratorService.startRun(config);
   };
 
-  const handleSelectSpec = useCallback((spec: string) => {
-    project.selectSpec(spec);
-    setCurrentView("tasks");
-  }, [project.selectSpec]);
+  const handleSelectSpec = useCallback(
+    (spec: string) => {
+      project.selectSpec(spec);
+      setCurrentView("tasks");
+    },
+    [project.selectSpec],
+  );
 
   const handleGoHome = useCallback(() => {
     if (orchestrator.isRunning) return; // don't allow while running
@@ -281,7 +306,8 @@ export default function App() {
   const handleDeselectSpec = () => {
     project.deselectSpec();
     const hasLoopHistory =
-      orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
+      orchestrator.loopCycles.length > 0 ||
+      orchestrator.preCycleStages.length > 0;
     if (hasLoopHistory || orchestrator.mode === "loop") {
       setCurrentView("loop-dashboard");
     } else {
@@ -294,7 +320,8 @@ export default function App() {
 
     // If we have loop history (paused loop), resume in loop mode
     const hasLoopHistory =
-      orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
+      orchestrator.loopCycles.length > 0 ||
+      orchestrator.preCycleStages.length > 0;
     if (hasLoopHistory || orchestrator.mode === "loop") {
       // 010 — sync state.json from HEAD's step-commit before resuming so the
       // orchestrator continues from wherever the user navigated to in the
@@ -310,7 +337,9 @@ export default function App() {
     }
 
     // Default: run all unfinished specs in build mode
-    const firstUnfinished = project.specSummaries.find((s) => s.doneTasks < s.totalTasks);
+    const firstUnfinished = project.specSummaries.find(
+      (s) => s.doneTasks < s.totalTasks,
+    );
     if (!firstUnfinished) return;
 
     const config: RunConfig = {
@@ -329,9 +358,15 @@ export default function App() {
   const handleViewPhaseTrace = useCallback(
     async (phase: TaskPhase) => {
       // If this is the actively running phase, switch back to live stream
-      if (orchestrator.isRunning && orchestrator.currentPhase?.number === phase.number) {
+      if (
+        orchestrator.isRunning &&
+        orchestrator.currentPhase?.number === phase.number
+      ) {
         if (project.projectDir && orchestrator.currentRunId) {
-          orchestrator.switchToLive(project.projectDir, orchestrator.currentRunId);
+          orchestrator.switchToLive(
+            project.projectDir,
+            orchestrator.currentRunId,
+          );
         }
         setCurrentView("trace");
         return;
@@ -362,7 +397,11 @@ export default function App() {
     currentAttemptBranch: string | null;
     lastCheckpointTag: string | null;
     candidateSha: string | null;
-  }>({ currentAttemptBranch: null, lastCheckpointTag: null, candidateSha: null });
+  }>({
+    currentAttemptBranch: null,
+    lastCheckpointTag: null,
+    candidateSha: null,
+  });
   useEffect(() => {
     const off = orchestratorService.subscribeEvents((raw) => {
       const e = raw as unknown as {
@@ -476,7 +515,9 @@ export default function App() {
     />
   );
 
-  const tabs = project.projectDir ? <TopTabBar active={topTab} onChange={setTopTab} /> : null;
+  const tabs = project.projectDir ? (
+    <TopTabBar active={topTab} onChange={setTopTab} />
+  ) : null;
 
   // 010 — when the user is on the Steps tab, force the Loop dashboard regardless
   // of whichever sub-view currentView points at. Spec / trace / subagent

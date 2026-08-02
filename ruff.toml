@@ -1,0 +1,55 @@
+# Presence is the opt-in. Without this file — or a [tool.ruff] table in a
+# pyproject.toml — ruff does nothing in this repo: no formatting on :w, no
+# diagnostics in the gutter. See projects/tooling.md.
+#
+# One file at the repo root serves every leaf. Ruff resolves config per *file*
+# by walking up from it, so a leaf carrying its own [tool.ruff] shadows this for
+# that leaf only — which is the intended escape hatch, not a conflict.
+
+line-length = 120
+
+[lint]
+# Deliberately lean (trimmed 2026-08-02): every family here is either auto-fixed
+# by the save chain or points at a probable real bug. Convention-only families
+# whose findings demand hand edits — N (pep8-naming: renames), SIM
+# (flake8-simplify: rewrites) — were dropped; their findings cost time and buy
+# no correctness. E4/E7/E9 rather than all of E for the same reason: the
+# layout/whitespace E rules, E501 included, are ruff_format's job, not the
+# gutter's.
+#
+# E4/E7/E9  pycodestyle      imports, statements, runtime errors — no layout rules
+# F         pyflakes         real bugs: F821 undefined name, F841 dead local,
+#                            F401 unused import (auto-removed on :w)
+# I         isort            import order, applied by ruff_organize_imports
+# B         flake8-bugbear   B006 mutable default arg, and friends
+# UP        pyupgrade        modernise for the interpreter; nearly all safe-fixed on :w
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+# Measured against everyday working code (2026-08-02): these four fire on
+# deliberate, working patterns and none has a safe fix — every finding is a
+# demand to hand-edit code that runs correctly. E731 lambda assigned to a name,
+# E741 one-letter variable names, B007 unused loop variable, B905 zip() without
+# strict=. What stays in E7/B is the bug-shaped rest: E722 bare except, E712
+# comparison to True/False, B006/B008 shared-across-calls defaults.
+ignore = ["E731", "E741", "B007", "B905"]
+
+[lint.flake8-bugbear]
+# B008 (function call in argument default) stays selected: a call evaluated
+# once at import and shared by every invocation is B006's twin. But FastAPI's
+# dependency injection IS that pattern, deliberately, on every endpoint —
+# `def read(db = Depends(get_db))` — and ruff does not exempt it by itself
+# (measured on 0.16.0). These entries are inert in a non-FastAPI repo.
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Path",
+  "fastapi.Body",
+  "fastapi.Header",
+  "fastapi.Cookie",
+  "fastapi.Form",
+  "fastapi.File",
+  "fastapi.Security",
+]
+
+[format]
+docstring-code-format = true

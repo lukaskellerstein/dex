@@ -6,13 +6,17 @@ Execute these steps in order. Do NOT skip steps.
 
 1. **Understand** — Read relevant code, ask clarifying questions, identify gaps and opportunities. For bugs: reproduce the issue first.
 2. **Plan** — Create a plan, get user approval, iterate if needed *(skip for trivial changes)*
-3. **Implement** — Write the code
-4. **Test** — Define DoD checklist, test, fix, repeat until it works *(see Step 4 below)*
-5. **Report** — Short summary: what was done, what was tested
+3. **Spec Documentation** — Update spec via `/sync-spec-kit` *(skip on `main` branch or trivial changes)*
+4. **Implement** — Write the code
+5. **Test** — Define DoD checklist, test, fix, repeat until it works *(see `.claude/rules/06-testing.md`)*
+6. **Feature Documentation** — Update docs via `/update-feature-docs` *(skip on `main` branch or trivial changes)*
+7. **Report** — Short summary: what was done, what was tested, whether docs were updated
 
 **NEVER report completion without first testing.** If you write code and stop without verifying it works, you have failed. Testing is YOUR responsibility — the user should never need to ask you to test.
 
-**Trivial changes** (typo, one-line fix, config tweak): skip step 2. State what you'll do and proceed.
+**Trivial changes** (typo, one-line fix, config tweak): skip steps 2, 3, and 6. State what you'll do and proceed.
+
+**On `main` branch**: skip steps 3 and 6 — spec and feature docs are tied to feature branches only.
 
 ## Standing authorizations — do NOT ask before doing these
 
@@ -24,3 +28,5 @@ These actions are pre-approved. Run them yourself when the situation calls for i
 - **Drive the running app via CDP** (`scripts/test-014-cdp.mjs` or `mcp__electron-chrome__*`) including state-mutating clicks against the dex-ecommerce session.
 
 Anything outside this list — pushing, force-resetting, deleting branches in the `dex` repo itself, mutating non-`dex-ecommerce` projects, etc. — still requires confirmation.
+
+Anything touching secrets, tokens or credential files always requires confirmation, and a secret never enters this repo in plaintext — see [`rules/12-security.md`](rules/12-security.md).

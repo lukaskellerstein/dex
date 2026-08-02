@@ -23,3 +23,20 @@ demo/timeline.json
 # Bytecode cache from the Python hooks in .claude/hooks/
 __pycache__/
 *.pyc
+
+# Secrets — never committed. Runtime config goes in .env (with a committed
+# .env.example carrying only the names); credential values belong in
+# ~/.secrets/secrets.enc.yaml, outside every repo. See .claude/rules/12-security.md.
+.env
+.env.local
+.env.*.local
+.envrc
+*.key
+*.pem
+*.agekey
+keys.txt
+
+# A plaintext credential file is the anti-pattern 12-security.md forbids —
+# gitignored is not protected. Listed so an accidental one cannot be staged.
+claude_tokens.md
+.agent-token

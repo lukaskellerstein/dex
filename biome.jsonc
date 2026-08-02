@@ -1,0 +1,63 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
+  // This file is .jsonc, not .json, deliberately: biome 2.5.5 SILENTLY IGNORES
+  // a biome.json that contains comments — no error, no warning, it just runs
+  // on full defaults (measured; only an explicit --config-path makes the parse
+  // error loud). Keep the .jsonc extension or strip every comment.
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      // Trimmed 2026-08-02, each entry measured against biome 2.5.5: what
+      // stays either auto-fixes on :w or catches probable real bugs
+      // (correctness/* — unused imports and variables are how wrong-variable
+      // bugs surface). What's off is convention with no safe fix — findings
+      // that sit in the gutter until a human rewrites working code.
+      "correctness": {
+        // Active only when package.json declares react (biome's react domain).
+        // Fires on every deliberate mount-only effect (deps: []), which is
+        // routine correct React, and its fix is unsafe — adding the deps
+        // changes when the effect re-runs — so it can never self-resolve on
+        // :w. Measured on 2.5.5. The other react-domain rules (conditional
+        // hooks etc.) stay on: they are silent on correct code.
+        "useExhaustiveDependencies": "off"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "off",
+        // `any` is a deliberate escape hatch, not a bug; no fix exists.
+        "noExplicitAny": "off",
+        // Fires on `list.forEach((x) => doThing(x))` — an expression-bodied
+        // arrow "returns" a value forEach ignores. Mundane code, no fix.
+        "useIterableCallbackReturn": "off"
+      },
+      "style": {
+        // `!` is routine TS; the suggested fix is unsafe (changes types).
+        "noNonNullAssertion": "off",
+        // String concatenation → template literal; unsafe fix, pure style.
+        "useTemplate": "off"
+      },
+      // Four unfixable findings on a 15-line component (useKeyWithClickEvents,
+      // noStaticElementInteractions, useAltText, useButtonType). Flip this
+      // back on per-repo for public-facing production UI.
+      "a11y": "off"
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

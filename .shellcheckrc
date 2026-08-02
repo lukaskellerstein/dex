@@ -1,0 +1,15 @@
+# Copied to a target repo as `.shellcheckrc`. Presence is the opt-in — without
+# it shellcheck reports nothing in this repo's shell scripts. See
+# projects/tooling.md.
+#
+# Deliberately near-empty: an unconfigured shellcheck reports mostly true
+# positives, so the useful default is "all default rules on". Add directives as
+# you earn them, one at a time, each with the reason.
+
+# external-sources — follow `source`d files instead of guessing at what they
+# define. Off by default in shellcheck; on here because a repo's scripts
+# sourcing its own lib/ files is the normal case, not the exception.
+external-sources=true
+
+# disable=SC2312 — example shape of an opt-out; keep this comment, add real
+# ones below it as findings are triaged rather than pre-silencing anything.

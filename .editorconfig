@@ -1,0 +1,32 @@
+# Copied to a target repo as `.editorconfig`.
+#
+# This file is shfmt's opt-in signal and its *only* configuration source — shfmt
+# has no config format of its own and reads nothing else. No .editorconfig, no
+# shell formatting. See projects/tooling.md.
+#
+# Unlike the other markers in that table, this one is not shfmt-specific: every
+# editor and a good many other tools read .editorconfig too. Adding it to a repo
+# that does not already have one changes more than shell formatting. That is the
+# trade, and it is the only way to turn shfmt on.
+
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+# shfmt reads indent_style and indent_size from here, plus its own
+# switch_case_indent / binary_next_line / space_redirects keys.
+[*.{sh,bash,zsh}]
+indent_style = space
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true
+
+[Makefile]
+indent_style = tab
+
+[*.md]
+trim_trailing_whitespace = false
