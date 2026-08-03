@@ -202,11 +202,17 @@ button {
 /* ── Accessibility ── */
 
 @media (prefers-reduced-motion: reduce) {
+  /* !important is load-bearing here: this kill switch has to outrank inline
+     style={{ transition }} props and GSAP-applied animations. Without it the
+     user's reduced-motion preference is silently ignored. */
   *,
   *::before,
   *::after {
+    /* biome-ignore lint: see above — !important is required */
     animation-duration: 0.01ms !important;
+    /* biome-ignore lint: see above — !important is required */
     animation-iteration-count: 1 !important;
+    /* biome-ignore lint: see above — !important is required */
     transition-duration: 0.01ms !important;
   }
 }

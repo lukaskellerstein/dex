@@ -39,7 +39,7 @@ export function createAgentRunner(
 ): AgentRunner {
   switch (agent) {
     case "claude":
-      return new ClaudeAgentRunner(config, projectDir);
+      return new ClaudeAgentRunner();
     case "mock":
       return new MockAgentRunner(config, projectDir);
     default:

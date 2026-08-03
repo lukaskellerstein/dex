@@ -284,7 +284,7 @@ git branch --list 'dex/*'            # → "dex/2026-05-04-rename"
 
 **UI side**: `alerts` contains exactly:
 
-```
+```text
 "This version has a kind of conflict AI can't resolve yet. The merge has been undone. Edit the files manually and try again."
 ```
 

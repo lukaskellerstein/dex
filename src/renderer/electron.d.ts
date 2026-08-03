@@ -14,7 +14,7 @@ import type {
   SubagentRecord,
 } from "../core/runs.js";
 import type { DexState } from "../core/state.js";
-import type { OrchestratorEvent, RunConfig, StepType, TaskPhase } from "../core/types.js";
+import type { OrchestratorEvent, RunConfig, TaskPhase } from "../core/types.js";
 
 interface CheckpointsApi {
   listTimeline(projectDir: string): Promise<TimelineSnapshot>;

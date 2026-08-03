@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { AgentStep, OrchestratorEvent, RunConfig } from "../../types.ts";
+import type { OrchestratorEvent, RunConfig } from "../../types.ts";
 import type { OneShotContext } from "../AgentRunner.ts";
 import { MockAgentRunner } from "../MockAgentRunner.ts";
 import { mockConfigPath } from "../MockConfig.ts";
@@ -114,7 +114,9 @@ test("runOneShot: matches scripted regex response", async () => {
   const dir = mkProject({
     oneShotResponses: [
       {
-        matchPrompt: "merge conflict.*<<<<<<<",
+        // [\s\S] not . — the prompt spans lines and the mock compiles the
+        // pattern with no flags, so `.` would stop at the newline.
+        matchPrompt: "merge conflict[\\s\\S]*<<<<<<<",
         isRegex: true,
         finalText: "resolved",
       },

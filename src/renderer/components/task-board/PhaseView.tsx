@@ -10,7 +10,6 @@ import {
 import { useState } from "react";
 import type { AgentRunRecord } from "../../../core/runs.js";
 import type { TaskPhase } from "../../../core/types.js";
-import type { AgentStats } from "../../utils/computeStats.js";
 import { StatsBar } from "../shared/StatsBar.js";
 import { TaskRow } from "./TaskRow.js";
 

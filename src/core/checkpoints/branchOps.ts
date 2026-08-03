@@ -210,6 +210,19 @@ export function deleteBranch(
     return { ok: false, error: "branch_in_active_run", branch: branchName };
   }
 
+  // Runs BEFORE the lost-work check: both can hold at once, but only this one
+  // is unrecoverable — `would_lose_work` invites a `confirmedLoss` retry that
+  // would then fail here anyway, a two-step dead end.
+  let fallbackBranch: string | null = null;
+  try {
+    if (gitExec(`git rev-parse --abbrev-ref HEAD`, projectDir) === branchName) {
+      fallbackBranch = findPrimaryFallback(projectDir);
+      if (!fallbackBranch) return { ok: false, error: "no_primary_to_switch_to" };
+    }
+  } catch (err) {
+    return { ok: false, error: "git_error", message: String(err) };
+  }
+
   // Lost-work check (skipped when caller has already confirmed).
   if (!opts?.confirmedLoss) {
     const unique = uniqueCommits(projectDir, branchName);
@@ -225,14 +238,9 @@ export function deleteBranch(
 
   let switchedTo: string | null = null;
   try {
-    const current = gitExec(`git rev-parse --abbrev-ref HEAD`, projectDir);
-    if (current === branchName) {
-      const fallback = findPrimaryFallback(projectDir);
-      if (!fallback) {
-        return { ok: false, error: "no_primary_to_switch_to" };
-      }
-      gitExec(`git checkout -q ${fallback}`, projectDir);
-      switchedTo = fallback;
+    if (fallbackBranch) {
+      gitExec(`git checkout -q ${fallbackBranch}`, projectDir);
+      switchedTo = fallbackBranch;
     }
     // -D (force-delete) is required because `confirmedLoss` may have skipped
     // the unique-commit check — the user has explicitly elected to lose them.
@@ -325,9 +333,9 @@ export function computePromoteSummary(projectDir: string, sourceBranch: string):
   }
   const stat = safeExec(`git diff --shortstat ${primary}...${sourceBranch}`, projectDir);
   // shortstat shape: " 4 files changed, 120 insertions(+), 38 deletions(-)"
-  const fileCount = Number((stat.match(/(\d+) files? changed/) ?? [, "0"])[1]);
-  const added = Number((stat.match(/(\d+) insertions?\(\+\)/) ?? [, "0"])[1]);
-  const removed = Number((stat.match(/(\d+) deletions?\(-\)/) ?? [, "0"])[1]);
+  const fileCount = Number(stat.match(/(\d+) files? changed/)?.[1] ?? "0");
+  const added = Number(stat.match(/(\d+) insertions?\(\+\)/)?.[1] ?? "0");
+  const removed = Number(stat.match(/(\d+) deletions?\(-\)/)?.[1] ?? "0");
   const fullPathsRaw = safeExec(`git diff --name-only ${primary}...${sourceBranch}`, projectDir);
   const fullPaths = fullPathsRaw.split("\n").filter(Boolean);
   return {
@@ -375,7 +383,13 @@ export async function mergeToMain(
   try {
     const out = safeExec(`git status --porcelain --untracked-files=no`, projectDir);
     const lines = out.split("\n").filter(Boolean);
-    dirtyTracked = { dirty: lines.length > 0, files: lines.map((l) => l.slice(3)) };
+    // Parse by status field, NOT a fixed column: gitExec trims the whole
+    // output, stripping the leading space off the *first* porcelain line
+    // (" M f" → "M f"), so slice(3) would eat that filename's first character.
+    dirtyTracked = {
+      dirty: lines.length > 0,
+      files: lines.map((l) => l.replace(/^\s*\S{1,2}\s+/, "")),
+    };
   } catch (err) {
     return { ok: false, error: "git_error", message: String(err) };
   }

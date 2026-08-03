@@ -21,6 +21,24 @@
 # exclude list that can drift. (Measured 2026-08-02.)
 gitignore: true
 
+# `gitignore: true` covers build output, but this repo also tracks two kinds of
+# markdown that nobody is going to hand-edit for style:
+#
+#   - `specs/**` — spec-kit output, one directory per completed feature. These
+#     are a record of what was built, not living documentation; reflowing them
+#     rewrites history for no reader.
+#   - the vendored spec-kit trees (`.specify/**`, `.claude/skills/speckit-*/**`)
+#     — upstream files. Editing them means eating a conflict on every spec-kit
+#     update to satisfy a fence-tag rule.
+#
+# Everything the repo actually authors — `docs/**`, `.claude/rules/**`, the
+# root READMEs — stays linted. (Scoped 2026-08-03: 118 findings, all inside
+# these three trees, against 0 in repo-authored markdown.)
+ignores:
+  - "specs/**"
+  - ".specify/**"
+  - ".claude/skills/speckit-*/**"
+
 config:
   # Line length. Prose is soft-wrapped by the editor; an 80-column hard limit is
   # meaningless in a README and fires on nearly every paragraph and table row.

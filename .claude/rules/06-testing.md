@@ -173,7 +173,8 @@ From here the orchestrator takes over: it creates its own branch, runs clarifica
 3. Use `mcp__electron-playwright__*` tools to verify the change is visible and functional.
 
 **Core engine changes** (`src/core/`):
-1. Run `npx tsc --noEmit` to verify types compile.
+1. Run `npm run typecheck` to verify types compile — **not** a bare `npx tsc --noEmit`, which
+   uses the build config and therefore skips both the renderer and every `*.test.ts`.
 2. Run the project's tests: `npm test` (core via `node --test`, renderer via `vitest`, plus `check:size`).
 3. If the change affects UI behavior, verify via `electron-playwright` MCP following section **4c**.
 
@@ -221,7 +222,7 @@ When something looks wrong, check these sources in order. They are listed from c
 
 This is the **authoritative log tree for anything the orchestrator does**. Structured per run, per phase, and per subagent — exactly the granularity you need when debugging a specific agent's behavior. Persisted forever (no truncation on restart).
 
-```
+```text
 ~/.dex/logs/<project-name>/<run-id>/
 ├── run.log                              — run-level lifecycle (prerequisites, branch creation, stage transitions, termination)
 └── phase-<N>_<slug>/                    — one dir per phase the orchestrator opened
@@ -232,7 +233,7 @@ This is the **authoritative log tree for anything the orchestrator does**. Struc
 
 Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 
-```
+```text
 [2026-04-16T20:38:42.431Z] [INFO] run: starting orchestrator {"mode":"loop","model":"claude-opus-4-6",...}
 [2026-04-16T20:38:42.580Z] [INFO] runLoop: created branch con/2026-04-16-3b084c from main
 ```
@@ -331,7 +332,7 @@ Clicking it copies the current debug context to the clipboard and briefly flips 
 
 The payload is plain text, formatted like:
 
-```
+```text
 Dex Debug Context
 ─────────────────
 RunID:           <uuid>

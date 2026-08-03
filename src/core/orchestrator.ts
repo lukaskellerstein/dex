@@ -335,7 +335,7 @@ async function runLoop(
     rlog.run("INFO", `runLoop: resuming on branch ${branchName}, baseBranch=${baseBranch}`);
   } else {
     baseBranch = getCurrentBranch(config.projectDir);
-    branchName = createBranch(config.projectDir, config.mode);
+    branchName = createBranch(config.projectDir);
     rlog.run("INFO", `runLoop: created branch ${branchName} from ${baseBranch}`);
     if (runtimeState.activeProjectDir) {
       await updateState(runtimeState.activeProjectDir, { baseBranch });

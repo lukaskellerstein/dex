@@ -33,6 +33,7 @@ export const STEP_LABELS: Record<StepType, string> = {
   implement_fix: "Implement Fix",
   verify: "Verify",
   learnings: "Learnings",
+  completion: "Completion",
   commit: "Commit",
 };
 

@@ -423,10 +423,7 @@ export class MockAgentRunner implements AgentRunner {
     // and implement outputs (src/mock/*.ts) would sit uncommitted in the
     // working tree and every checkpoint commit after specify would be empty.
     // Per-developer files (.dex/state.lock, .dex/ui.json) stay gitignored.
-    if (
-      (descriptor.writes && descriptor.writes.length) ||
-      (descriptor.appends && descriptor.appends.length)
-    ) {
+    if (descriptor.writes?.length || descriptor.appends?.length) {
       try {
         execSync("git add -A", { cwd: this.projectDir, stdio: "pipe" });
       } catch {
@@ -449,7 +446,7 @@ export class MockAgentRunner implements AgentRunner {
     template: string,
     ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
   ): string {
-    return template.replace(/\{([a-zA-Z_]+)\}/g, (match, token: string) => {
+    return template.replace(/\{([a-zA-Z_]+)\}/g, (_match, token: string) => {
       switch (token) {
         case "specDir":
           return ctx.specDir ?? "";

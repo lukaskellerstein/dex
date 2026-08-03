@@ -5,23 +5,22 @@ import * as path from "node:path";
 import { test } from "node:test";
 
 import {
-  appendStep,
-  completePhase,
+  type AgentRunRecord,
+  agentRunLogDir,
+  appendAgentStep,
+  completeAgentRun,
   completeRun,
   getSpecAggregateStats,
-  latestPhasesForSpec,
+  latestAgentRunsForSpec,
   listRuns,
-  type PhaseRecord,
-  phaseLogDir,
   type RunRecord,
+  readAgentSteps,
   readRun,
-  readSteps,
   reconcileCrashedRuns,
   recordSubagent,
-  startPhase,
+  startAgentRun,
   startRun,
   updateRun,
-  upsertFailureCount,
 } from "./runs.js";
 
 function tempProject(name: string): string {
@@ -99,46 +98,46 @@ test("writeRun is atomic — leaves no .tmp visible to listRuns on success", () 
   assert.equal(files.filter((f) => f.endsWith(".tmp")).length, 0);
 });
 
-test("startPhase + completePhase round-trip with cost recomputation", () => {
+test("startAgentRun + completeAgentRun round-trip with cost recomputation", () => {
   const dir = tempProject("phase");
   const run = startRun(dir, makeRunInput());
-  startPhase(dir, run.runId, {
-    phaseTraceId: "phase-1",
+  startAgentRun(dir, run.runId, {
+    agentRunId: "phase-1",
     runId: run.runId,
     specDir: "specs/foo",
-    phaseNumber: 1,
-    phaseName: "loop:specify",
-    stage: "specify",
+    taskPhaseNumber: 1,
+    taskPhaseName: "loop:specify",
+    step: "specify",
     cycleNumber: 1,
     featureSlug: "foo",
     startedAt: new Date().toISOString(),
     status: "running",
   });
-  completePhase(dir, run.runId, "phase-1", {
+  completeAgentRun(dir, run.runId, "phase-1", {
     status: "completed",
     costUsd: 0.5,
     inputTokens: 100,
     outputTokens: 50,
   });
   const back = readRun(dir, run.runId)!;
-  assert.equal(back.phases.length, 1);
-  assert.equal(back.phases[0].status, "completed");
+  assert.equal(back.agentRuns.length, 1);
+  assert.equal(back.agentRuns[0].status, "completed");
   assert.equal(back.totalCostUsd, 0.5);
-  assert.equal(back.phasesCompleted, 1);
-  assert.ok(back.phases[0].endedAt);
-  assert.ok(back.phases[0].durationMs !== null && back.phases[0].durationMs >= 0);
+  assert.equal(back.taskPhasesCompleted, 1);
+  assert.ok(back.agentRuns[0].endedAt);
+  assert.ok(back.agentRuns[0].durationMs !== null && back.agentRuns[0].durationMs >= 0);
 });
 
 test("recordSubagent upserts by id (no duplicates)", () => {
   const dir = tempProject("sub");
   const run = startRun(dir, makeRunInput());
-  startPhase(dir, run.runId, {
-    phaseTraceId: "phase-1",
+  startAgentRun(dir, run.runId, {
+    agentRunId: "phase-1",
     runId: run.runId,
     specDir: "specs/foo",
-    phaseNumber: 1,
-    phaseName: "loop:plan",
-    stage: "plan",
+    taskPhaseNumber: 1,
+    taskPhaseName: "loop:plan",
+    step: "plan",
     cycleNumber: 1,
     featureSlug: "foo",
     startedAt: new Date().toISOString(),
@@ -165,21 +164,21 @@ test("recordSubagent upserts by id (no duplicates)", () => {
     costUsd: 0,
   });
   const back = readRun(dir, run.runId)!;
-  assert.equal(back.phases[0].subagents.length, 1);
-  assert.equal(back.phases[0].subagents[0].status, "ok");
-  assert.equal(back.phases[0].subagents[0].durationMs, 1234);
+  assert.equal(back.agentRuns[0].subagents.length, 1);
+  assert.equal(back.agentRuns[0].subagents[0].status, "ok");
+  assert.equal(back.agentRuns[0].subagents[0].durationMs, 1234);
 });
 
 test("reconcileCrashedRuns transitions stale running runs", () => {
   const dir = tempProject("crash");
   const run = startRun(dir, makeRunInput());
-  startPhase(dir, run.runId, {
-    phaseTraceId: "phase-1",
+  startAgentRun(dir, run.runId, {
+    agentRunId: "phase-1",
     runId: run.runId,
     specDir: "specs/foo",
-    phaseNumber: 1,
-    phaseName: "loop:specify",
-    stage: "specify",
+    taskPhaseNumber: 1,
+    taskPhaseName: "loop:specify",
+    step: "specify",
     cycleNumber: 1,
     featureSlug: "foo",
     startedAt: new Date().toISOString(),
@@ -198,8 +197,8 @@ test("reconcileCrashedRuns transitions stale running runs", () => {
   reconcileCrashedRuns(dir, () => false); // pretend writer is dead
   const back = readRun(dir, run.runId)!;
   assert.equal(back.status, "crashed");
-  assert.equal(back.phases[0].status, "crashed");
-  assert.equal(back.phases[0].subagents[0].status, "crashed");
+  assert.equal(back.agentRuns[0].status, "crashed");
+  assert.equal(back.agentRuns[0].subagents[0].status, "crashed");
 });
 
 test("reconcileCrashedRuns leaves alive runs untouched", () => {
@@ -210,15 +209,15 @@ test("reconcileCrashedRuns leaves alive runs untouched", () => {
   assert.equal(back.status, "running");
 });
 
-test("appendStep + readSteps round-trip including malformed line skip", () => {
+test("appendAgentStep + readAgentSteps round-trip including malformed line skip", () => {
   const dir = tempProject("steps");
   const runId = "44444444-4444-4444-4444-444444444444";
   const slug = "loop-specify";
-  const phaseNumber = 1;
+  const taskPhaseNumber = 1;
   for (let i = 0; i < 5; i++) {
-    appendStep(dir, runId, slug, phaseNumber, {
+    appendAgentStep(dir, runId, slug, taskPhaseNumber, {
       id: `s-${i}`,
-      phaseTraceId: "phase-1",
+      agentRunId: "phase-1",
       sequenceIndex: i,
       type: "tool_call",
       content: `step ${i}`,
@@ -229,21 +228,21 @@ test("appendStep + readSteps round-trip including malformed line skip", () => {
     });
   }
   // Inject a partial last line (simulated crash mid-append)
-  const file = path.join(phaseLogDir(dir, runId, slug, phaseNumber), "steps.jsonl");
+  const file = path.join(agentRunLogDir(dir, runId, slug, taskPhaseNumber), "steps.jsonl");
   fs.appendFileSync(file, '{"id":"s-5","incomp');
-  const back = readSteps(dir, runId, slug, phaseNumber);
+  const back = readAgentSteps(dir, runId, slug, taskPhaseNumber);
   assert.equal(back.length, 5);
   assert.equal(back[0].id, "s-0");
   assert.equal(back[4].id, "s-4");
 });
 
-test("readSteps returns [] for missing file", () => {
+test("readAgentSteps returns [] for missing file", () => {
   const dir = tempProject("nosteps");
-  const out = readSteps(dir, "no-such-run", "x", 1);
+  const out = readAgentSteps(dir, "no-such-run", "x", 1);
   assert.deepEqual(out, []);
 });
 
-test("getSpecAggregateStats picks latest phase per phaseNumber across runs", () => {
+test("getSpecAggregateStats picks latest phase per taskPhaseNumber across runs", () => {
   const baseRun = (runId: string, when: string, costs: number[]): RunRecord => ({
     runId,
     mode: "loop",
@@ -254,22 +253,23 @@ test("getSpecAggregateStats picks latest phase per phaseNumber across runs", () 
     status: "completed",
     totalCostUsd: 0,
     totalDurationMs: 0,
-    phasesCompleted: costs.length,
+    taskPhasesCompleted: costs.length,
     writerPid: 0,
     description: null,
+    descriptionFile: null,
     fullPlanPath: null,
     maxLoopCycles: null,
     maxBudgetUsd: null,
-    loopsCompleted: 1,
+    cyclesCompleted: 1,
     failureCounters: {},
-    phases: costs.map(
-      (c, i): PhaseRecord => ({
-        phaseTraceId: `${runId}-p${i + 1}`,
+    agentRuns: costs.map(
+      (c, i): AgentRunRecord => ({
+        agentRunId: `${runId}-p${i + 1}`,
         runId,
         specDir: "specs/foo",
-        phaseNumber: i + 1,
-        phaseName: `loop:p${i + 1}`,
-        stage: "specify",
+        taskPhaseNumber: i + 1,
+        taskPhaseName: `loop:p${i + 1}`,
+        step: "specify",
         cycleNumber: 1,
         featureSlug: "foo",
         startedAt: when,
@@ -290,7 +290,7 @@ test("getSpecAggregateStats picks latest phase per phaseNumber across runs", () 
     baseRun("new", "2026-04-17T00:00:00.000Z", [10, 20]),
   ];
   const stats = getSpecAggregateStats(runs, "specs/foo");
-  assert.equal(stats.phasesWithTraces, 2);
+  assert.equal(stats.agentRunsWithTraces, 2);
   assert.equal(stats.totalCostUsd, 30); // latest only
   assert.equal(stats.totalInputTokens, 20);
 });
@@ -308,7 +308,7 @@ test("completeRun sets terminal fields", () => {
   assert.equal(back.status, "completed");
   assert.equal(back.totalCostUsd, 1.5);
   assert.equal(back.totalDurationMs, 60000);
-  assert.equal(back.phasesCompleted, 4);
+  assert.equal(back.taskPhasesCompleted, 4);
   assert.ok(back.endedAt);
 });
 
@@ -326,7 +326,7 @@ test("US3 cross-project isolation: two projects produce disjoint runs", () => {
   assert.notEqual(listA[0].runId, listB[0].runId);
 });
 
-test("latestPhasesForSpec returns one row per phaseNumber, latest wins", () => {
+test("latestAgentRunsForSpec returns one row per taskPhaseNumber, latest wins", () => {
   const runs: RunRecord[] = [
     {
       runId: "old",
@@ -338,22 +338,23 @@ test("latestPhasesForSpec returns one row per phaseNumber, latest wins", () => {
       status: "completed",
       totalCostUsd: 0,
       totalDurationMs: 0,
-      phasesCompleted: 1,
+      taskPhasesCompleted: 1,
       writerPid: 0,
       description: null,
+      descriptionFile: null,
       fullPlanPath: null,
       maxLoopCycles: null,
       maxBudgetUsd: null,
-      loopsCompleted: 1,
+      cyclesCompleted: 1,
       failureCounters: {},
-      phases: [
+      agentRuns: [
         {
-          phaseTraceId: "old-1",
+          agentRunId: "old-1",
           runId: "old",
           specDir: "specs/foo",
-          phaseNumber: 1,
-          phaseName: "loop:specify",
-          stage: "specify",
+          taskPhaseNumber: 1,
+          taskPhaseName: "loop:specify",
+          step: "specify",
           cycleNumber: 1,
           featureSlug: "foo",
           startedAt: "2026-04-15T00:00:00.000Z",
@@ -379,22 +380,23 @@ test("latestPhasesForSpec returns one row per phaseNumber, latest wins", () => {
       status: "completed",
       totalCostUsd: 0,
       totalDurationMs: 0,
-      phasesCompleted: 1,
+      taskPhasesCompleted: 1,
       writerPid: 0,
       description: null,
+      descriptionFile: null,
       fullPlanPath: null,
       maxLoopCycles: null,
       maxBudgetUsd: null,
-      loopsCompleted: 1,
+      cyclesCompleted: 1,
       failureCounters: {},
-      phases: [
+      agentRuns: [
         {
-          phaseTraceId: "new-1",
+          agentRunId: "new-1",
           runId: "new",
           specDir: "specs/foo",
-          phaseNumber: 1,
-          phaseName: "loop:specify",
-          stage: "specify",
+          taskPhaseNumber: 1,
+          taskPhaseName: "loop:specify",
+          step: "specify",
           cycleNumber: 1,
           featureSlug: "foo",
           startedAt: "2026-04-17T00:00:00.000Z",
@@ -411,8 +413,8 @@ test("latestPhasesForSpec returns one row per phaseNumber, latest wins", () => {
       ],
     },
   ];
-  const rows = latestPhasesForSpec(runs, "specs/foo");
+  const rows = latestAgentRunsForSpec(runs, "specs/foo");
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].phaseTraceId, "new-1");
+  assert.equal(rows[0].agentRunId, "new-1");
   assert.equal(rows[0].costUsd, 5);
 });

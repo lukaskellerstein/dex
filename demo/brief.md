@@ -350,7 +350,7 @@ about 25 checkpoint commits and three spec folders (`001-catalog-and-search`,
 
 ### Recording order
 
-```
+```text
 demo/prep/reset.sh                  # zero state; run before section 01
   … record 01, 02, 03 …             # 02 and 03 share one live run
   … wait for the run to terminate …

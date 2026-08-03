@@ -194,7 +194,7 @@ export function useOrchestrator(): OrchestratorHook {
       if (!liveState) return false;
 
       const run = await historyService.getLatestProjectRun(projectDir);
-      if (!run || run.mode !== "loop") return false;
+      if (run?.mode !== "loop") return false;
 
       // Validate that the project still has artifacts from past runs.
       const specKitMarker = await projectService.readFile(

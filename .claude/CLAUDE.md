@@ -23,7 +23,7 @@ Execute these steps in order. Do NOT skip steps.
 - **What it is** — an Electron desktop app that orchestrates Claude Code instances for spec-kit projects. "Ralph Wiggum" approach: a fresh agent per phase, each with clean context, so tokens never bloat across a run.
 - **Three layers** — `src/main/` (Electron main + IPC), `src/core/` (platform-agnostic orchestrator, no Electron imports, testable standalone), `src/renderer/` (React 18 UI).
 - **Dev loop** — `dev-setup.sh` starts Vite + Electron and exposes CDP on **port 9333**; readiness is `ready in` in `~/.dex/dev-logs/vite.log` and `DevTools listening on ws://127.0.0.1:9333` in `electron.log`.
-- **Tests** — `npm test` = core (`node --test`) + renderer (`vitest run`) + `check:size`. Types: `npx tsc --noEmit`.
+- **Tests** — `npm test` = core (`node --test`) + renderer (`vitest run`) + `check:size`. Types: **`npm run typecheck`** — a bare `npx tsc --noEmit` covers only `src/main/` + `src/core/` and skips the renderer and the core tests entirely. See `CLAUDE.md` § Commands for the three configs.
 - **End-to-end testing runs against a second repo** — `~/Projects/Github/lukaskellerstein/dex-ecommerce`, reset via `scripts/reset-example-to.sh`. It is the only repo the destructive scripts may touch.
 - **State lives outside the app** — `~/.dex/logs/<project>/<runId>/` for the per-run log tree, `<projectDir>/.dex/` for per-project state. No database; SQLite was retired in 007.
 

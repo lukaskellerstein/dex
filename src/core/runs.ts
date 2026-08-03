@@ -1,4 +1,3 @@
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { LOGS_ROOT } from "./paths.js";
@@ -430,7 +429,7 @@ function isAlive(pid: number): boolean {
 // existing log trees. Renaming the directory layout is deferred to a follow-up
 // (see plan: ~/.claude/plans/what-is-the-wording-wobbly-avalanche.md).
 
-function agentRunLogDir(
+export function agentRunLogDir(
   projectDir: string,
   runId: string,
   taskPhaseSlug: string,

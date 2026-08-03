@@ -6,7 +6,6 @@ interface ProjectOverviewProps {
   specSummaries: SpecSummary[];
   onSelectSpec: (spec: string) => void;
 
-  isRunning: boolean;
   activeSpecDir: string | null;
   activePhase: TaskPhase | null;
   activeTask: Task | null;
@@ -15,7 +14,6 @@ interface ProjectOverviewProps {
 export function ProjectOverview({
   specSummaries,
   onSelectSpec,
-  isRunning,
   activeSpecDir,
   activePhase,
   activeTask,
@@ -66,7 +64,6 @@ export function ProjectOverview({
               summary={s}
               onClick={() => onSelectSpec(s.name)}
               isActive={isActive}
-              isRunning={isRunning}
               activePhase={isActive ? activePhase : null}
               activeTask={isActive ? activeTask : null}
             />

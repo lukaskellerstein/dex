@@ -145,7 +145,7 @@ The clarification covers:
 
 **Clarification completeness signal** — before transitioning to Phase B, the agent must verify:
 
-```
+```markdown
 - [ ] At least one user story with acceptance criteria for each major feature
 - [ ] Technology stack with specific versions
 - [ ] Build command, test command, and dev server command
@@ -254,7 +254,7 @@ Handle `"loop"` mode in branch names (`dex/loop/{date}-{id}`) and PR titles.
 
 Ralph Wiggum-style prompt structure for the implement stage:
 
-```
+```text
 0a. Study the spec at {specPath}/spec.md
 0b. Study the existing codebase using subagents
 0c. Study {specPath}/tasks.md
@@ -280,7 +280,7 @@ Ralph Wiggum-style prompt structure for the implement stage:
 
 Verify stage prompt:
 
-```
+```text
 1. Read .specify/full_plan.md for testing strategy.
 2. Run project build command. Fix failures.
 3. Run unit/integration tests. Fix failures.
@@ -294,7 +294,7 @@ Verify stage prompt:
 
 Gap analysis prompt:
 
-```
+```text
 Study .specify/full_plan.md and compare against existing specs and implementation.
 
 The following spec directories already exist: {existingSpecs}
@@ -317,7 +317,7 @@ Output EXACTLY one of:
 
 Plan stage prompt addition (acceptance-driven test derivation):
 
-```
+```text
 For each task, derive required tests from acceptance criteria in spec.md.
 Specify WHAT to verify (outcomes), not HOW to implement.
 Include required tests as part of each task definition in tasks.md.

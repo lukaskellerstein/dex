@@ -119,7 +119,7 @@ Run after the scripts + docs land. Each row is a pass/fail check.
 | V6 | Unknown arg (SC-007) | `./dex/scripts/reset-example-to.sh bogus` | Exit 2, stderr: `unknown checkpoint: bogus`. |
 | V7 | Missing fixture (SC-007) | Temporarily `git branch -D fixture/after-tasks`, then `./dex/scripts/reset-example-to.sh after-tasks` | Non-zero exit, error from `git rev-parse --verify`. Restore: `git branch fixture/after-tasks <original-sha>`. |
 | V8 | Drift detection in reset script (SC-007) | Edit `.dex/state.json` on `fixture/after-tasks` to set `branchName: "main"`, commit, force-update fixture. Run `./dex/scripts/reset-example-to.sh after-tasks` | Non-zero exit, stderr: `fixture drift: state.json branchName != fixture/after-tasks`. Roll back the edit. |
-| V9 | Branch count invariant (SC-005) | `git -C dex-ecommerce branch -l 'fixture/*' | wc -l` after 10 mixed test runs | Exactly `2`. |
+| V9 | Branch count invariant (SC-005) | `git -C dex-ecommerce branch -l 'fixture/*' \| wc -l` after 10 mixed test runs | Exactly `2`. |
 | V10 | Prune drops aged branches (SC-008) | Create `dex/fake-old` with a commit dated 10 days ago, `dex/fake-new` dated today. Run `./dex/scripts/prune-example-branches.sh` | `dex/fake-old` deleted, `dex/fake-new` remains. |
 | V11 | Prune preserves reserved (SC-008) | Ensure `main`, `fixture/after-clarification`, `fixture/after-tasks`, `lukas/full-dex` all exist. Backdate one of them via a test commit. Run prune. | None of them deleted. |
 | V12 | Bash syntax | `bash -n dex/scripts/reset-example-to.sh && bash -n dex/scripts/prune-example-branches.sh` | Both exit 0. |

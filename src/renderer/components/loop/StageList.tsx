@@ -131,7 +131,6 @@ function StageRow({
   const [hovered, setHovered] = useState(false);
   const isRunning = status === "running";
   const isCompleted = status === "completed";
-  const isSkipped = status === "skipped";
   const isPaused = status === "paused";
 
   // Tick once per second only while this row is showing a live indicator.
@@ -282,11 +281,7 @@ function ImplementSpecView({
   if (!specSummary) return null;
   return (
     <div style={{ marginLeft: 24, paddingLeft: 10, paddingTop: 6, paddingBottom: 4 }}>
-      <SpecCard
-        summary={specSummary}
-        onClick={() => onSelectSpec(specSummary.name)}
-        isRunning={false}
-      />
+      <SpecCard summary={specSummary} onClick={() => onSelectSpec(specSummary.name)} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import * as runs from "../runs.js";
-import type { AgentStep, RunConfig, UserInputQuestion } from "../types.js";
+import type { AgentStep, UserInputQuestion } from "../types.js";
 import { waitForUserInput } from "../userInput.js";
 import type {
   AgentRunner,
@@ -22,11 +22,10 @@ import {
 
 /**
  * Claude Code backend — wraps `@anthropic-ai/claude-agent-sdk` `query()`.
- * Construction is cheap: no SDK import until `runStep`/`runTaskPhase` is called.
+ * Stateless: every call takes its config from the passed context, and no SDK
+ * import happens until `runStep`/`runTaskPhase` is called.
  */
 export class ClaudeAgentRunner implements AgentRunner {
-  constructor(_runConfig: RunConfig, _projectDir: string) {}
-
   async runStep(ctx: StepContext): Promise<StepResult> {
     const {
       config,

@@ -45,11 +45,10 @@ function CycleTimelineItem({
   latestAction?: LatestAction | null;
 }) {
   const isCycleRunning = cycle.status === "running" && isRunning;
-  // "paused" = cycle was mid-flight when the run was stopped. In the DB it may
-  // appear as either "running" (never updated due to crash) or "stopped" (clean stop).
-  // When the loop isn't running, both states mean the user can resume it.
-  const isCyclePaused =
-    (cycle.status === "running" && !isRunning) || (cycle.status === "stopped" && !isRunning);
+  // "paused" = cycle was mid-flight when the run was stopped. useLoopState
+  // normalises a "stopped" decision to status "running" (legacy contract), so a
+  // cycle still marked running while the loop is not is the resumable case.
+  const isCyclePaused = cycle.status === "running" && !isRunning;
   const isCompleted = cycle.status === "completed";
   const isFailed = cycle.status === "failed";
   const isSkipped = cycle.status === "skipped";

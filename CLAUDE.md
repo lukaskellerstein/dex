@@ -38,7 +38,22 @@ tests/
 
 ## Commands
 
-`npm test` (core via `node --test` + renderer via `vitest` + `check:size`), `npx tsc --noEmit` for types.
+`npm test` (core via `node --test` + renderer via `vitest` + `check:size`), `npm run typecheck` for types.
+
+`npm run typecheck` runs **three** scopes — a bare `npx tsc --noEmit` only covers
+`src/main/` + `src/core/` and silently skips the rest:
+
+| Config | Covers |
+|:--|:--|
+| `tsconfig.json` | `src/main/`, `src/core/` — drives the `dist/` build, so it excludes tests |
+| `tsconfig.test.json` | the above **plus** `src/core/**/*.test.ts` (type-check only) |
+| `tsconfig.renderer.json` | `src/renderer/` — excluded from the build config, so nothing else checks it |
+
+Core tests run through `scripts/ts-resolve-hook.mjs`, which maps relative `.js`
+specifiers to `.ts`. `NodeNext` requires sources to import each other as `.js`,
+and `--experimental-strip-types` does not remap that — without the hook any
+*value* import between core modules dies with `ERR_MODULE_NOT_FOUND` (type-only
+imports are erased before resolution, which is why only some suites broke).
 
 Linting and formatting are **not** repo scripts — biome and ruff run in the editor
 off `biome.jsonc` / `ruff.toml`. There is no `npm run lint`.

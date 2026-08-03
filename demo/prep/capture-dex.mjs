@@ -53,9 +53,8 @@ const overlayPath = resolve(
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry");
-const onlySections = args.reduce(
-  (acc, a, i) => (a === "--section" && args[i + 1] ? [...acc, args[i + 1]] : acc),
-  [],
+const onlySections = args.flatMap((a, i) =>
+  a === "--section" && args[i + 1] ? [args[i + 1]] : [],
 );
 
 // The first recorded frame should be a settled one, so trim slightly past the moment

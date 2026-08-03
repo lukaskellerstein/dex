@@ -18,7 +18,7 @@ The `/speckit-specify` skill (from spec-kit) processes `$ARGUMENTS` as the featu
 
 Current prompt (`src/core/prompts.ts:217-222`):
 
-```
+```text
 /speckit-specify
 
 Feature name: project-foundation
@@ -33,7 +33,7 @@ The structured `Feature name:` / `Feature description:` / `Project directory:` f
 
 The gap analysis agent receives the full plan + list of existing spec dirs, and outputs one of:
 
-```
+```text
 NEXT_FEATURE: {name} | {description}
 RESUME_FEATURE: {specDir}
 REPLAN_FEATURE: {specDir}

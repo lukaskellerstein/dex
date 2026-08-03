@@ -30,7 +30,7 @@ ffmpeg -i demo/brand/thumbnail-2k.jpg -vf "scale=1280:720:flags=lanczos" demo/ou
 <details>
 <summary>Prompt used</summary>
 
-```
+```text
 A 16:9 YouTube thumbnail for a developer tool, matching the house style of the second
 reference image (the "VEX" thumbnail): dark cinematic tech thumbnail, product name in very
 large bold white sans-serif centred near the top, one subtitle line directly beneath it in
@@ -92,7 +92,7 @@ results; option 1 is 56.
 
 Paste from the line below to the end of the tag block.
 
-```
+```text
 Dex points an AI agent at a repo with one goal file and lets it run — specify, plan, tasks,
 implement, verify — a brand new agent for every stage, each with an empty context window.
 Every finished stage is a git commit, so the whole run is something you can watch, pause,
@@ -162,7 +162,7 @@ node -e 'const t=require("./demo/timeline.json");const f=n=>`${Math.floor(n/t.fp
 
 ## Tags
 
-```
+```text
 dex, ai coding agent, autonomous coding, claude code, spec-kit, ralph loop, ai software
 engineering, developer tools, electron app, git workflow, ai agent orchestration,
 context window, code review, open source

@@ -59,7 +59,7 @@ export function getCommittedFileContent(
 
 // commitCheckpoint moved to src/core/checkpoints/commit.ts as part of 011-A0.
 
-export function createBranch(projectDir: string, mode: "plan" | "build" | "loop"): string {
+export function createBranch(projectDir: string): string {
   const date = new Date().toISOString().slice(0, 10);
   const shortId = crypto.randomUUID().slice(0, 6);
   const branchName = `dex/${date}-${shortId}`;

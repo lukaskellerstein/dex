@@ -24,7 +24,6 @@ interface SpecCardProps {
   onClick: () => void;
 
   isActive?: boolean;
-  isRunning?: boolean;
   activePhase?: TaskPhase | null;
   activeTask?: Task | null;
 }
@@ -53,14 +52,7 @@ function MiniProgress({ done, total, color }: { done: number; total: number; col
   );
 }
 
-export function SpecCard({
-  summary,
-  onClick,
-  isActive,
-  isRunning,
-  activePhase,
-  activeTask,
-}: SpecCardProps) {
+export function SpecCard({ summary, onClick, isActive, activePhase, activeTask }: SpecCardProps) {
   const [hovered, setHovered] = useState(false);
   const isComplete = summary.doneTasks === summary.totalTasks && summary.totalTasks > 0;
   const displayName = summary.name.split("/").pop() ?? summary.name;

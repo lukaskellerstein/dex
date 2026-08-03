@@ -58,7 +58,7 @@ Makes `git log --all --grep='^\[checkpoint:'` a zero-UI terminal workflow from d
 
 **`src/core/git.ts:32-60`** (`commitCheckpoint`): extend the commit message to:
 
-```
+```text
 dex: <stage> completed [cycle:<N>] [feature:<slug>] [cost:$X.XX]
 [checkpoint:<stage>:<cycle>]
 ```
@@ -85,7 +85,7 @@ Zero UI work; useful for every debug session once any new state is introduced.
 
 **`src/renderer/hooks/useDebugPayload.ts`** — add three lines to the clipboard payload:
 
-```
+```text
 CurrentAttemptBranch:  <git rev-parse --abbrev-ref HEAD>
 LastCheckpointTag:     <derivable from listTimeline or null before S1>
 CandidateSha:          <state.lastCommit.sha>
@@ -663,7 +663,7 @@ Git-flow visualization is the v1. Custom D3 + React-owned SVG adapter, **vertica
 
 **Files**:
 
-```
+```text
 src/renderer/components/checkpoints/
 ├── TimelinePanel.tsx         container — TimelineGraph + NodeDetailPanel + PastAttemptsList
 ├── TimelineGraph.tsx         React SVG + d3-zoom wrapper

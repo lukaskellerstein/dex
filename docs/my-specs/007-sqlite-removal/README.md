@@ -18,7 +18,7 @@ This feature retires SQLite and replaces it with per-project JSON files. It is i
 
 Per-project, under the project's existing `.dex/` directory:
 
-```
+```text
 <projectDir>/.dex/runs/
 ├── <runId-1>.json
 ├── <runId-2>.json

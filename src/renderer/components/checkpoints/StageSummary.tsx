@@ -28,6 +28,7 @@ const STAGE_HEADLINES: Record<StepType, string> = {
   implement_fix: "Fixes applied.",
   verify: "Verification complete.",
   learnings: "Learnings captured.",
+  completion: "Run complete.",
   commit: "Checkpoint committed.",
 };
 

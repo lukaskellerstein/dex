@@ -178,7 +178,7 @@ Runs on resume before entering the loop. Three checks:
 
 ### 1. Git checkpoint comparison
 
-```
+```text
 currentHead = git rev-parse HEAD
 expectedSha = state.checkpoint.sha
 If currentHead !== expectedSha:
@@ -284,7 +284,7 @@ On crash, two versions of `state.json` may exist:
 
 ### Commit message format (machine-parseable)
 
-```
+```text
 dex: <stage_type> completed [cycle:<N>] [feature:<name>] [cost:$<X.XX>]
 ```
 
@@ -433,7 +433,7 @@ When two branches both have `.dex/state.json` and are merged, git produces a con
 
 **Solution:** Add `.gitattributes` in the project root (or ensure it exists):
 
-```
+```text
 .dex/state.json merge=ours
 ```
 

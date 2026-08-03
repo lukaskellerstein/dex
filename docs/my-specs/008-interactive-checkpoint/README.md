@@ -193,7 +193,7 @@ User-facing labels come from `labelFor(stage, cycleNumber, featureSlug?)` in `sr
 
 Every `commitCheckpoint` commit uses a parse-friendly format:
 
-```
+```text
 dex: <stage> completed [cycle:<N>] [feature:<slug>] [cost:$X.XX]
 [checkpoint:<stage>:<cycle>]
 ```

@@ -64,8 +64,13 @@ This repo opts in to:
 stylua, hadolint and golangci-lint report `gated-off` — there is no Lua, no
 Dockerfile and no Go here. That is the contract working, not a fault.
 
-Type checking is **not** part of this: run `npx tsc --noEmit` yourself, and see
+Type checking is **not** part of this: run `npm run typecheck` yourself, and see
 [`lsp.md`](lsp.md) for why the `LSP` tool cannot answer "what errors do you see".
+
+Use the script, not a bare `npx tsc --noEmit` — that runs only `tsconfig.json`,
+which exists to drive the `dist/` build and so excludes `src/renderer/` and every
+`*.test.ts`. The script adds `tsconfig.renderer.json` and `tsconfig.test.json`
+to cover them.
 
 The contract, and the skill that applies it, are in mac-setup:
 `projects/tooling.md` and `/lint-format-lsp`.

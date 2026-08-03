@@ -116,7 +116,7 @@ Reuses:
 
 An agent profile is a **folder on disk**. The runner's native config lives inside (`.claude/` for Claude, `.codex/` for Codex, etc.) and Dex-specific knobs that the runner's settings can't express live in `dex.json`. The on-disk shape:
 
-```
+```text
 <projectDir>/.dex/agents/<name>/
   dex.json                  # Dex-specific knobs (see schema below)
   .claude/                  # Claude Code config root (for agentRunner="claude-sdk")

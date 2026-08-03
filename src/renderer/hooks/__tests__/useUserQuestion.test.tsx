@@ -58,7 +58,14 @@ describe("useUserQuestion", () => {
       type: "user_input_request",
       runId: "r-1",
       requestId: "req-1",
-      questions: [{ question: "Database?", options: [{ label: "Postgres", value: "pg" }] }],
+      questions: [
+        {
+          question: "Database?",
+          header: "Database",
+          multiSelect: false,
+          options: [{ label: "Postgres", description: "Relational, default choice" }],
+        },
+      ],
     });
     expect(result.current.pendingQuestion).toMatchObject({
       requestId: "req-1",
@@ -79,7 +86,7 @@ describe("useUserQuestion", () => {
       type: "user_input_request",
       runId: "r-1",
       requestId: "req-1",
-      questions: [{ question: "Stack?", options: [] }],
+      questions: [{ question: "Stack?", header: "Stack", multiSelect: false, options: [] }],
     });
     expect(result.current.pendingQuestion).not.toBeNull();
 

@@ -117,7 +117,6 @@ export function buildProductClarificationPrompt(
   productDomainPath: string,
 ): string {
   const goalName = path.basename(goalFilePath);
-  const productDomainName = path.basename(productDomainPath);
   return `You are conducting the PRODUCT clarification session for a software project. The user has provided an initial project description in ${goalName}. Your job is to read it, identify gaps in the product definition, and ask clarifying questions focused exclusively on the product domain.
 
 ## Instructions
@@ -165,7 +164,6 @@ export function buildTechnicalClarificationPrompt(
 ): string {
   const goalName = path.basename(goalFilePath);
   const productDomainName = path.basename(productDomainPath);
-  const technicalDomainName = path.basename(technicalDomainPath);
   return `You are conducting the TECHNICAL clarification session for a software project. The product domain has already been clarified. Your job is to read the product decisions and ask clarifying questions focused exclusively on the technical domain.
 
 ## Instructions
@@ -364,13 +362,13 @@ export function buildSpecifyPrompt(featureName: string, featureDescription: stri
 
 // ── T009: Loop Plan Prompt ──
 
-export function buildLoopPlanPrompt(config: RunConfig, specPath: string): string {
+export function buildLoopPlanPrompt(specPath: string): string {
   return `/speckit-plan ${specPath}`;
 }
 
 // ── T010: Loop Tasks Prompt ──
 
-export function buildLoopTasksPrompt(config: RunConfig, specPath: string): string {
+export function buildLoopTasksPrompt(specPath: string): string {
   return `/speckit-tasks ${specPath}`;
 }
 

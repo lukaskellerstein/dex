@@ -75,7 +75,7 @@ export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResu
     branchName = getCurrentBranch(config.projectDir);
   } else if (config.mode !== "loop") {
     baseBranch = getCurrentBranch(config.projectDir);
-    branchName = createBranch(config.projectDir, config.mode);
+    branchName = createBranch(config.projectDir);
   }
 
   // Resume preserves the previous runId so phase traces stay associated.

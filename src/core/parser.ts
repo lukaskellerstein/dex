@@ -15,11 +15,10 @@ function extractTags(raw: string): {
   let userStory: string | null = null;
   let priority: string | null = null;
 
-  // Extract all [TAG] brackets for known tag patterns
-  // biome-ignore lint: resetting lastIndex is intentional for global regex reuse
-  BRACKET_TAG.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = BRACKET_TAG.exec(raw)) !== null) {
+  // Extract all [TAG] brackets for known tag patterns.
+  // matchAll leaves BRACKET_TAG.lastIndex untouched, so the shared module-level
+  // regex needs no manual reset between calls.
+  for (const match of raw.matchAll(BRACKET_TAG)) {
     const tag = match[1];
     if (/^US\d+$/i.test(tag)) {
       userStory = tag.toUpperCase();
@@ -121,10 +120,9 @@ export function extractTaskIds(content: string): string[] {
 
   // Track character spans covered by ranges to avoid double-counting
   const rangeSpans: [number, number][] = [];
-  let match: RegExpExecArray | null;
 
   // First pass: expand ranges
-  while ((match = RANGE_RE.exec(content)) !== null) {
+  for (const match of content.matchAll(RANGE_RE)) {
     const startNum = parseInt(match[1], 10);
     const endNum = parseInt(match[2], 10);
     const padLen = match[1].length;
@@ -136,8 +134,8 @@ export function extractTaskIds(content: string): string[] {
   }
 
   // Second pass: individual IDs not already covered by a range
-  while ((match = SINGLE_RE.exec(content)) !== null) {
-    const inRange = rangeSpans.some(([s, e]) => match!.index >= s && match!.index < e);
+  for (const match of content.matchAll(SINGLE_RE)) {
+    const inRange = rangeSpans.some(([s, e]) => match.index >= s && match.index < e);
     if (!inRange && !ids.includes(match[1])) {
       ids.push(match[1]);
     }

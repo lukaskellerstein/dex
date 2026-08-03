@@ -145,6 +145,8 @@
     ]
   },
   "enabledPlugins": {
-    "dev-tools-plugin@claude-my-marketplace": true
+    "dev-tools-plugin@claude-my-marketplace": true,
+    "lsp-typescript@claude-my-marketplace": true,
+    "lsp-python@claude-my-marketplace": true
   }
 }

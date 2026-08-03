@@ -204,10 +204,9 @@ export function AppRouter(props: AppRouterProps): ReactNode {
     );
   }
 
-  if (
-    currentView === "loop-dashboard" ||
-    (currentView === "trace" && mode === "loop" && isRunning && !currentStage && !isClarifying)
-  ) {
+  // The "trace" view is handled by an earlier return above, so it can never
+  // reach here — the second arm of this condition was unreachable and removed.
+  if (currentView === "loop-dashboard") {
     return (
       <LoopDashboard
         cycles={loopCycles}
@@ -248,7 +247,6 @@ export function AppRouter(props: AppRouterProps): ReactNode {
       <ProjectOverview
         specSummaries={specSummaries}
         onSelectSpec={handleSelectSpec}
-        isRunning={isRunning}
         activeSpecDir={activeSpecDir}
         activePhase={currentPhase}
         activeTask={activeTask}

@@ -107,7 +107,7 @@ Six things to verify before deleting. Re-run these greps as the first step of im
 | `src/core/__tests__/jumpTo.test.ts:218` — *"jumpTo: 008 attempt-<ts> branch is NEVER auto-pruned (only selected-* navigation forks are)"* | DELETE entirely. With no `attempt-*` producer left, the behaviour under test is meaningless. |
 | `src/core/__tests__/jumpTo.test.ts:239` — *"jumpTo: attempt-<ts>-saved is NEVER auto-pruned (autosave is meaningful)"* | DELETE entirely. REPLACE with a new test asserting the post-013 contract: dirty-tree + `force: "save"` → exactly one new commit on the current branch (subject `dex: pre-jump autosave`), zero new branches (`git branch --list` count unchanged), HEAD then moves to the click target. |
 | `src/core/__tests__/jumpTo.test.ts:280` — block referencing `attempt-*-saved` | DELETE; folded into the new assertion above. |
-| `src/core/__tests__/jumpTo.test.ts` — add a new test for **detached-HEAD save refusal**: `git checkout <sha>` → modify a tracked file → `jumpTo(target, { force: "save" })` → assert `{ ok: false, error: "git_error", message: <friendly> }` and zero new commits. |
+| `src/core/__tests__/jumpTo.test.ts` — new test for **detached-HEAD save refusal** | ADD: `git checkout <sha>` → modify a tracked file → `jumpTo(target, { force: "save" })` → assert `{ ok: false, error: "git_error", message: <friendly> }` and zero new commits. |
 | `src/core/__tests__/checkpoints.test.ts:98-99` — `attemptBranchName` factory tests | DELETE (factory deleted). |
 | `src/core/__tests__/checkpoints.test.ts:104` — `captureBranchName` factory test | DELETE (factory deleted). |
 | `src/core/__tests__/checkpoints.test.ts:311` — uses `attempt-test-a` as fixture for unrelated behaviour | RETARGET the fixture branch name to `dex/test-a` (or `selected-test-a` if the test exercises the selected-* path) so the surrounding assertion still runs. |
@@ -120,7 +120,7 @@ Six things to verify before deleting. Re-run these greps as the first step of im
 1. **Spec doc** — already in place at `docs/my-specs/013-cleanup-2/README.md`.
 2. **Pre-flight grep** — re-run the [Why this is safe](#why-this-is-safe) greps and these companion checks; if anything beyond what's listed in the file map appears, update the spec before proceeding:
 
-   ```
+   ```bash
    grep -rn "promoteToCheckpoint" src/ | grep -v test
    grep -rn "autoPromoteIfRecordMode" src/ | grep -v test
    grep -rn "checkpointDoneTag" src/ | grep -v test

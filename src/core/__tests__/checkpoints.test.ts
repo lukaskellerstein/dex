@@ -155,18 +155,28 @@ test("listTimeline: commits[] is sorted ascending by timestamp and skips WIP", (
     const sha2 = mkStepCommit(dir, "tasks", 1, "tasks.md");
 
     const snap = listTimeline(dir);
-    const shas = snap.commits.map((c) => c.sha);
-    assert.deepEqual(shas, [sha1, sha2]);
-    // Subjects are step-commit subjects (no "wip:" anywhere).
-    assert.ok(snap.commits.every((c) => c.subject.startsWith("dex:")));
+    // Non-step commits are no longer filtered out — they are surfaced with
+    // kind: "user" (timeline.ts: "anything else — manual commits, PR merges").
+    // Step-commit assertions therefore run over the "step" subset.
+    const steps = snap.commits.filter((c) => c.kind === "step");
+    assert.deepEqual(
+      steps.map((c) => c.sha),
+      [sha1, sha2],
+    );
+    assert.ok(steps.every((c) => c.subject.startsWith("dex:")));
     // Each carries shortSha + step + cycle parsed from subject.
-    assert.equal(snap.commits[0].shortSha.length, 7);
-    assert.equal(snap.commits[0].step, "plan");
-    assert.equal(snap.commits[0].cycleNumber, 1);
-    assert.equal(snap.commits[1].step, "tasks");
+    assert.equal(steps[0].shortSha.length, 7);
+    assert.equal(steps[0].step, "plan");
+    assert.equal(steps[0].cycleNumber, 1);
+    assert.equal(steps[1].step, "tasks");
     // hasCheckpointTag: false for both (no tag created in this test).
-    assert.equal(snap.commits[0].hasCheckpointTag, false);
-    assert.equal(snap.commits[1].hasCheckpointTag, false);
+    assert.equal(steps[0].hasCheckpointTag, false);
+    assert.equal(steps[1].hasCheckpointTag, false);
+    // The WIP commit is present, flagged user, and carries no cycle number.
+    const wip = snap.commits.find((c) => c.subject.startsWith("wip:"));
+    assert.ok(wip, "a non-step commit should still appear in the timeline");
+    assert.equal(wip?.kind, "user");
+    assert.equal(wip?.cycleNumber, -1);
   } finally {
     rmTmp(dir);
   }
@@ -210,8 +220,9 @@ test("listTimeline: selectedPath shrinks after checking out an earlier commit", 
     execSync(`git checkout -q ${sha1}`, { cwd: dir });
     const snap = listTimeline(dir);
     assert.deepEqual(snap.selectedPath, [sha1]);
-    // commits[] still surfaces all step-commits across all branches.
-    assert.equal(snap.commits.length, 3);
+    // commits[] still surfaces all step-commits across all branches. The repo's
+    // own initial commit is also present, as kind: "user".
+    assert.equal(snap.commits.filter((c) => c.kind === "step").length, 3);
     assert.ok(snap.commits.some((c) => c.sha === sha2));
   } finally {
     rmTmp(dir);

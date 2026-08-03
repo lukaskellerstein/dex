@@ -1,0 +1,23 @@
+# Scoped shellcheck config for the vendored spec-kit tree.
+#
+# Everything under `.specify/` comes from upstream spec-kit. Its scripts trip 40
+# findings, all style-level and none of them bugs we would fix — patching them
+# means eating a merge conflict on every spec-kit update. shellcheck reads the
+# NEAREST .shellcheckrc walking up from each file, so this one applies to
+# `.specify/**` and the repo-root `.shellcheckrc` continues to govern our own
+# `scripts/*.sh` and `dev-setup.sh` at full strength.
+#
+# Nearest-wins means no merging: `external-sources` is repeated here on purpose,
+# otherwise these files would silently lose it.
+external-sources=true
+
+# The exact rule set the vendored scripts trip, measured 2026-08-03. Listed
+# individually rather than blanket-disabled so a genuinely new finding in this
+# tree still surfaces.
+disable=SC2155  # local x=$(...) masks the command's return value
+disable=SC1091  # sourced file not followed (paths resolved at runtime)
+disable=SC2001  # sed used where bash parameter expansion would do
+disable=SC2034  # variable assigned but unused (several are exported indirectly)
+disable=SC2028  # echo does not expand escapes
+disable=SC2129  # individual redirects where a block redirect would do
+disable=SC2295  # unquoted expansion inside ${x%...} patterns

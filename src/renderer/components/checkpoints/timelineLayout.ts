@@ -346,8 +346,7 @@ export function layoutTimeline(snapshot: TimelineSnapshot, opts: LayoutOpts): La
   // commit's dot.
   const cur = snapshot.currentBranch;
   if (
-    cur &&
-    cur.startsWith("selected-") &&
+    cur?.startsWith("selected-") &&
     !branchInfos.some((b) => b.branch === cur) &&
     snapshot.selectedPath.length > 0
   ) {

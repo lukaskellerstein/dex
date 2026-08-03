@@ -6,7 +6,6 @@ import {
   MessageSquare,
   Sparkles,
 } from "lucide-react";
-import type { CSSProperties } from "react";
 import type { AgentStep } from "../../../core/types.js";
 import { CollapsibleText } from "./primitives/CollapsibleText.js";
 import { StepTimestamp } from "./primitives/StepTimestamp.js";

@@ -120,7 +120,7 @@ Expected: empty (or, if `gap_analysis` does emit a synthetic-completion checkpoi
 
 Run the same five-action loop for each `<step>` in this order:
 
-```
+```text
 specify → plan → tasks → implement → verify → learnings
 ```
 
@@ -172,7 +172,7 @@ jq '{lastCompletedStep, cyclesCompleted}' .dex/state.json                  # lea
 
 Expected `git log` (newest first, exact order):
 
-```
+```text
 <sha>  dex: learnings completed     [cycle:1] [feature:...]
 <sha>  dex: verify completed        [cycle:1] [feature:...]
 <sha>  dex: implement completed     [cycle:1] [feature:...]

@@ -13,7 +13,6 @@ import {
   PROMOTE_MID_RUN_BRANCH,
   PROMOTE_MID_RUN_MAIN,
   PROMOTE_NON_CONTENT_CONFLICT,
-  RESOLVER_FAILURE_TITLE,
   RESOLVER_SUCCESS_TOAST,
 } from "./branchOps/copy";
 import { ConflictResolverProgress, type ResolverSeed } from "./ConflictResolverProgress";

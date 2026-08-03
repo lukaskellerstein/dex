@@ -12,7 +12,7 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentRunner, OneShotContext } from "./agent/AgentRunner.js";
+import type { AgentRunner, OneShotContext, OneShotResult } from "./agent/AgentRunner.js";
 import type { ConflictResolverConfig } from "./dexConfig.js";
 import type { RunLogger } from "./log.js";
 import type { EmitFn, RunConfig } from "./types.js";
@@ -170,7 +170,7 @@ export async function resolveConflicts(ctx: ResolverContext): Promise<ResolverRe
       rlog: ctx.rlog,
     };
 
-    let result;
+    let result: OneShotResult;
     try {
       result = await ctx.runner.runOneShot(oneShotCtx);
     } catch (err) {

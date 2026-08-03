@@ -15,29 +15,14 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import {
-  parseGapAnalysisDecision,
-  shouldRunStage as shouldRunStageFromDecision,
-} from "../gap-analysis.js";
-import {
-  getActiveFeature,
-  getNextFeature,
-  loadManifest,
-  updateFeatureSpecDir,
-  updateFeatureStatus,
-} from "../manifest.js";
+import { shouldRunStage as shouldRunStageFromDecision } from "../gap-analysis.js";
+import { loadManifest, updateFeatureSpecDir, updateFeatureStatus } from "../manifest.js";
 // Circular: orchestrator.ts and this module call each other's exports at call
 // time; both sides export functions/classes only, so ESM module init is safe.
 import { AbortError, listSpecDirs, runStage } from "../orchestrator.js";
 import { discoverNewSpecDir } from "../parser.js";
 import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
-import {
-  buildFeatureEvaluationPrompt,
-  buildLoopPlanPrompt,
-  buildLoopTasksPrompt,
-  buildSpecifyPrompt,
-  GAP_ANALYSIS_SCHEMA,
-} from "../prompts.js";
+import { buildLoopPlanPrompt, buildLoopTasksPrompt, buildSpecifyPrompt } from "../prompts.js";
 import * as runs from "../runs.js";
 import { STEP_ORDER, updateState } from "../state.js";
 import type {
@@ -48,6 +33,8 @@ import type {
   StepType,
   TerminationReason,
 } from "../types.js";
+import { applyFailureThresholds } from "./cycle-failure-policy.js";
+import { resolveGapAnalysis } from "./cycle-gap-analysis.js";
 import { runImplementVerifyLearnings } from "./cycle-stages.js";
 
 export interface MainLoopResult {
@@ -167,169 +154,21 @@ export async function runMainLoop(
     }
 
     // ── Gap Analysis — Deterministic Manifest Walk ──
-    let decision: GapAnalysisDecision;
-    if (resumeSpecDir && cycleNumber === cyclesCompleted + 1) {
-      // Mid-cycle resume: pick RESUME_AT_STEP when a pre-implement stage
-      // (specify or plan) completed before the abort. A completed "tasks"
-      // stage means the pre-implement triad is done → classic RESUME_FEATURE
-      // (jump straight to implement). Any later stage or null also maps to
-      // RESUME_FEATURE since implement/verify/learnings have their own
-      // resume paths.
-      if (resumeLastStage === "specify" || resumeLastStage === "plan") {
-        decision = {
-          type: "RESUME_AT_STEP",
-          specDir: resumeSpecDir,
-          resumeAtStep: resumeLastStage,
-        };
-        rlog.run(
-          "INFO",
-          `runLoop: resume — using RESUME_AT_STEP(${resumeLastStage}) for ${resumeSpecDir}`,
-        );
-      } else {
-        decision = { type: "RESUME_FEATURE", specDir: resumeSpecDir };
-        rlog.run(
-          "INFO",
-          `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`,
-        );
-      }
-      const traceId = crypto.randomUUID();
-      runs.startAgentRun(config.projectDir, runId, {
-        agentRunId: traceId,
-        runId,
-        specDir: resumeSpecDir,
-        taskPhaseNumber: cycleNumber,
-        taskPhaseName: "loop:gap_analysis",
-        step: "gap_analysis",
-        cycleNumber,
-        featureSlug: path.basename(resumeSpecDir),
-        startedAt: new Date().toISOString(),
-        status: "running",
-      });
-      emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId });
-      runs.completeAgentRun(config.projectDir, runId, traceId, {
-        status: "completed",
-        costUsd: 0,
-        durationMs: 0,
-      });
-      emit({
-        type: "step_completed",
-        runId,
-        cycleNumber,
-        step: "gap_analysis",
-        agentRunId: traceId,
-        costUsd: 0,
-        durationMs: 0,
-      });
-      resumeSpecDir = null;
-    } else {
-      try {
-        const manifest = loadManifest(config.projectDir);
-        if (!manifest) {
-          throw new Error(
-            "Feature manifest not found — manifest extraction should have run before the loop",
-          );
-        }
-
-        if (currentRunState) {
-          currentRunState.currentStep = "gap_analysis";
-        }
-
-        const active = getActiveFeature(manifest);
-        const nextPending = getNextFeature(manifest);
-
-        // Emit a synthetic (deterministic, cost=0) gap_analysis stage so the UI shows it completed
-        const emitSyntheticGapAnalysis = (specDir: string) => {
-          const traceId = crypto.randomUUID();
-          runs.startAgentRun(config.projectDir, runId, {
-            agentRunId: traceId,
-            runId,
-            specDir: specDir || null,
-            taskPhaseNumber: cycleNumber,
-            taskPhaseName: "loop:gap_analysis",
-            step: "gap_analysis",
-            cycleNumber,
-            featureSlug: specDir ? path.basename(specDir) : null,
-            startedAt: new Date().toISOString(),
-            status: "running",
-          });
-          emit({
-            type: "step_started",
-            runId,
-            cycleNumber,
-            step: "gap_analysis",
-            agentRunId: traceId,
-            specDir,
-          });
-          runs.completeAgentRun(config.projectDir, runId, traceId, {
-            status: "completed",
-            costUsd: 0,
-            durationMs: 0,
-          });
-          emit({
-            type: "step_completed",
-            runId,
-            cycleNumber,
-            step: "gap_analysis",
-            agentRunId: traceId,
-            costUsd: 0,
-            durationMs: 0,
-          });
-        };
-
-        if (active) {
-          if (active.specDir) {
-            // Active feature with specDir — evaluate RESUME vs REPLAN (LLM call)
-            const evaluationPrompt = buildFeatureEvaluationPrompt(config, active.specDir);
-            const evalResult = await runStage(
-              config,
-              evaluationPrompt,
-              emit,
-              rlog,
-              runId,
-              cycleNumber,
-              "gap_analysis",
-              active.specDir,
-              {
-                type: "json_schema",
-                schema: GAP_ANALYSIS_SCHEMA as unknown as Record<string, unknown>,
-              },
-            );
-            cumulativeCost += evalResult.cost;
-            // Delegate to gap-analysis.parseGapAnalysisDecision (A5 wire-in).
-            // The parser throws on null/malformed; the surrounding try/catch
-            // surfaces it as `gap analysis failed` and breaks the cycle —
-            // matches the previous behaviour exactly.
-            decision = parseGapAnalysisDecision(evalResult.structuredOutput, active.specDir);
-          } else {
-            // Active but no specDir — re-run specify for this feature (deterministic)
-            emitSyntheticGapAnalysis("");
-            decision = {
-              type: "NEXT_FEATURE",
-              name: active.title,
-              description: active.description,
-              featureId: active.id,
-            };
-          }
-        } else if (nextPending) {
-          // Deterministic — no LLM call needed
-          updateFeatureStatus(config.projectDir, nextPending.id, "active");
-          emitSyntheticGapAnalysis("");
-          decision = {
-            type: "NEXT_FEATURE",
-            name: nextPending.title,
-            description: nextPending.description,
-            featureId: nextPending.id,
-          };
-        } else {
-          decision = { type: "GAPS_COMPLETE" };
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        rlog.run("ERROR", `runLoop: gap analysis failed: ${msg}`);
-        emit({ type: "error", message: `Gap analysis failed: ${msg}` });
-        break;
-      }
-    }
+    // Body extracted to cycle-gap-analysis.ts (A4.5 follow-up). The three
+    // effects it used to perform inline are returned instead: a failure that
+    // broke the loop, the cost increment, and consuming `resumeSpecDir`.
+    const gap = await resolveGapAnalysis({
+      ctx,
+      config,
+      runId,
+      cycleNumber,
+      resumeSpecDir: resumeSpecDir && cycleNumber === cyclesCompleted + 1 ? resumeSpecDir : null,
+      resumeLastStage,
+    });
+    if (gap.kind === "failed") break;
+    let decision: GapAnalysisDecision = gap.decision;
+    cumulativeCost += gap.costDelta;
+    if (gap.consumedResume) resumeSpecDir = null;
 
     // Record the cycle
     const decisionType = decision.type;
@@ -359,43 +198,25 @@ export async function runMainLoop(
       break;
     }
 
-    // ── Failure threshold checks (T038) ──
+    // ── Failure threshold checks (T038) — body in cycle-failure-policy.ts ──
     if (specDir) {
-      const record = getOrCreateFailureRecord(specDir);
-      if (record.replanFailures >= 3) {
-        rlog.run("WARN", `runLoop: skipping feature at ${specDir} — 3 replan failures`);
-        // Mark feature as skipped in manifest
-        const skipManifest = loadManifest(config.projectDir);
-        if (skipManifest) {
-          const skipEntry = skipManifest.features.find((f) => f.specDir === specDir);
-          if (skipEntry) updateFeatureStatus(config.projectDir, skipEntry.id, "skipped");
-        }
-        featuresSkipped.push(specDir);
-        // (loop cycle row removed in 007-sqlite-removal — derived from phases)
-        emit({
-          type: "loop_cycle_completed",
-          runId,
-          cycleNumber,
-          decision: "skipped",
-          featureName,
-          specDir,
-          costUsd: 0,
-        });
-        // Update FeatureArtifacts.status to "skipped"
-        if (activeProjectDir && specDir) {
-          updateState(activeProjectDir, {
-            artifacts: { features: { [specDir]: { status: "skipped" } } },
-            featuresSkipped: [...featuresSkipped],
-          } as never).catch(() => {});
-        }
+      const outcome = applyFailureThresholds({
+        ctx,
+        config,
+        runId,
+        cycleNumber,
+        specDir,
+        featureName,
+        record: getOrCreateFailureRecord(specDir),
+        featuresSkipped,
+      });
+      if (outcome.kind === "skip") {
         cyclesCompleted++;
         runs.updateRunCyclesCompleted(config.projectDir, runId, cyclesCompleted);
         continue;
       }
-      if (record.implFailures >= 3) {
-        // Force replan
+      if (outcome.kind === "replan") {
         decision = { type: "REPLAN_FEATURE", specDir };
-        rlog.run("WARN", `runLoop: forcing replan for ${specDir} — 3 impl failures`);
       }
     }
 
@@ -498,7 +319,7 @@ export async function runMainLoop(
             artifacts: { features: { [targetSpecDir]: { status: "planning" } } },
           } as never).catch(() => {});
         }
-        const planPrompt = buildLoopPlanPrompt(config, specPath);
+        const planPrompt = buildLoopPlanPrompt(specPath);
         const planResult = await runStage(
           config,
           planPrompt,
@@ -526,7 +347,7 @@ export async function runMainLoop(
         if (currentRunState) {
           currentRunState.currentStep = "tasks";
         }
-        const tasksPrompt = buildLoopTasksPrompt(config, specPath);
+        const tasksPrompt = buildLoopTasksPrompt(specPath);
         const tasksResult = await runStage(
           config,
           tasksPrompt,

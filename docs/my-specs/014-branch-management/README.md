@@ -106,7 +106,7 @@ interface OneShotResult {
 1. Read all unmerged paths via `git status --porcelain` (lines starting with `UU`, `AA`, `DU`, etc.).
 2. For each conflict file: read it, build a focused prompt:
 
-   ```
+   ```text
    You are resolving a merge conflict. The file <path> contains git conflict
    markers (<<<<<<<, =======, >>>>>>>). Resolve them by producing a final
    version that keeps the intent of both branches. Context for what each branch

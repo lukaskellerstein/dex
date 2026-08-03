@@ -96,7 +96,7 @@ This is exactly the prod install path, tested locally on every dev boot.
 
 ## Flow: DEV Boot → Module Installed
 
-```
+```text
 tilt up
   │
   ├── applies namespace kithable-core
@@ -122,7 +122,7 @@ Seed Job runs:
 
 ## Flow: PROD Tenant Provision → Module Installed
 
-```
+```text
 CI (per mod-* repo):
   docker buildx build . --push → ghcr.io/kithable/mod-<name>:<sha>
   helm package charts/mod-<name> → push oci://ghcr.io/kithable/charts/mod-<name>:X.Y.Z

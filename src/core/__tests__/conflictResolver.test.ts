@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { MockAgentRunner } from "../agent/MockAgentRunner.ts";
 import { type MockOneShotResponse, mockConfigPath } from "../agent/MockConfig.ts";
-import type { ResolverContext, ResolverResult } from "../conflict-resolver.ts";
+import type { ResolverContext } from "../conflict-resolver.ts";
 import { resolveConflicts } from "../conflict-resolver.ts";
 import type { ConflictResolverConfig } from "../dexConfig.ts";
 import type { OrchestratorEvent, RunConfig } from "../types.ts";
@@ -155,14 +155,14 @@ test("resolver: clean single-file resolution succeeds + emits expected event seq
 test("resolver: multi-file — both succeed, file-start emitted once per file, done is terminal", async () => {
   const dir = mkProject([
     {
-      matchPrompt: "Resolve the merge conflict in a\\.txt",
+      matchPrompt: "resolve the merge conflict in a\\.txt",
       isRegex: true,
       finalText: "ok",
       cost: 0.02,
       editFile: { path: "a.txt", content: "merged a\n" },
     },
     {
-      matchPrompt: "Resolve the merge conflict in b\\.txt",
+      matchPrompt: "resolve the merge conflict in b\\.txt",
       isRegex: true,
       finalText: "ok",
       cost: 0.03,
@@ -251,7 +251,7 @@ test("resolver: max_iterations halts before exceeding cap", async () => {
 test("resolver: cost_cap halts before next iteration would exceed it", async () => {
   const dir = mkProject([
     {
-      matchPrompt: "Resolve the merge conflict in a\\.txt",
+      matchPrompt: "resolve the merge conflict in a\\.txt",
       isRegex: true,
       finalText: "ok",
       cost: 0.2, // First iteration burns most of the budget.
