@@ -11,6 +11,10 @@ Write clean code from the start. Follow these rules during implementation:
 - Write clean code from the start — don't plan to "clean it up later"
 - Refactor continuously — improve code structure immediately when you see issues
 - Remove dead code — delete unused functions, variables, imports, and commented code
+- Before changing any signature, renaming, or deleting something shared, find
+  every caller with `findReferences` where the `LSP` tool is available — grep
+  misses the ones spelled differently and finds ones that are not calls.
+  [`lsp.md`](lsp.md)
 - After writing code: review comments, clean up imports, check for side effects
 
 ## Core Engine (`src/core/`)
@@ -39,7 +43,7 @@ Platform-agnostic orchestrator — no Electron imports. Can be tested standalone
 
 ## Repository Structure
 
-```
+```text
 dex/
 ├── package.json
 ├── vite.config.ts

@@ -27,7 +27,7 @@ Execute these steps in order. Do NOT skip steps.
 - **End-to-end testing runs against a second repo** — `~/Projects/Github/lukaskellerstein/dex-ecommerce`, reset via `scripts/reset-example-to.sh`. It is the only repo the destructive scripts may touch.
 - **State lives outside the app** — `~/.dex/logs/<project>/<runId>/` for the per-run log tree, `<projectDir>/.dex/` for per-project state. No database; SQLite was retired in 007.
 
-Full facts → [`rules/01-project-config.md`](rules/01-project-config.md); stack and conventions → [`rules/10-tech-stack.md`](rules/10-tech-stack.md); the machine CLIs → [`rules/machine-tools.md`](rules/machine-tools.md) (the `nvim-tools` and `lukas-ps` CLIs — pre-approved, read-only).
+Full facts → [`rules/01-project-config.md`](rules/01-project-config.md); stack and conventions → [`rules/10-tech-stack.md`](rules/10-tech-stack.md); the machine CLIs → [`rules/machine-tools.md`](rules/machine-tools.md) (the `nvim-tools` and `lukas-ps` CLIs — pre-approved, read-only); symbol navigation → [`rules/lsp.md`](rules/lsp.md) (the `LSP` tool — only in repos that opted in, and deferred, so it must be loaded before it can be called).
 
 ## Standing authorizations — do NOT ask before doing these
 

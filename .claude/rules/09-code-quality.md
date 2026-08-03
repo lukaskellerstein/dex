@@ -4,7 +4,8 @@ description: "Reference: Code quality standards — SOLID, KISS, DRY, error hand
 
 # Reference: Code Quality
 
-Write code that is **simple, maintainable, and production-ready**. Prioritize clarity over cleverness.
+Write code that is **simple, maintainable, and production-ready**. Prioritize
+clarity over cleverness.
 
 ## Principles
 
@@ -13,7 +14,8 @@ Write code that is **simple, maintainable, and production-ready**. Prioritize cl
 3. **Maintainability** over cleverness
 4. **DRY** — eliminate duplication
 5. **YAGNI** — don't add speculative features
-6. **SOLID** — Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
+6. **SOLID** — Single Responsibility, Open/Closed, Liskov Substitution,
+   Interface Segregation, Dependency Inversion
 
 ## Code Organization
 
@@ -38,3 +40,32 @@ Write code that is **simple, maintainable, and production-ready**. Prioritize cl
 - No premature optimization
 - No over-engineering simple solutions
 - No ignoring compiler/linter warnings
+
+## Formatting and linting
+
+This machine runs "no config, no tool": a formatter or linter acts on this repo
+only if the repo carries that tool's own config file. If `:w` changes nothing and
+the gutter stays empty, the marker file is missing — not the editor broken.
+
+This repo opts in to:
+
+| Tool | Marker | Covers |
+|:--|:--|:--|
+| biome (format + lint + live server) | `biome.jsonc` | the 117 `.ts` and 77 `.tsx` files, plus JSON |
+| ruff (format + lint + live server) | `ruff.toml` | the three hook scripts in `.claude/hooks/` — nothing else here is Python |
+| shfmt | `.editorconfig` | `dev-setup.sh`, `scripts/*.sh`, `.specify/**/*.sh` |
+| shellcheck | `.shellcheckrc` | same |
+| markdownlint-cli2 | `.markdownlint-cli2.yaml` | the 211 tracked `.md` — more files than TypeScript, so this one is not incidental |
+
+> **The markdown lint is repo-local on purpose.** The machine-wide
+> `~/.markdownlint-cli2.yaml` was retired because it linted every repo unasked;
+> a repo that wants markdown linting carries its own marker. This one does.
+
+stylua, hadolint and golangci-lint report `gated-off` — there is no Lua, no
+Dockerfile and no Go here. That is the contract working, not a fault.
+
+Type checking is **not** part of this: run `npx tsc --noEmit` yourself, and see
+[`lsp.md`](lsp.md) for why the `LSP` tool cannot answer "what errors do you see".
+
+The contract, and the skill that applies it, are in mac-setup:
+`projects/tooling.md` and `/lint-format-lsp`.
