@@ -10,19 +10,19 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { gitExec, safeExec, log, type RunLoggerLike } from "./_helpers.js";
-import { parseCheckpointTag, labelFor } from "./tags.js";
+import type { AgentRunner } from "../agent/AgentRunner.js";
+import { type ResolverFailReason, resolveConflicts } from "../conflict-resolver.js";
+import type { ConflictResolverConfig } from "../dexConfig.js";
+import type { RunLogger } from "../log.js";
+import type { EmitFn, RunConfig } from "../types.js";
+import { gitExec, log, type RunLoggerLike, safeExec } from "./_helpers.js";
 import {
   classifyUnmergedPaths,
+  finalizeMergeSuccess,
   gatherCommitSubjects,
   readGoalText,
-  finalizeMergeSuccess,
 } from "./_mergeHelpers.js";
-import { resolveConflicts, type ResolverFailReason } from "../conflict-resolver.js";
-import type { AgentRunner } from "../agent/AgentRunner.js";
-import type { ConflictResolverConfig } from "../dexConfig.js";
-import type { EmitFn, RunConfig } from "../types.js";
-import type { RunLogger } from "../log.js";
+import { labelFor, parseCheckpointTag } from "./tags.js";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -210,6 +210,19 @@ export function deleteBranch(
     return { ok: false, error: "branch_in_active_run", branch: branchName };
   }
 
+  // Runs BEFORE the lost-work check: both can hold at once, but only this one
+  // is unrecoverable — `would_lose_work` invites a `confirmedLoss` retry that
+  // would then fail here anyway, a two-step dead end.
+  let fallbackBranch: string | null = null;
+  try {
+    if (gitExec(`git rev-parse --abbrev-ref HEAD`, projectDir) === branchName) {
+      fallbackBranch = findPrimaryFallback(projectDir);
+      if (!fallbackBranch) return { ok: false, error: "no_primary_to_switch_to" };
+    }
+  } catch (err) {
+    return { ok: false, error: "git_error", message: String(err) };
+  }
+
   // Lost-work check (skipped when caller has already confirmed).
   if (!opts?.confirmedLoss) {
     const unique = uniqueCommits(projectDir, branchName);
@@ -225,14 +238,9 @@ export function deleteBranch(
 
   let switchedTo: string | null = null;
   try {
-    const current = gitExec(`git rev-parse --abbrev-ref HEAD`, projectDir);
-    if (current === branchName) {
-      const fallback = findPrimaryFallback(projectDir);
-      if (!fallback) {
-        return { ok: false, error: "no_primary_to_switch_to" };
-      }
-      gitExec(`git checkout -q ${fallback}`, projectDir);
-      switchedTo = fallback;
+    if (fallbackBranch) {
+      gitExec(`git checkout -q ${fallbackBranch}`, projectDir);
+      switchedTo = fallbackBranch;
     }
     // -D (force-delete) is required because `confirmedLoss` may have skipped
     // the unique-commit check — the user has explicitly elected to lose them.
@@ -318,26 +326,17 @@ export interface MergeToMainResolverDeps {
  * to the merge-base", not "what is different between the two tips" — that
  * way a moving primary doesn't change the summary.
  */
-export function computePromoteSummary(
-  projectDir: string,
-  sourceBranch: string,
-): PromoteSummary {
+export function computePromoteSummary(projectDir: string, sourceBranch: string): PromoteSummary {
   const primary = findPrimaryFallback(projectDir);
   if (!primary) {
     return { fileCount: 0, added: 0, removed: 0, topPaths: [], fullPaths: [] };
   }
-  const stat = safeExec(
-    `git diff --shortstat ${primary}...${sourceBranch}`,
-    projectDir,
-  );
+  const stat = safeExec(`git diff --shortstat ${primary}...${sourceBranch}`, projectDir);
   // shortstat shape: " 4 files changed, 120 insertions(+), 38 deletions(-)"
-  const fileCount = Number((stat.match(/(\d+) files? changed/) ?? [, "0"])[1]);
-  const added = Number((stat.match(/(\d+) insertions?\(\+\)/) ?? [, "0"])[1]);
-  const removed = Number((stat.match(/(\d+) deletions?\(-\)/) ?? [, "0"])[1]);
-  const fullPathsRaw = safeExec(
-    `git diff --name-only ${primary}...${sourceBranch}`,
-    projectDir,
-  );
+  const fileCount = Number(stat.match(/(\d+) files? changed/)?.[1] ?? "0");
+  const added = Number(stat.match(/(\d+) insertions?\(\+\)/)?.[1] ?? "0");
+  const removed = Number(stat.match(/(\d+) deletions?\(-\)/)?.[1] ?? "0");
+  const fullPathsRaw = safeExec(`git diff --name-only ${primary}...${sourceBranch}`, projectDir);
   const fullPaths = fullPathsRaw.split("\n").filter(Boolean);
   return {
     fileCount,
@@ -384,7 +383,13 @@ export async function mergeToMain(
   try {
     const out = safeExec(`git status --porcelain --untracked-files=no`, projectDir);
     const lines = out.split("\n").filter(Boolean);
-    dirtyTracked = { dirty: lines.length > 0, files: lines.map((l) => l.slice(3)) };
+    // Parse by status field, NOT a fixed column: gitExec trims the whole
+    // output, stripping the leading space off the *first* porcelain line
+    // (" M f" → "M f"), so slice(3) would eat that filename's first character.
+    dirtyTracked = {
+      dirty: lines.length > 0,
+      files: lines.map((l) => l.replace(/^\s*\S{1,2}\s+/, "")),
+    };
   } catch (err) {
     return { ok: false, error: "git_error", message: String(err) };
   }
@@ -442,7 +447,10 @@ export async function mergeToMain(
   // Inspect `git status --porcelain` for unmerged paths.
   const unmergedClassified = classifyUnmergedPaths(projectDir);
 
-  if (unmergedClassified.contentConflicts.length === 0 && unmergedClassified.nonContentKinds.length === 0) {
+  if (
+    unmergedClassified.contentConflicts.length === 0 &&
+    unmergedClassified.nonContentKinds.length === 0
+  ) {
     // Drop per-spec runtime files from the squash — both ride dex/* branches but don't belong on main.
     safeExec(`git rm -f --ignore-unmatch .dex/feature-manifest.json .dex/state.json`, projectDir);
     try {
@@ -478,8 +486,7 @@ export async function mergeToMain(
     return {
       ok: false,
       error: "git_error",
-      message:
-        "merge produced content conflicts but no resolver was supplied; merge aborted",
+      message: "merge produced content conflicts but no resolver was supplied; merge aborted",
     };
   }
 
@@ -561,10 +568,7 @@ function pendingPromotePath(projectDir: string): string {
   return path.join(projectDir, ".git", "dex-pending-promote");
 }
 
-export function writePendingPromote(
-  projectDir: string,
-  pending: PendingPromote,
-): void {
+export function writePendingPromote(projectDir: string, pending: PendingPromote): void {
   fs.writeFileSync(pendingPromotePath(projectDir), JSON.stringify(pending));
 }
 
@@ -574,10 +578,7 @@ export function readPendingPromote(projectDir: string): PendingPromote | null {
   try {
     const raw = fs.readFileSync(p, "utf-8");
     const parsed = JSON.parse(raw);
-    if (
-      typeof parsed?.sourceBranch === "string" &&
-      typeof parsed?.primary === "string"
-    ) {
+    if (typeof parsed?.sourceBranch === "string" && typeof parsed?.primary === "string") {
       return { sourceBranch: parsed.sourceBranch, primary: parsed.primary };
     }
     return null;
@@ -597,4 +598,3 @@ export function clearPendingPromote(projectDir: string): void {
     }
   }
 }
-

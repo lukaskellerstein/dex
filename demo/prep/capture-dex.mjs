@@ -22,31 +22,39 @@
  *   node demo/prep/capture-dex.mjs --section 04-rewind   one section (repeatable)
  */
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, '..', '..');
-const demoDir = join(repoRoot, 'demo');
-const captureDir = join(demoDir, 'capture');
+const repoRoot = resolve(here, "..", "..");
+const demoDir = join(repoRoot, "demo");
+const captureDir = join(demoDir, "capture");
 const overlayPath = resolve(
   repoRoot,
-  '..',
-  'claude-my-marketplace',
-  'plugins',
-  'demo-video-plugin',
-  'assets',
-  'cursor-overlay.js',
+  "..",
+  "claude-my-marketplace",
+  "plugins",
+  "demo-video-plugin",
+  "assets",
+  "cursor-overlay.js",
 );
 
 const args = process.argv.slice(2);
-const dryRun = args.includes('--dry');
-const onlySections = args.reduce(
-  (acc, a, i) => (a === '--section' && args[i + 1] ? [...acc, args[i + 1]] : acc),
-  [],
+const dryRun = args.includes("--dry");
+const onlySections = args.flatMap((a, i) =>
+  a === "--section" && args[i + 1] ? [args[i + 1]] : [],
 );
 
 // The first recorded frame should be a settled one, so trim slightly past the moment
@@ -56,40 +64,42 @@ const TRIM_MARGIN_SECONDS = 0.35;
 // ── Playwright ─────────────────────────────────────────────────────────────────
 async function loadElectron() {
   const candidates = [
-    join(repoRoot, 'node_modules', 'playwright'),
-    join(process.env.HOME || '', '.cache', 'demo-video-plugin', 'node_modules', 'playwright'),
+    join(repoRoot, "node_modules", "playwright"),
+    join(process.env.HOME || "", ".cache", "demo-video-plugin", "node_modules", "playwright"),
   ];
   for (const dir of candidates) {
     if (!existsSync(dir)) continue;
-    const require = createRequire(join(dir, 'package.json'));
-    const mod = await import(`file://${require.resolve('.')}`);
+    const require = createRequire(join(dir, "package.json"));
+    const mod = await import(`file://${require.resolve(".")}`);
     const electron = mod._electron ?? mod.default?._electron;
     if (electron) return electron;
   }
   throw new Error(
-    'Playwright is not importable. Install it once for the plugin:\n' +
+    "Playwright is not importable. Install it once for the plugin:\n" +
       '  npm install --prefix "$HOME/.cache/demo-video-plugin" playwright',
   );
 }
 
 // ── Storyboard ─────────────────────────────────────────────────────────────────
-const storyboardPath = join(demoDir, 'storyboard.json');
+const storyboardPath = join(demoDir, "storyboard.json");
 if (!existsSync(storyboardPath)) {
   console.error(`demo-video: no storyboard at ${storyboardPath}.`);
   process.exit(1);
 }
-const sb = JSON.parse(readFileSync(storyboardPath, 'utf8'));
+const sb = JSON.parse(readFileSync(storyboardPath, "utf8"));
 const meta = sb.meta ?? {};
 const fps = meta.fps || 30;
-const [vw, vh] = String(meta.captureSize || '1600x900').split('x').map(Number);
+const [vw, vh] = String(meta.captureSize || "1600x900")
+  .split("x")
+  .map(Number);
 const electronCfg = meta.electron ?? {};
 
 const sections = (sb.sections ?? [])
-  .filter((s) => s.surface === 'electron')
+  .filter((s) => s.surface === "electron")
   .filter((s) => !onlySections.length || onlySections.includes(s.id));
 
 if (!sections.length) {
-  console.log('demo-video: no electron-surface sections selected.');
+  console.log("demo-video: no electron-surface sections selected.");
   process.exit(0);
 }
 
@@ -99,12 +109,11 @@ mkdirSync(captureDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Ease the pointer over several steps so the cursor overlay animates a real move. */
-const glideTo = (page, x, y) =>
-  page.mouse.move(x, y, { steps: 8 + Math.floor(Math.random() * 8) });
+const glideTo = (page, x, y) => page.mouse.move(x, y, { steps: 8 + Math.floor(Math.random() * 8) });
 
 async function centerOf(locator) {
   const box = await locator.boundingBox();
-  if (!box) throw new Error('element has no bounding box (hidden or detached)');
+  if (!box) throw new Error("element has no bounding box (hidden or detached)");
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
@@ -134,23 +143,23 @@ async function timelineNodeTestid(page, label) {
   const sha = await page.evaluate((wanted) => {
     const texts = [...document.querySelectorAll('[data-testid="timeline-graph"] svg text')];
     for (const t of texts) {
-      const content = (t.textContent || '').replace(/\s+/g, ' ').trim();
+      const content = (t.textContent || "").replace(/\s+/g, " ").trim();
       if (!content.includes(wanted)) continue;
-      const first = content.split(' ')[0];
+      const first = content.split(" ")[0];
       if (/^[0-9a-f]{7,40}$/.test(first)) return first;
     }
     return null;
-  }, label.replace(/\s+/g, ' ').trim());
+  }, label.replace(/\s+/g, " ").trim());
   if (!sha) throw new Error(`no timeline node labelled "${label}"`);
   return `timeline-node-${sha}`;
 }
 
 function accessibleCandidates(page, phrase) {
-  const t = phrase.replace(NOISE_SUFFIX, '').trim();
+  const t = phrase.replace(NOISE_SUFFIX, "").trim();
   return [
-    page.getByRole('button', { name: t, exact: false }),
-    page.getByRole('link', { name: t, exact: false }),
-    page.getByRole('textbox', { name: t, exact: false }),
+    page.getByRole("button", { name: t, exact: false }),
+    page.getByRole("link", { name: t, exact: false }),
+    page.getByRole("textbox", { name: t, exact: false }),
     page.getByLabel(t, { exact: false }),
     page.getByPlaceholder(t, { exact: false }),
     page.getByTestId(t),
@@ -179,7 +188,7 @@ async function candidatesFor(page, target) {
 
   const words = target.split(/\s+/);
   for (let n = words.length; n >= Math.min(2, words.length); n--) {
-    out.push(...accessibleCandidates(page, words.slice(0, n).join(' ')));
+    out.push(...accessibleCandidates(page, words.slice(0, n).join(" ")));
   }
   return out;
 }
@@ -205,19 +214,21 @@ async function firstVisible(page, target, timeoutSeconds = 6) {
     }
     await sleep(150);
   } while (Date.now() < deadline);
-  throw new Error(`could not find "${target}"${lastError ? ` (${lastError.message})` : ''}`);
+  throw new Error(`could not find "${target}"${lastError ? ` (${lastError.message})` : ""}`);
 }
 
 /** Click a native application menu item by label path, e.g. "File>New Window". */
 async function clickNativeMenu(app, path) {
-  const labels = path.split('>').map((s) => s.trim());
+  const labels = path.split(">").map((s) => s.trim());
   const ok = await app.evaluate(async ({ Menu }, wanted) => {
     const menu = Menu.getApplicationMenu();
     if (!menu) return false;
     let items = menu.items;
     let item = null;
     for (const label of wanted) {
-      item = items.find((i) => (i.label || '').replace(/&/g, '').toLowerCase() === label.toLowerCase());
+      item = items.find(
+        (i) => (i.label || "").replace(/&/g, "").toLowerCase() === label.toLowerCase(),
+      );
       if (!item) return false;
       items = item.submenu ? item.submenu.items : [];
     }
@@ -241,32 +252,32 @@ async function runAction(ctx, action) {
   const page = ctx.page;
 
   switch (action.kind) {
-    case 'goto':
+    case "goto":
       await page.goto(action.path);
       break;
 
-    case 'click':
-    case 'dblclick': {
+    case "click":
+    case "dblclick": {
       const { x, y } = await pointAt(ctx, action.target);
       await sleep(280); // let the pointer settle so the click reads as intentional
       const opts = action.button ? { button: action.button } : {};
-      if (action.kind === 'dblclick') await page.mouse.dblclick(x, y, opts);
+      if (action.kind === "dblclick") await page.mouse.dblclick(x, y, opts);
       else await page.mouse.click(x, y, opts);
       break;
     }
 
-    case 'hover':
+    case "hover":
       await pointAt(ctx, action.target);
       break;
 
-    case 'type': {
+    case "type": {
       const { el, x, y } = await pointAt(ctx, action.target);
       await page.mouse.click(x, y);
       // Clear first. Dex's welcome screen preloads its inputs from
       // ~/.dex/app-config.json, so appending produced a spliced path
       // ("~/Projects/Temp" + the typed one) that still looked plausible on
       // screen and silently created a junk project directory.
-      await el.fill('').catch(() => {});
+      await el.fill("").catch(() => {});
       const cps = action.wps ?? 6; // 5-7 chars/sec reads as brisk but human
       await el.pressSequentially(action.text, { delay: 1000 / cps });
       // Same failure mode, caught rather than recorded: a field that did not end
@@ -279,12 +290,12 @@ async function runAction(ctx, action) {
       break;
     }
 
-    case 'press':
-    case 'shortcut':
+    case "press":
+    case "shortcut":
       await page.keyboard.press(action.key ?? action.to);
       break;
 
-    case 'scroll': {
+    case "scroll": {
       // Several small wheel events, not one jump: the motion is the point.
       const total = action.by ?? 400;
       const steps = Math.max(4, Math.min(20, Math.round(Math.abs(total) / 60)));
@@ -296,7 +307,7 @@ async function runAction(ctx, action) {
       break;
     }
 
-    case 'drag': {
+    case "drag": {
       const from = await pointAt(ctx, action.target);
       await page.mouse.down();
       if (action.to) await pointAt(ctx, action.to);
@@ -305,7 +316,7 @@ async function runAction(ctx, action) {
       break;
     }
 
-    case 'waitFor': {
+    case "waitFor": {
       // Soft on purpose: several storyboard waits name a state ("loop start panel
       // showing the auto-detected GOAL.md") that has no single element. Failing the
       // section on those would be noise, and burning the budget is the same pacing
@@ -323,35 +334,35 @@ async function runAction(ctx, action) {
       break;
     }
 
-    case 'dwell':
+    case "dwell":
       await sleep((action.seconds ?? 1) * 1000);
       break;
 
-    case 'select': {
+    case "select": {
       const el = await firstVisible(page, action.target);
       await el.selectOption(action.to ?? action.text);
       break;
     }
 
-    case 'upload': {
+    case "upload": {
       const el = await firstVisible(page, action.target);
       await el.setInputFiles(resolve(repoRoot, action.path ?? action.text));
       break;
     }
 
-    case 'menu':
+    case "menu":
       await clickNativeMenu(app, action.to ?? action.target);
       break;
 
-    case 'window': {
+    case "window": {
       const windows = app.windows();
       const idx = Number(action.to ?? 1);
-      ctx.page = windows[idx] ?? (await app.waitForEvent('window', { timeout: 5000 }));
+      ctx.page = windows[idx] ?? (await app.waitForEvent("window", { timeout: 5000 }));
       await ctx.page.bringToFront?.();
       break;
     }
 
-    case 'eval':
+    case "eval":
       await page.evaluate(action.text);
       break;
 
@@ -366,9 +377,9 @@ async function runAction(ctx, action) {
 function runShell(command, label) {
   const started = Date.now();
   try {
-    execFileSync('bash', ['-c', command], { cwd: repoRoot, stdio: 'inherit' });
+    execFileSync("bash", ["-c", command], { cwd: repoRoot, stdio: "inherit" });
   } catch (err) {
-    throw new Error(`${label} failed (exit ${err.status ?? '?'}): ${command}`);
+    throw new Error(`${label} failed (exit ${err.status ?? "?"}): ${command}`);
   }
   return (Date.now() - started) / 1000;
 }
@@ -376,35 +387,65 @@ function runShell(command, label) {
 // ── ffmpeg ─────────────────────────────────────────────────────────────────────
 function probe(file, entries, stream = false) {
   const argv = stream
-    ? ['-v', 'error', '-select_streams', 'v:0', '-show_entries', `stream=${entries}`, '-of', 'csv=p=0:s=x', file]
-    : ['-v', 'error', '-show_entries', `format=${entries}`, '-of', 'csv=p=0', file];
-  return execFileSync('ffprobe', argv, { encoding: 'utf8' }).trim();
+    ? [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        `stream=${entries}`,
+        "-of",
+        "csv=p=0:s=x",
+        file,
+      ]
+    : ["-v", "error", "-show_entries", `format=${entries}`, "-of", "csv=p=0", file];
+  return execFileSync("ffprobe", argv, { encoding: "utf8" }).trim();
 }
 
 function trimAndTranscode(src, out, offsetSeconds) {
   const tmp = `${out}.part`;
   execFileSync(
-    'ffmpeg',
+    "ffmpeg",
     [
-      '-y', '-hide_banner', '-loglevel', 'error',
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
       // -ss before -i seeks by demuxing rather than decoding the discarded head,
       // which matters because that head can be half a minute of setup (03-pause).
-      '-ss', offsetSeconds.toFixed(3),
-      '-i', src,
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '20',
-      '-r', String(fps), '-fps_mode', 'cfr', '-pix_fmt', 'yuv420p',
-      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-      '-movflags', '+faststart', '-an',
-      '-f', 'mp4', tmp,
+      "-ss",
+      offsetSeconds.toFixed(3),
+      "-i",
+      src,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "medium",
+      "-crf",
+      "20",
+      "-r",
+      String(fps),
+      "-fps_mode",
+      "cfr",
+      "-pix_fmt",
+      "yuv420p",
+      "-vf",
+      "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+      "-movflags",
+      "+faststart",
+      "-an",
+      "-f",
+      "mp4",
+      tmp,
     ],
-    { stdio: 'inherit' },
+    { stdio: "inherit" },
   );
   renameSync(tmp, out);
 }
 
 // ── Capture one section ────────────────────────────────────────────────────────
 const _electron = await loadElectron();
-const overlay = readFileSync(overlayPath, 'utf8');
+const overlay = readFileSync(overlayPath, "utf8");
 const results = [];
 
 for (const section of sections) {
@@ -435,23 +476,23 @@ for (const section of sections) {
 
   try {
     if (section.resetBefore) {
-      result.prepareSeconds += runShell('bash demo/prep/reset.sh', 'resetBefore');
+      result.prepareSeconds += runShell("bash demo/prep/reset.sh", "resetBefore");
     }
     for (const command of section.prepareCommands ?? []) {
-      result.prepareSeconds += runShell(command, 'prepareCommand');
+      result.prepareSeconds += runShell(command, "prepareCommand");
     }
 
     app = await _electron.launch({
-      args: electronCfg.args ?? ['dist/main/index.js'],
+      args: electronCfg.args ?? ["dist/main/index.js"],
       cwd: electronCfg.cwd ? resolve(repoRoot, electronCfg.cwd) : repoRoot,
-      env: { ...process.env, ...(electronCfg.env ?? {}), DEMO_CAPTURE: '1' },
+      env: { ...process.env, ...(electronCfg.env ?? {}), DEMO_CAPTURE: "1" },
       ...(electronCfg.executablePath ? { executablePath: electronCfg.executablePath } : {}),
       ...(dryRun ? {} : { recordVideo: { dir: tmpDir, size: { width: vw, height: vh } } }),
     });
 
     const page = await app.firstWindow();
     videoStartedAt = Date.now();
-    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
     await page.setViewportSize({ width: vw, height: vh }).catch(() => {});
 
     // The styled cursor: addInitScript covers later navigations, the direct evaluate
@@ -459,7 +500,9 @@ for (const section of sections) {
     await page.addInitScript({ content: overlay }).catch(() => {});
     await page.evaluate(overlay).catch(() => {});
     if (electronCfg.freezeClock) {
-      await page.evaluate((iso) => window.__demoFreezeClock?.(iso), electronCfg.freezeClock).catch(() => {});
+      await page
+        .evaluate((iso) => window.__demoFreezeClock?.(iso), electronCfg.freezeClock)
+        .catch(() => {});
     }
 
     const ctx = { app, page, unresolved: result.unresolved };
@@ -470,17 +513,19 @@ for (const section of sections) {
         try {
           await runAction(ctx, action);
         } catch (err) {
-          throw new Error(`${phase}[${i}] ${action.kind}${action.target ? ` "${action.target}"` : ''}: ${err.message}`);
+          throw new Error(
+            `${phase}[${i}] ${action.kind}${action.target ? ` "${action.target}"` : ""}: ${err.message}`,
+          );
         }
       }
     };
 
     const setupStartedAt = Date.now();
-    await drive(section.setupActions, 'setupActions');
+    await drive(section.setupActions, "setupActions");
     setupEndedAt = Date.now();
     result.setupSeconds = Number(((setupEndedAt - setupStartedAt) / 1000).toFixed(2));
 
-    await drive(section.actions, 'actions');
+    await drive(section.actions, "actions");
     await sleep(600); // hold the final state so the editor has a clean frame to cut on
     result.contentSeconds = Number(((Date.now() - setupEndedAt) / 1000).toFixed(2));
   } catch (err) {
@@ -516,15 +561,15 @@ for (const section of sections) {
     continue;
   }
 
-  const produced = existsSync(tmpDir) ? readdirSync(tmpDir).filter((n) => n.endsWith('.webm')) : [];
+  const produced = existsSync(tmpDir) ? readdirSync(tmpDir).filter((n) => n.endsWith(".webm")) : [];
   if (!produced.length || statSync(join(tmpDir, produced[0])).size < 4096) {
-    result.error = (result.error ? `${result.error}; ` : '') + 'no usable WebM was produced';
+    result.error = (result.error ? `${result.error}; ` : "") + "no usable WebM was produced";
     rmSync(tmpDir, { recursive: true, force: true });
     continue;
   }
 
   const raw = join(tmpDir, produced[0]);
-  const rawDuration = Number(probe(raw, 'duration'));
+  const rawDuration = Number(probe(raw, "duration"));
 
   // Anchor the trim to the file rather than to wall clock. The recording spans
   // roughly [page created, app closed], so `rawDuration - (close - setupEnd)` is the
@@ -532,23 +577,25 @@ for (const section of sections) {
   // frames. Wall clock is the fallback when the WebM has no usable duration.
   const wallClockOffset = (setupEndedAt - videoStartedAt) / 1000;
   const durationOffset = rawDuration - (closedAt - setupEndedAt) / 1000;
-  const offset = Number.isFinite(durationOffset) && durationOffset > 0 ? durationOffset : wallClockOffset;
+  const offset =
+    Number.isFinite(durationOffset) && durationOffset > 0 ? durationOffset : wallClockOffset;
   result.trimOffsetSeconds = Number(Math.max(0, offset + TRIM_MARGIN_SECONDS).toFixed(3));
 
   const out = join(captureDir, `${section.id}.mp4`);
   try {
     trimAndTranscode(raw, out, result.trimOffsetSeconds);
   } catch (err) {
-    result.error = (result.error ? `${result.error}; ` : '') + `transcode failed: ${err.message}`;
+    result.error = (result.error ? `${result.error}; ` : "") + `transcode failed: ${err.message}`;
     rmSync(tmpDir, { recursive: true, force: true });
     continue;
   }
   rmSync(tmpDir, { recursive: true, force: true });
 
-  const duration = Number(probe(out, 'duration'));
-  const [width, height] = probe(out, 'width,height', true).split('x').map(Number);
+  const duration = Number(probe(out, "duration"));
+  const [width, height] = probe(out, "width,height", true).split("x").map(Number);
   if (!Number.isFinite(duration) || duration <= 0) {
-    result.error = (result.error ? `${result.error}; ` : '') + 'ffprobe found no duration on the final mp4';
+    result.error =
+      (result.error ? `${result.error}; ` : "") + "ffprobe found no duration on the final mp4";
     continue;
   }
 
@@ -558,7 +605,14 @@ for (const section of sections) {
   writeFileSync(
     join(captureDir, `${section.id}.json`),
     `${JSON.stringify(
-      { id: section.id, file: result.clip, durationSeconds: result.durationSeconds, width, height, fps },
+      {
+        id: section.id,
+        file: result.clip,
+        durationSeconds: result.durationSeconds,
+        width,
+        height,
+        fps,
+      },
       null,
       2,
     )}\n`,
@@ -572,7 +626,7 @@ for (const section of sections) {
 }
 
 // ── Report ─────────────────────────────────────────────────────────────────────
-console.log(JSON.stringify({ mode: dryRun ? 'dry-run' : 'record', results }, null, 2));
+console.log(JSON.stringify({ mode: dryRun ? "dry-run" : "record", results }, null, 2));
 
 for (const r of results.filter((x) => x.unresolved.length)) {
   console.error(`\ndemo-video: ${r.id} had unresolved waits (they burned their full budget):`);
@@ -583,7 +637,7 @@ const failures = results.filter((r) => !r.ok);
 if (failures.length) {
   console.error(
     `\ndemo-video: ${failures.length}/${results.length} section(s) failed. ` +
-      'Fix the actions or the app state and re-run with --dry until every section passes.',
+      "Fix the actions or the app state and re-run with --dry until every section passes.",
   );
   process.exit(1);
 }

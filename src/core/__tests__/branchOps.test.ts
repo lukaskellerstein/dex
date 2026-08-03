@@ -1,10 +1,10 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import { deleteBranch, mergeToMain, computePromoteSummary } from "../checkpoints/branchOps.ts";
+import test from "node:test";
+import { computePromoteSummary, deleteBranch, mergeToMain } from "../checkpoints/branchOps.ts";
 
 function mkTmpRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dex-bo-"));
@@ -34,10 +34,27 @@ function currentBranch(dir: string): string {
 }
 
 function branches(dir: string): string[] {
-  return execSync("git branch --format=%(refname:short)", { cwd: dir, encoding: "utf-8" })
+  // %(refname:short) must be quoted — execSync runs via /bin/sh, which would
+  // otherwise treat the parentheses as a syntax error.
+  return execSync("git branch --format='%(refname:short)'", { cwd: dir, encoding: "utf-8" })
     .trim()
     .split("\n")
     .filter(Boolean);
+}
+
+/**
+ * Simulate an orchestrator run in progress. `isBranchInActiveRun` requires BOTH
+ * `state.json` with status "running" AND a `state.lock` naming a live PID — the
+ * lock-liveness check exists so a stale running-state can't permanently block
+ * delete/merge. Writing state.json alone makes the guard (correctly) fail open.
+ */
+function writeRunningState(dir: string): void {
+  fs.mkdirSync(path.join(dir, ".dex"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, ".dex", "state.json"),
+    JSON.stringify({ status: "running", runId: "test" }),
+  );
+  fs.writeFileSync(path.join(dir, ".dex", "state.lock"), JSON.stringify({ pid: process.pid }));
 }
 
 function commitOnCurrent(dir: string, file: string, msg: string): string {
@@ -239,11 +256,7 @@ test("deleteBranch: refuses when state.json reports running on the target branch
     const sha = head(dir);
     execSync(`git checkout -q -b dex/2026-05-04-gggggg ${sha}`, { cwd: dir });
     // Write state.json reporting a running run; HEAD is on the target.
-    fs.mkdirSync(path.join(dir, ".dex"), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, ".dex", "state.json"),
-      JSON.stringify({ status: "running", runId: "test" }),
-    );
+    writeRunningState(dir);
     const r = deleteBranch(dir, "dex/2026-05-04-gggggg");
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.error, "branch_in_active_run");
@@ -260,11 +273,7 @@ test("deleteBranch: state.json running but HEAD elsewhere → not refused", () =
     const sha = head(dir);
     // Branch carries no unique commits and HEAD stays on main.
     execSync(`git branch dex/2026-05-04-hhhhhh ${sha}`, { cwd: dir });
-    fs.mkdirSync(path.join(dir, ".dex"), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, ".dex", "state.json"),
-      JSON.stringify({ status: "running", runId: "test" }),
-    );
+    writeRunningState(dir);
     const r = deleteBranch(dir, "dex/2026-05-04-hhhhhh");
     assert.equal(r.ok, true);
   } finally {
@@ -323,16 +332,19 @@ test("mergeToMain: clean merge produces a single-parent squash commit on main", 
     assert.equal(r.ok, true);
     if (r.ok && r.mode === "clean") {
       // Single-parent squash commit (no merge topology).
-      const parentCount = execSync(
-        `git log -1 --format='%P' ${r.mergeSha}`,
-        { cwd: dir, encoding: "utf-8" },
-      ).trim().split(" ").filter(Boolean).length;
+      const parentCount = execSync(`git log -1 --format='%P' ${r.mergeSha}`, {
+        cwd: dir,
+        encoding: "utf-8",
+      })
+        .trim()
+        .split(" ")
+        .filter(Boolean).length;
       assert.equal(parentCount, 1);
       // Squash subject names the source branch (timeline parser depends on this).
-      const subject = execSync(
-        `git log -1 --format=%s ${r.mergeSha}`,
-        { cwd: dir, encoding: "utf-8" },
-      ).trim();
+      const subject = execSync(`git log -1 --format=%s ${r.mergeSha}`, {
+        cwd: dir,
+        encoding: "utf-8",
+      }).trim();
       assert.match(subject, /^dex: promoted dex\/2026-05-04-mmmmmm to main$/);
       assert.equal(r.mergedSource, "dex/2026-05-04-mmmmmm");
     } else {
@@ -344,10 +356,7 @@ test("mergeToMain: clean merge produces a single-parent squash commit on main", 
     // HEAD is on main.
     assert.equal(currentBranch(dir), "main");
     // Pending-promote sidecar is cleared on success.
-    assert.equal(
-      fs.existsSync(path.join(dir, ".git", "dex-pending-promote")),
-      false,
-    );
+    assert.equal(fs.existsSync(path.join(dir, ".git", "dex-pending-promote")), false);
   } finally {
     rmTmp(dir);
   }
@@ -429,10 +438,10 @@ test("mergeToMain: dirty + force=save autosaves and proceeds", async () => {
     const r = await mergeToMain(dir, "dex/2026-05-04-qqqqqq", { force: "save" });
     assert.equal(r.ok, true);
     // Autosave commit landed on main before the merge — verify by subject.
-    const autosave = execSync(
-      `git log main --grep='^dex: pre-promote autosave' --oneline`,
-      { cwd: dir, encoding: "utf-8" },
-    ).trim();
+    const autosave = execSync(`git log main --grep='^dex: pre-promote autosave' --oneline`, {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
     assert.ok(autosave.length > 0, "expected pre-promote autosave commit on main");
   } finally {
     rmTmp(dir);
@@ -445,11 +454,7 @@ test("mergeToMain: refuses when state.json running on the source branch", async 
     const sha1 = head(dir);
     execSync(`git checkout -q -b dex/2026-05-04-rrrrrr ${sha1}`, { cwd: dir });
     commitOnCurrent(dir, "feat.md", "x");
-    fs.mkdirSync(path.join(dir, ".dex"), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, ".dex", "state.json"),
-      JSON.stringify({ status: "running", runId: "test" }),
-    );
+    writeRunningState(dir);
     // HEAD is on the source branch — that triggers the in-active-run check.
     const r = await mergeToMain(dir, "dex/2026-05-04-rrrrrr");
     assert.equal(r.ok, false);
@@ -464,11 +469,7 @@ test("mergeToMain: refuses when state.json running on main", async () => {
   try {
     const sha1 = head(dir);
     execSync(`git branch dex/2026-05-04-ssssss ${sha1}`, { cwd: dir });
-    fs.mkdirSync(path.join(dir, ".dex"), { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, ".dex", "state.json"),
-      JSON.stringify({ status: "running", runId: "test" }),
-    );
+    writeRunningState(dir);
     // HEAD is on main; state says running → main_in_active_run.
     const r = await mergeToMain(dir, "dex/2026-05-04-ssssss");
     assert.equal(r.ok, false);

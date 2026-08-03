@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { TaskPhase, Task } from "./types.js";
+import type { Task, TaskPhase } from "./types.js";
 
 const PHASE_HEADER = /^## (?:TaskPhase|Phase) (\d+): (.+)$/;
 const PURPOSE_LINE = /^\*\*Purpose\*\*: (.+)$/;
@@ -15,11 +15,10 @@ function extractTags(raw: string): {
   let userStory: string | null = null;
   let priority: string | null = null;
 
-  // Extract all [TAG] brackets for known tag patterns
-  // biome-ignore lint: resetting lastIndex is intentional for global regex reuse
-  BRACKET_TAG.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = BRACKET_TAG.exec(raw)) !== null) {
+  // Extract all [TAG] brackets for known tag patterns.
+  // matchAll leaves BRACKET_TAG.lastIndex untouched, so the shared module-level
+  // regex needs no manual reset between calls.
+  for (const match of raw.matchAll(BRACKET_TAG)) {
     const tag = match[1];
     if (/^US\d+$/i.test(tag)) {
       userStory = tag.toUpperCase();
@@ -29,22 +28,22 @@ function extractTags(raw: string): {
   }
 
   // Strip matched tags from description
-  const description = raw.replace(BRACKET_TAG, (full, tag) => {
-    if (/^US\d+$/i.test(tag) || /^P\d?$/.test(tag)) return "";
-    return full;
-  }).trim();
+  const description = raw
+    .replace(BRACKET_TAG, (full, tag) => {
+      if (/^US\d+$/i.test(tag) || /^P\d?$/.test(tag)) return "";
+      return full;
+    })
+    .trim();
 
   return { userStory, priority, description };
 }
 
-export function deriveTaskPhaseStatus(
-  tasks: Task[]
-): "complete" | "partial" | "not_started" {
+export function deriveTaskPhaseStatus(tasks: Task[]): "complete" | "partial" | "not_started" {
   if (tasks.length === 0) return "not_started";
   const allDone = tasks.every((t) => t.status === "done");
   if (allDone) return "complete";
   const anyStarted = tasks.some(
-    (t) => t.status === "done" || t.status === "code_exists" || t.status === "in_progress"
+    (t) => t.status === "done" || t.status === "code_exists" || t.status === "in_progress",
   );
   return anyStarted ? "partial" : "not_started";
 }
@@ -121,10 +120,9 @@ export function extractTaskIds(content: string): string[] {
 
   // Track character spans covered by ranges to avoid double-counting
   const rangeSpans: [number, number][] = [];
-  let match: RegExpExecArray | null;
 
   // First pass: expand ranges
-  while ((match = RANGE_RE.exec(content)) !== null) {
+  for (const match of content.matchAll(RANGE_RE)) {
     const startNum = parseInt(match[1], 10);
     const endNum = parseInt(match[2], 10);
     const padLen = match[1].length;
@@ -136,8 +134,8 @@ export function extractTaskIds(content: string): string[] {
   }
 
   // Second pass: individual IDs not already covered by a range
-  while ((match = SINGLE_RE.exec(content)) !== null) {
-    const inRange = rangeSpans.some(([s, e]) => match!.index >= s && match!.index < e);
+  for (const match of content.matchAll(SINGLE_RE)) {
+    const inRange = rangeSpans.some(([s, e]) => match.index >= s && match.index < e);
     if (!inRange && !ids.includes(match[1])) {
       ids.push(match[1]);
     }
@@ -151,14 +149,8 @@ export function extractTaskIds(content: string): string[] {
 
 // ── T015: Discover New Spec Directory ──
 
-export function discoverNewSpecDir(
-  projectDir: string,
-  knownSpecs: string[]
-): string | null {
-  const candidates = [
-    path.join(projectDir, "specs"),
-    path.join(projectDir, ".specify", "specs"),
-  ];
+export function discoverNewSpecDir(projectDir: string, knownSpecs: string[]): string | null {
+  const candidates = [path.join(projectDir, "specs"), path.join(projectDir, ".specify", "specs")];
 
   for (const specsRoot of candidates) {
     if (fs.existsSync(specsRoot)) {
@@ -176,10 +168,7 @@ export function discoverNewSpecDir(
   return null;
 }
 
-export function parseTasksFile(
-  projectDir: string,
-  specDir: string
-): TaskPhase[] {
+export function parseTasksFile(projectDir: string, specDir: string): TaskPhase[] {
   const tasksPath = path.join(projectDir, specDir, "tasks.md");
   const content = fs.readFileSync(tasksPath, "utf-8");
   return parseTasksMd(content);

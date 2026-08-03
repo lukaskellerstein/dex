@@ -48,10 +48,14 @@ try {
 
 console.log(`mock-config.json:`);
 console.log(`  enabled:    ${mockCfg.enabled}`);
-console.log(`  fixtureDir: ${mockCfg.fixtureDir ?? "(not set — MockAgentRunner will refuse to start)"}`);
+console.log(
+  `  fixtureDir: ${mockCfg.fixtureDir ?? "(not set — MockAgentRunner will refuse to start)"}`,
+);
 
 const fixtureDir = mockCfg.fixtureDir
-  ? (path.isAbsolute(mockCfg.fixtureDir) ? mockCfg.fixtureDir : path.resolve(projectDir, mockCfg.fixtureDir))
+  ? path.isAbsolute(mockCfg.fixtureDir)
+    ? mockCfg.fixtureDir
+    : path.resolve(projectDir, mockCfg.fixtureDir)
   : null;
 
 let missingCount = 0;
@@ -80,7 +84,9 @@ if (mockCfg.dex_loop && Array.isArray(mockCfg.dex_loop.cycles)) {
   console.log(`  cycles:     ${mockCfg.dex_loop.cycles.length}`);
   mockCfg.dex_loop.cycles.forEach((cycle, idx) => {
     const stages = cycle.stages ?? {};
-    console.log(`    [${idx + 1}] ${cycle.feature?.id ?? "?"} "${cycle.feature?.title ?? "?"}" — ${Object.keys(stages).join(", ")}`);
+    console.log(
+      `    [${idx + 1}] ${cycle.feature?.id ?? "?"} "${cycle.feature?.title ?? "?"}" — ${Object.keys(stages).join(", ")}`,
+    );
     for (const [stageName, desc] of Object.entries(stages)) {
       checkWrites(`dex_loop.cycles[${idx}].stages.${stageName}`, desc.writes);
     }
@@ -90,6 +96,8 @@ if (mockCfg.dex_loop && Array.isArray(mockCfg.dex_loop.cycles)) {
 if (missingCount === 0) {
   console.log(`  ✓ all fixture 'from' paths resolve`);
 } else {
-  console.log(`  ✗ ${missingCount} fixture(s) missing — mock will throw MockFixtureMissingError at runtime`);
+  console.log(
+    `  ✗ ${missingCount} fixture(s) missing — mock will throw MockFixtureMissingError at runtime`,
+  );
   process.exit(1);
 }

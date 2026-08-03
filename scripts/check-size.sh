@@ -15,8 +15,14 @@ set -euo pipefail
 #   - useOrchestrator.ts retired when Wave B landed (910 → 511 LOC)
 #   - App.tsx retired when Wave C-rest landed (717 → 506 LOC)
 ALLOWLIST=(
-  src/core/state.ts                       # perpetual — 01X-state-reconciliation
-  src/core/agent/ClaudeAgentRunner.ts     # perpetual — TBD SDK-adapter spec
+  src/core/state.ts                   # perpetual — 01X-state-reconciliation
+  src/core/agent/ClaudeAgentRunner.ts # perpetual — TBD SDK-adapter spec
+  # Added 2026-08-03. Both arrived with 010-interactive-timeline, after this
+  # list was written, and were never assessed against the limit. Cohesive
+  # single-purpose modules (one layout pass; one SVG+zoom component), so the
+  # split would be arbitrary. Revisit under a timeline-rendering spec.
+  src/renderer/components/checkpoints/timelineLayout.ts
+  src/renderer/components/checkpoints/TimelineGraph.tsx
 )
 
 # Find files >600 LOC under src/. `wc -l` emits a trailing "total" line we filter out.
@@ -32,13 +38,16 @@ while IFS= read -r line; do
   file=${line#* }
   exempt=0
   for allowed in "${ALLOWLIST[@]}"; do
-    if [ "$file" = "$allowed" ]; then exempt=1; break; fi
+    if [ "$file" = "$allowed" ]; then
+      exempt=1
+      break
+    fi
   done
   if [ $exempt -eq 0 ]; then
     echo "FAIL: $file ($loc LOC > 600)" >&2
     fail=1
   fi
-done <<< "$VIOLATIONS"
+done <<<"$VIOLATIONS"
 
 if [ $fail -ne 0 ]; then
   echo "" >&2

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { checkpointService } from "../../services/checkpointService.js";
 import { IdentityPrompt } from "./IdentityPrompt";
 import { InitRepoPrompt } from "./InitRepoPrompt";
-import { checkpointService } from "../../services/checkpointService.js";
 
 interface Props {
   projectDir: string | null;

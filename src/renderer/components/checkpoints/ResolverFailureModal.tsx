@@ -1,10 +1,10 @@
-import { CheckpointModal } from "./Modal";
 import {
-  RESOLVER_FAILURE_TITLE,
   ACCEPT_AI_RESULT,
-  ROLLBACK_MERGE,
   OPEN_IN_EDITOR,
+  RESOLVER_FAILURE_TITLE,
+  ROLLBACK_MERGE,
 } from "./branchOps/copy";
+import { CheckpointModal } from "./Modal";
 
 interface Props {
   /** The resolver's terminal reason — surfaces in the modal body for context. */
@@ -81,9 +81,7 @@ export function ResolverFailureModal({
         The AI couldn't fully reconcile the disagreement{" "}
         <code style={{ color: "var(--foreground-dim)" }}>({reason})</code>.
       </p>
-      <p style={{ marginBottom: 10, fontSize: 12, color: "var(--foreground-muted)" }}>
-        Pick one:
-      </p>
+      <p style={{ marginBottom: 10, fontSize: 12, color: "var(--foreground-muted)" }}>Pick one:</p>
       <ul
         style={{
           fontSize: 12,
@@ -94,12 +92,12 @@ export function ResolverFailureModal({
         }}
       >
         <li>
-          <strong>{ACCEPT_AI_RESULT}</strong> — finalize with whatever the AI
-          produced. Use this when you're willing to inspect the result yourself.
+          <strong>{ACCEPT_AI_RESULT}</strong> — finalize with whatever the AI produced. Use this
+          when you're willing to inspect the result yourself.
         </li>
         <li>
-          <strong>{ROLLBACK_MERGE}</strong> — undo the entire attempt. Main and
-          this version both return to where they were.
+          <strong>{ROLLBACK_MERGE}</strong> — undo the entire attempt. Main and this version both
+          return to where they were.
         </li>
       </ul>
       {failedFiles.length > 0 && (

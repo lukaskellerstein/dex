@@ -40,11 +40,14 @@ export function EditInput({ input }: EditInputProps) {
               borderLeft: "3px solid rgba(239, 68, 68, 0.4)",
             }}
           >
-            {oldStr.split("\n").slice(0, 8).map((line, i) => (
-              <div key={i} style={{ color: "rgba(239, 68, 68, 0.8)" }}>
-                - {line}
-              </div>
-            ))}
+            {oldStr
+              .split("\n")
+              .slice(0, 8)
+              .map((line, i) => (
+                <div key={i} style={{ color: "rgba(239, 68, 68, 0.8)" }}>
+                  - {line}
+                </div>
+              ))}
             {oldStr.split("\n").length > 8 && (
               <div style={{ color: "var(--foreground-disabled)" }}>...</div>
             )}
@@ -58,11 +61,14 @@ export function EditInput({ input }: EditInputProps) {
               borderLeft: "3px solid rgba(34, 197, 94, 0.4)",
             }}
           >
-            {newStr.split("\n").slice(0, 8).map((line, i) => (
-              <div key={i} style={{ color: "rgba(34, 197, 94, 0.8)" }}>
-                + {line}
-              </div>
-            ))}
+            {newStr
+              .split("\n")
+              .slice(0, 8)
+              .map((line, i) => (
+                <div key={i} style={{ color: "rgba(34, 197, 94, 0.8)" }}>
+                  + {line}
+                </div>
+              ))}
             {newStr.split("\n").length > 8 && (
               <div style={{ color: "var(--foreground-disabled)" }}>...</div>
             )}

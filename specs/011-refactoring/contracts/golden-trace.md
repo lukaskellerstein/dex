@@ -34,7 +34,7 @@ comm -12 /tmp/golden-baseline-1.txt /tmp/golden-baseline-2.txt \
 
 The sed pipeline normalizes each log line by stripping:
 - `[<ISO timestamp>]` at the start — pure noise (varies on every line).
-- Trailing ` { ... }` JSON payload — payload contents legitimately reorder (cost numbers, durations, runIds).
+- Trailing `{ ... }` JSON payload — payload contents legitimately reorder (cost numbers, durations, runIds).
 - Auto-generated branch names `dex/YYYY-MM-DD-xxxxxx` → `dex/<BRANCH>` — different per run.
 - UUIDs (run/agent IDs) → `<UUID>` — different per run.
 

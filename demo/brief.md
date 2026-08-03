@@ -289,7 +289,7 @@ orchestrator doing real work on a real repo; only the agent's replies are script
 narration never claims a live model and never mentions spend.
 
 The loop dashboard renders the running stage's step content inline as a reply preview, and
-that content used to carry a literal `[mock] ` prefix — visible for roughly 35 of the video's
+that content used to carry a literal `[mock]` prefix — visible for roughly 35 of the video's
 141 seconds across sections 03 and 05. Two earlier cuts disclosed it in a section 03
 lower-third ("Mock backend — a full run, replayable at zero cost"). That is no longer needed:
 the prefix was removed from `MockAgentRunner`'s two synthetic `text` steps, so the preview now
@@ -350,7 +350,7 @@ about 25 checkpoint commits and three spec folders (`001-catalog-and-search`,
 
 ### Recording order
 
-```
+```text
 demo/prep/reset.sh                  # zero state; run before section 01
   … record 01, 02, 03 …             # 02 and 03 share one live run
   … wait for the run to terminate …

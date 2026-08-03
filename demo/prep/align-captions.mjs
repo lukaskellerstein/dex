@@ -31,15 +31,15 @@
  * usage: node demo/prep/align-captions.mjs [section-id …]
  */
 
-import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const demoDir = resolve(here, '..');
-const timelinePath = join(demoDir, 'timeline.json');
-const storyboardPath = join(demoDir, 'storyboard.json');
+const demoDir = resolve(here, "..");
+const timelinePath = join(demoDir, "timeline.json");
+const storyboardPath = join(demoDir, "storyboard.json");
 
 // Narration is loudness-normalised to -16 LUFS on the way in (import-narration.mjs),
 // so -35dB sits well under speech and above the encoder's noise floor. 0.20s is short
@@ -61,34 +61,49 @@ for (const p of [timelinePath, storyboardPath]) {
   }
 }
 
-const timeline = JSON.parse(readFileSync(timelinePath, 'utf8'));
-const storyboard = JSON.parse(readFileSync(storyboardPath, 'utf8'));
+const timeline = JSON.parse(readFileSync(timelinePath, "utf8"));
+const storyboard = JSON.parse(readFileSync(storyboardPath, "utf8"));
 const fps = timeline.fps || 30;
-const voiceovers = new Map((storyboard.sections ?? []).map((s) => [s.id, String(s.voiceover || '').trim()]));
+const voiceovers = new Map(
+  (storyboard.sections ?? []).map((s) => [s.id, String(s.voiceover || "").trim()]),
+);
 
-const norm = (s) => s.replace(/\s+/g, ' ').trim();
-const weigh = (s) => norm(s).replace(/\s/g, '').length || 1;
+const norm = (s) => s.replace(/\s+/g, " ").trim();
+const weigh = (s) => norm(s).replace(/\s/g, "").length || 1;
 
 // ── Where the voice actually is ────────────────────────────────────────────────
 function speechRuns(audioPath) {
   const duration = Number(
-    execFileSync('ffprobe', [
-      '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', audioPath,
-    ], { encoding: 'utf8' }).trim(),
+    execFileSync(
+      "ffprobe",
+      ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", audioPath],
+      { encoding: "utf8" },
+    ).trim(),
   );
 
   // silencedetect reports on stderr, so this needs spawnSync — execFileSync hands back
   // stdout, which for `-f null -` is empty.
-  const probe = spawnSync('ffmpeg', [
-    '-hide_banner', '-nostats', '-i', audioPath,
-    '-af', `silencedetect=noise=${SILENCE_DB}dB:d=${MIN_SILENCE}`,
-    '-f', 'null', '-',
-  ], { encoding: 'utf8' });
-  if (probe.status !== 0) throw new Error(`ffmpeg silencedetect failed: ${probe.stderr?.slice(-200)}`);
+  const probe = spawnSync(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-nostats",
+      "-i",
+      audioPath,
+      "-af",
+      `silencedetect=noise=${SILENCE_DB}dB:d=${MIN_SILENCE}`,
+      "-f",
+      "null",
+      "-",
+    ],
+    { encoding: "utf8" },
+  );
+  if (probe.status !== 0)
+    throw new Error(`ffmpeg silencedetect failed: ${probe.stderr?.slice(-200)}`);
   const log = probe.stderr;
 
   const silences = [];
-  for (const line of log.split('\n')) {
+  for (const line of log.split("\n")) {
     const start = line.match(/silence_start:\s*(-?[\d.]+)/);
     const end = line.match(/silence_end:\s*(-?[\d.]+)/);
     if (start) silences.push({ start: Math.max(0, Number(start[1])), end: duration });
@@ -120,12 +135,15 @@ function speechTimeToWallClock(runs, offset) {
 // ── Chunks back onto the sentences they came from ──────────────────────────────
 /** reconcile.mjs never lets a chunk straddle a sentence, so this mapping is exact. */
 function groupChunksBySentence(captions, voiceover) {
-  const sentences = voiceover.split(/(?<=[.!?])\s+/).map(norm).filter(Boolean);
+  const sentences = voiceover
+    .split(/(?<=[.!?])\s+/)
+    .map(norm)
+    .filter(Boolean);
   const groups = [];
   let i = 0;
   for (const sentence of sentences) {
     const taken = [];
-    let built = '';
+    let built = "";
     while (i < captions.length && norm(built) !== sentence) {
       built = `${built} ${captions[i].text}`;
       taken.push(captions[i]);
@@ -136,7 +154,7 @@ function groupChunksBySentence(captions, voiceover) {
     }
     groups.push(taken);
   }
-  if (i !== captions.length) throw new Error('caption chunks left over after the last sentence');
+  if (i !== captions.length) throw new Error("caption chunks left over after the last sentence");
   return groups;
 }
 
@@ -213,19 +231,24 @@ function alignSection(section) {
   if (!existsSync(audioPath)) throw new Error(`missing ${audioSrc}`);
 
   const voiceover = voiceovers.get(section.id);
-  if (!voiceover) throw new Error('no voiceover text in the storyboard');
+  if (!voiceover) throw new Error("no voiceover text in the storyboard");
 
   const { runs } = speechRuns(audioPath);
-  if (!runs.length) throw new Error('no speech detected — check the narration file');
+  if (!runs.length) throw new Error("no speech detected — check the narration file");
 
   const sentenceChunks = groupChunksBySentence(captions, voiceover);
   const totalSpeech = span(runs);
-  const totalChars = sentenceChunks.reduce((n, g) => n + g.reduce((m, c) => m + weigh(c.text), 0), 0);
-  const charShares = sentenceChunks.map((g) => g.reduce((n, c) => n + weigh(c.text), 0) / totalChars);
+  const totalChars = sentenceChunks.reduce(
+    (n, g) => n + g.reduce((m, c) => m + weigh(c.text), 0),
+    0,
+  );
+  const charShares = sentenceChunks.map(
+    (g) => g.reduce((n, c) => n + weigh(c.text), 0) / totalChars,
+  );
 
   let chunkGroups = sentenceChunks;
   let runGroups = runsPerSentence(runs, charShares);
-  let note = '';
+  let note = "";
 
   // Even the best split can be wrong if the narrator ran two sentences together, which
   // would shift a whole sentence onto the wrong runs. Rather than ship that, drop to a
@@ -240,7 +263,7 @@ function alignSection(section) {
   if (misplaced) {
     chunkGroups = [captions];
     runGroups = [runs];
-    note = ' (sentence anchoring rejected — spread over all speech)';
+    note = " (sentence anchoring rejected — spread over all speech)";
   }
 
   const starts = [];
@@ -297,15 +320,19 @@ for (const section of timeline.sections ?? []) {
   if (!result) continue;
   aligned += 1;
   worst = Math.max(worst, result.maxShift);
-  const moved = result.shifts.map((s) => `${s >= 0 ? '+' : ''}${s.toFixed(2)}`).join(' ');
-  console.log(`  ${section.id.padEnd(12)} ${result.shifts.length} captions, max ${result.maxShift.toFixed(2)}s${result.note}`);
+  const moved = result.shifts.map((s) => `${s >= 0 ? "+" : ""}${s.toFixed(2)}`).join(" ");
+  console.log(
+    `  ${section.id.padEnd(12)} ${result.shifts.length} captions, max ${result.maxShift.toFixed(2)}s${result.note}`,
+  );
   console.log(`     shifts: ${moved}`);
 }
 
 if (process.exitCode) {
-  console.error('demo-video: caption alignment failed — timeline.json left unchanged.');
+  console.error("demo-video: caption alignment failed — timeline.json left unchanged.");
   process.exit(1);
 }
 
 writeFileSync(timelinePath, `${JSON.stringify(timeline, null, 2)}\n`);
-console.log(`demo-video: re-timed captions in ${aligned} section(s), largest correction ${worst.toFixed(2)}s -> demo/timeline.json`);
+console.log(
+  `demo-video: re-timed captions in ${aligned} section(s), largest correction ${worst.toFixed(2)}s -> demo/timeline.json`,
+);

@@ -7,18 +7,13 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import type { RunConfig, EmitFn } from "../types.js";
 import type { RunLogger } from "../log.js";
-import * as runs from "../runs.js";
-import { parseTasksFile } from "../parser.js";
 // Circular import: orchestrator.ts hosts these top-level helpers and runPhase
 // itself; both sides export only functions/classes so ESM init is safe.
-import {
-  listSpecDirs,
-  isSpecComplete,
-  RunTaskState,
-  runPhase,
-} from "../orchestrator.js";
+import { isSpecComplete, listSpecDirs, RunTaskState, runPhase } from "../orchestrator.js";
+import { parseTasksFile } from "../parser.js";
+import * as runs from "../runs.js";
+import type { EmitFn, RunConfig } from "../types.js";
 
 export async function runBuild(
   ctx: OrchestrationContext,
@@ -39,9 +34,7 @@ export async function runBuild(
 
   // Determine which specs to process
   const specDirs = config.runAllSpecs
-    ? listSpecDirs(config.projectDir).filter(
-        (s) => !isSpecComplete(config.projectDir, s),
-      )
+    ? listSpecDirs(config.projectDir).filter((s) => !isSpecComplete(config.projectDir, s))
     : [config.specDir];
 
   if (specDirs.length === 0) {
@@ -96,7 +89,15 @@ export async function runBuild(
       emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
 
       try {
-        const result = await runPhase(specConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
+        const result = await runPhase(
+          specConfig,
+          phase,
+          agentRunId,
+          runId,
+          emit,
+          rlog,
+          runTaskState,
+        );
 
         runs.completeAgentRun(config.projectDir, runId, agentRunId, {
           status: "completed",

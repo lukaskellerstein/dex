@@ -308,6 +308,7 @@ cd dex-ecommerce && rm -f .dex/state.json
    {"version":1,"runId":"main-mid-run","status":"running","baseBranch":"main","mode":"loop"}
    EOF
    ```
+
 3. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions
@@ -352,6 +353,7 @@ Hard to reproduce naturally. Use:
    git checkout -q -b dex/2026-05-04-orphan
    git branch -D main
    ```
+
 3. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions
@@ -393,6 +395,7 @@ cd dex-ecommerce && git branch main && git checkout -q main
    git checkout -q main
    echo "scratch edit" >> README.md
    ```
+
 4. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions

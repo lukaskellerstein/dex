@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { useRef, type MutableRefObject } from "react";
-import type { OrchestratorEvent, AgentStep, SubagentInfo } from "../../../core/types.js";
+import type { MutableRefObject } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentStep, OrchestratorEvent, SubagentInfo } from "../../../core/types.js";
 
 type EventHandler = (event: OrchestratorEvent) => void;
 
@@ -18,7 +18,7 @@ vi.mock("../../services/orchestratorService.js", () => ({
   },
 }));
 
-import { useLiveTrace, labelForStep } from "../useLiveTrace.js";
+import { labelForStep, useLiveTrace } from "../useLiveTrace.js";
 
 function emit(event: OrchestratorEvent) {
   if (!dispatchedHandler) throw new Error("no handler subscribed");
@@ -165,24 +165,42 @@ describe("useLiveTrace", () => {
 describe("labelForStep", () => {
   it("labels tool_call with the tool name from metadata", () => {
     const step: AgentStep = {
-      id: "x", sequenceIndex: 0, type: "tool_call", content: null,
-      metadata: { toolName: "Read" }, durationMs: null, tokenCount: null, createdAt: "",
+      id: "x",
+      sequenceIndex: 0,
+      type: "tool_call",
+      content: null,
+      metadata: { toolName: "Read" },
+      durationMs: null,
+      tokenCount: null,
+      createdAt: "",
     };
     expect(labelForStep(step)).toBe("Read");
   });
 
   it("labels subagent_spawn with truncated description", () => {
     const step: AgentStep = {
-      id: "x", sequenceIndex: 0, type: "subagent_spawn", content: null,
-      metadata: { description: "search for all usages" }, durationMs: null, tokenCount: null, createdAt: "",
+      id: "x",
+      sequenceIndex: 0,
+      type: "subagent_spawn",
+      content: null,
+      metadata: { description: "search for all usages" },
+      durationMs: null,
+      tokenCount: null,
+      createdAt: "",
     };
     expect(labelForStep(step)).toBe("Task: search for all usages");
   });
 
   it("returns null for unknown step types (not 'live indicator' material)", () => {
     const step: AgentStep = {
-      id: "x", sequenceIndex: 0, type: "tool_result", content: "ok",
-      metadata: null, durationMs: null, tokenCount: null, createdAt: "",
+      id: "x",
+      sequenceIndex: 0,
+      type: "tool_result",
+      content: "ok",
+      metadata: null,
+      durationMs: null,
+      tokenCount: null,
+      createdAt: "",
     };
     expect(labelForStep(step)).toBeNull();
   });

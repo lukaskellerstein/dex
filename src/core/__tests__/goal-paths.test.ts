@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { deriveGoalPaths } from "../goal-paths.ts";
 
 test("deriveGoalPaths — default GOAL.md produces canonical derivatives", () => {

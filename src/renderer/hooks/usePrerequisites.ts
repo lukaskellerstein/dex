@@ -3,11 +3,8 @@
  * Not: Does not own loop/cycle state, live-trace, or user-question state. Does not run prerequisite checks; that's core/stages/prerequisites.ts.
  * Deps: orchestratorService.subscribeEvents; PrerequisiteCheck / OrchestratorEvent types.
  */
-import { useState, useEffect } from "react";
-import type {
-  OrchestratorEvent,
-  PrerequisiteCheck,
-} from "../../core/types.js";
+import { useEffect, useState } from "react";
+import type { OrchestratorEvent, PrerequisiteCheck } from "../../core/types.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
 export interface UsePrerequisitesResult {

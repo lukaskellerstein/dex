@@ -3,22 +3,22 @@
  * Not: Does not derive stage status (logic in StageList.logic.ts). Does not own state besides hover/now refresh.
  * Deps: StageList.logic.ts, MetaBadge, SpecCard, useNow, lucide-react icons.
  */
-import { CheckCircle, Circle, Loader, Minus, Pause, ExternalLink } from "lucide-react";
+import { CheckCircle, Circle, ExternalLink, Loader, Minus, Pause } from "lucide-react";
 import { useState } from "react";
 import type { StepType } from "../../../core/types.js";
-import type { UiLoopStage, ImplementSubPhase, LatestAction } from "../../hooks/useOrchestrator.js";
+import { relativeTimeShort, useNow } from "../../hooks/useNow.js";
+import type { ImplementSubPhase, LatestAction, UiLoopStage } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
 import { SpecCard } from "../project-overview/SpecCard.js";
-import { useNow, relativeTimeShort } from "../../hooks/useNow.js";
 import { MetaBadge } from "../shared/MetaBadge.js";
 import {
   CYCLE_STAGES,
-  STEP_LABELS,
-  type StageStatus,
+  computeImplementMetrics,
   deriveStageStatus,
   getStageVisibility,
   resolvePausePendingStage,
-  computeImplementMetrics,
+  STEP_LABELS,
+  type StageStatus,
 } from "./StageList.logic.js";
 
 function StatusDot({ status }: { status: StageStatus }) {
@@ -72,7 +72,8 @@ function StatusDot({ status }: { status: StageStatus }) {
         <div
           style={{
             ...base,
-            background: "color-mix(in srgb, var(--status-warning, #f59e0b) 15%, var(--surface-elevated))",
+            background:
+              "color-mix(in srgb, var(--status-warning, #f59e0b) 15%, var(--surface-elevated))",
             border: "2px solid var(--status-warning, #f59e0b)",
             color: "var(--status-warning, #f59e0b)",
           }}
@@ -130,7 +131,6 @@ function StageRow({
   const [hovered, setHovered] = useState(false);
   const isRunning = status === "running";
   const isCompleted = status === "completed";
-  const isSkipped = status === "skipped";
   const isPaused = status === "paused";
 
   // Tick once per second only while this row is showing a live indicator.
@@ -281,11 +281,7 @@ function ImplementSpecView({
   if (!specSummary) return null;
   return (
     <div style={{ marginLeft: 24, paddingLeft: 10, paddingTop: 6, paddingBottom: 4 }}>
-      <SpecCard
-        summary={specSummary}
-        onClick={() => onSelectSpec(specSummary.name)}
-        isRunning={false}
-      />
+      <SpecCard summary={specSummary} onClick={() => onSelectSpec(specSummary.name)} />
     </div>
   );
 }
@@ -325,8 +321,7 @@ export function StageList({
   );
 
   const visibleStages = CYCLE_STAGES.filter(
-    (st) =>
-      getStageVisibility(st, decision) === "show" || stages.some((s) => s.type === st),
+    (st) => getStageVisibility(st, decision) === "show" || stages.some((s) => s.type === st),
   );
 
   const path = pathStages ?? new Set<StepType>();

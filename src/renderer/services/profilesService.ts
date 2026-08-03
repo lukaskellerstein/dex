@@ -3,10 +3,7 @@
  * Not: Does not own profile editor state — consumers manage that. Does not validate dex.json shape inline; relies on backend validators.
  * Deps: window.dexAPI.profiles, ProfileEntry/DexJsonShape from core/agent-profile.
  */
-import type {
-  ProfileEntry,
-  DexJsonShape,
-} from "../../core/agent-profile.js";
+import type { DexJsonShape, ProfileEntry } from "../../core/agent-profile.js";
 
 export type ProfilesErrorCode =
   | "WORKTREE_MISSING"
@@ -57,12 +54,8 @@ export const profilesService = {
     name: string,
     dexJson: DexJsonShape,
   ): Promise<
-    | { ok: true }
-    | { ok: false; error: string }
-    | { ok: false; error: "locked_by_other_instance" }
+    { ok: true } | { ok: false; error: string } | { ok: false; error: "locked_by_other_instance" }
   > {
-    return call(() =>
-      window.dexAPI.profiles.saveDexJson(projectDir, name, dexJson),
-    );
+    return call(() => window.dexAPI.profiles.saveDexJson(projectDir, name, dexJson));
   },
 };

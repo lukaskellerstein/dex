@@ -1,4 +1,4 @@
-import { Circle, CheckCircle2, Loader } from "lucide-react";
+import { CheckCircle2, Circle, Loader } from "lucide-react";
 
 interface Todo {
   id?: string;
@@ -72,10 +72,7 @@ export function TodoWriteInput({ input }: TodoWriteInputProps) {
                 display: "flex",
                 flexShrink: 0,
                 marginTop: 2,
-                animation:
-                  todo.status === "in_progress"
-                    ? "spin 2s linear infinite"
-                    : undefined,
+                animation: todo.status === "in_progress" ? "spin 2s linear infinite" : undefined,
               }}
             >
               <Icon size={14} />

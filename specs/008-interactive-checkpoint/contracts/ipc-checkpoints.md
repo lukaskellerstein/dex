@@ -41,6 +41,7 @@ Error envelope convention: `{ ok: false, error: "<machine_code>", ...context }`.
 
 - **Request**: `(projectDir: string, stage: LoopStageType, variantCount: number) → CostEstimate`
 - **Response**:
+
   ```ts
   interface CostEstimate {
     perVariantMedian: number | null;
@@ -50,6 +51,7 @@ Error envelope convention: `{ ok: false, error: "<machine_code>", ...context }`.
     sampleSize: number;     // number of matching phase records found (0–5)
   }
   ```
+
 - **Behaviour**: `listRuns(projectDir, 20)` → `flatMap phases` → filter by stage + status completed → take most recent 5 → sort by cost → pick index `floor(n/2)` for median, `floor(n*0.75)` for p75. `sampleSize === 0` → all fields null; renderer shows "No cost history yet".
 
 ### `checkpoints:readPendingVariantGroups`
@@ -79,11 +81,13 @@ type MutatingResult<T> =
 ### `checkpoints:goBack`
 
 - **Request**: `(projectDir: string, tag: string, options?: GoBackOptions)`
+
   ```ts
   interface GoBackOptions {
     force?: "save" | "discard";   // discarding is user-confirmed
   }
   ```
+
 - **Response**:
   - Happy path: `{ ok: true, branch: string }`.
   - Dirty tree, no force: `{ ok: false, error: "dirty_working_tree", files: string[] }` — renderer opens `GoBackConfirm` modal.

@@ -29,18 +29,42 @@
  *
  * usage: node demo/prep/build-mock-config.mjs <projectDir>
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
 const projectDir = process.argv[2];
 if (!projectDir) {
-  console.error('usage: build-mock-config.mjs <projectDir>');
+  console.error("usage: build-mock-config.mjs <projectDir>");
   process.exit(2);
 }
 
-const FAST = { gap: 700, specify: 1400, plan: 1600, tasks: 1300, implement: 2600, verify: 1500, learnings: 1200 };
-const SLOW = { gap: 1200, specify: 4500, plan: 5500, tasks: 4500, implement: 6500, verify: 4500, learnings: 3500 };
-const MED = { gap: 800, specify: 2200, plan: 2400, tasks: 2000, implement: 3200, verify: 2000, learnings: 1600 };
+const FAST = {
+  gap: 700,
+  specify: 1400,
+  plan: 1600,
+  tasks: 1300,
+  implement: 2600,
+  verify: 1500,
+  learnings: 1200,
+};
+const SLOW = {
+  gap: 1200,
+  specify: 4500,
+  plan: 5500,
+  tasks: 4500,
+  implement: 6500,
+  verify: 4500,
+  learnings: 3500,
+};
+const MED = {
+  gap: 800,
+  specify: 2200,
+  plan: 2400,
+  tasks: 2000,
+  implement: 3200,
+  verify: 2000,
+  learnings: 1600,
+};
 
 // ── Clarification artefacts ───────────────────────────────────────────────────
 
@@ -167,7 +191,7 @@ ${summary}
 
 ## Acceptance criteria
 
-${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+${criteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
 ## Out of scope
 
@@ -179,11 +203,11 @@ const planDoc = (title, modules, decisions) => `# Plan — ${title}
 
 ## Modules
 
-${modules.map((m) => `- \`${m.path}\` — ${m.role}`).join('\n')}
+${modules.map((m) => `- \`${m.path}\` — ${m.role}`).join("\n")}
 
 ## Decisions
 
-${decisions.map((d) => `- ${d}`).join('\n')}
+${decisions.map((d) => `- ${d}`).join("\n")}
 
 ## Risks
 
@@ -196,32 +220,32 @@ const tasksDoc = (title, phases) =>
     .map(
       (p) =>
         `## Phase ${p.number}: ${p.name}\n\n**Purpose**: ${p.purpose}\n\n` +
-        p.tasks.map((t) => `- [${p.done ? 'x' : ' '}] ${t.id} ${t.text}`).join('\n'),
+        p.tasks.map((t) => `- [${p.done ? "x" : " "}] ${t.id} ${t.text}`).join("\n"),
     )
-    .join('\n\n')}\n`;
+    .join("\n\n")}\n`;
 
 // ── Cycle 1 — Catalog and search ──────────────────────────────────────────────
 
 const CATALOG_PHASES = [
   {
     number: 1,
-    name: 'Models and categories',
-    purpose: 'Define the product, variant and category models and the nested category tree.',
+    name: "Models and categories",
+    purpose: "Define the product, variant and category models and the nested category tree.",
     tasks: [
-      { id: 'T001', text: 'Define Product, Variant and Category types' },
-      { id: 'T002', text: 'Build the two-level category tree with product counts' },
-      { id: 'T003', text: 'Add the catalogue repository behind a pure query interface' },
+      { id: "T001", text: "Define Product, Variant and Category types" },
+      { id: "T002", text: "Build the two-level category tree with product counts" },
+      { id: "T003", text: "Add the catalogue repository behind a pure query interface" },
     ],
   },
   {
     number: 2,
-    name: 'Search, filters and sort',
-    purpose: 'Make the catalogue searchable and filterable, with state encoded in the URL.',
+    name: "Search, filters and sort",
+    purpose: "Make the catalogue searchable and filterable, with state encoded in the URL.",
     tasks: [
-      { id: 'T004', text: 'Implement relevance-ranked search over name and description' },
-      { id: 'T005', text: 'Implement additive price, rating and stock filters' },
-      { id: 'T006', text: 'Encode filter and sort state in the URL and restore it on load' },
-      { id: 'T007', text: 'Cover search ranking and additive filtering with tests' },
+      { id: "T004", text: "Implement relevance-ranked search over name and description" },
+      { id: "T005", text: "Implement additive price, rating and stock filters" },
+      { id: "T006", text: "Encode filter and sort state in the URL and restore it on load" },
+      { id: "T007", text: "Cover search ranking and additive filtering with tests" },
     ],
   },
 ];
@@ -351,24 +375,24 @@ export function toSearchParams(filters: Filters): URLSearchParams {
 const CART_PHASES = [
   {
     number: 1,
-    name: 'Cart state and guest merge',
-    purpose: 'Hold line items, survive a reload, and merge a guest cart on login.',
+    name: "Cart state and guest merge",
+    purpose: "Hold line items, survive a reload, and merge a guest cart on login.",
     tasks: [
-      { id: 'T001', text: 'Define Cart and LineItem types keyed by variant SKU' },
-      { id: 'T002', text: 'Implement add, remove and quantity change with stock caps' },
-      { id: 'T003', text: 'Persist the guest cart in the browser' },
-      { id: 'T004', text: 'Merge guest and server carts on login, higher quantity winning' },
+      { id: "T001", text: "Define Cart and LineItem types keyed by variant SKU" },
+      { id: "T002", text: "Implement add, remove and quantity change with stock caps" },
+      { id: "T003", text: "Persist the guest cart in the browser" },
+      { id: "T004", text: "Merge guest and server carts on login, higher quantity winning" },
     ],
   },
   {
     number: 2,
-    name: 'Checkout flow',
-    purpose: 'Take an authenticated cart through address, shipping and confirmation.',
+    name: "Checkout flow",
+    purpose: "Take an authenticated cart through address, shipping and confirmation.",
     tasks: [
-      { id: 'T005', text: 'Redirect guests to login with a return URL' },
-      { id: 'T006', text: 'Validate stock for every line item before placing the order' },
-      { id: 'T007', text: 'Write the order and clear the cart atomically' },
-      { id: 'T008', text: 'Cover the merge rule and out-of-stock rejection with tests' },
+      { id: "T005", text: "Redirect guests to login with a return URL" },
+      { id: "T006", text: "Validate stock for every line item before placing the order" },
+      { id: "T007", text: "Write the order and clear the cart atomically" },
+      { id: "T008", text: "Cover the merge rule and out-of-stock rejection with tests" },
     ],
   },
 ];
@@ -465,23 +489,23 @@ export function placeOrder(
 const ACCOUNT_PHASES = [
   {
     number: 1,
-    name: 'Registration and sessions',
-    purpose: 'Register, sign in, and survive the lockout and reset rules.',
+    name: "Registration and sessions",
+    purpose: "Register, sign in, and survive the lockout and reset rules.",
     tasks: [
-      { id: 'T001', text: 'Register with password strength scoring' },
-      { id: 'T002', text: 'Lock an account after five failed logins in fifteen minutes' },
-      { id: 'T003', text: 'Issue single-use password resets valid for one hour' },
+      { id: "T001", text: "Register with password strength scoring" },
+      { id: "T002", text: "Lock an account after five failed logins in fifteen minutes" },
+      { id: "T003", text: "Issue single-use password resets valid for one hour" },
     ],
   },
   {
     number: 2,
-    name: 'Account area',
-    purpose: 'Profile, saved addresses, wishlist and order history.',
+    name: "Account area",
+    purpose: "Profile, saved addresses, wishlist and order history.",
     tasks: [
-      { id: 'T004', text: 'Store up to five labelled addresses with one default' },
-      { id: 'T005', text: 'Toggle wishlist entries, keeping out-of-stock items labelled' },
-      { id: 'T006', text: 'List order history with status and totals' },
-      { id: 'T007', text: 'Cover lockout timing and the five-address cap with tests' },
+      { id: "T004", text: "Store up to five labelled addresses with one default" },
+      { id: "T005", text: "Toggle wishlist entries, keeping out-of-stock items labelled" },
+      { id: "T006", text: "List order history with status and totals" },
+      { id: "T007", text: "Cover lockout timing and the five-address cap with tests" },
     ],
   },
 ];
@@ -546,13 +570,19 @@ function cycle(featureId, title, pace, a) {
   return {
     feature: { id: featureId, title },
     stages: {
-      gap_analysis: { delay: pace.gap, structured_output: { decision: 'RESUME_FEATURE' } },
-      specify: { delay: pace.specify, writes: [{ path: 'specs/{feature}/spec.md', content: a.spec }] },
-      plan: { delay: pace.plan, writes: [{ path: 'specs/{feature}/plan.md', content: a.plan }] },
-      tasks: { delay: pace.tasks, writes: [{ path: 'specs/{feature}/tasks.md', content: a.tasksOpen }] },
+      gap_analysis: { delay: pace.gap, structured_output: { decision: "RESUME_FEATURE" } },
+      specify: {
+        delay: pace.specify,
+        writes: [{ path: "specs/{feature}/spec.md", content: a.spec }],
+      },
+      plan: { delay: pace.plan, writes: [{ path: "specs/{feature}/plan.md", content: a.plan }] },
+      tasks: {
+        delay: pace.tasks,
+        writes: [{ path: "specs/{feature}/tasks.md", content: a.tasksOpen }],
+      },
       implement: {
         delay: pace.implement,
-        writes: [...a.src, { path: 'specs/{feature}/tasks.md', content: a.tasksDone }],
+        writes: [...a.src, { path: "specs/{feature}/tasks.md", content: a.tasksDone }],
       },
       implement_fix: { delay: 1200 },
       verify: {
@@ -572,142 +602,159 @@ function cycle(featureId, title, pace, a) {
 }
 
 const cycles = [
-  cycle('001-catalog-and-search', 'Catalog and search', FAST, {
+  cycle("001-catalog-and-search", "Catalog and search", FAST, {
     spec: specDoc(
-      'Catalog and search',
-      'Shoppers browse a two-level category tree, search products by name and description with relevance ranking, and narrow results with additive filters on price, rating and stock. Filter and sort state lives in the URL.',
+      "Catalog and search",
+      "Shoppers browse a two-level category tree, search products by name and description with relevance ranking, and narrow results with additive filters on price, rating and stock. Filter and sort state lives in the URL.",
       [
-        'A category page lists its own products and those of its children, with a product count per category.',
-        'Searching ranks an exact name match above a partial name match, and both above a description-only match.',
-        'Selecting a price range and a minimum rating applies both constraints together.',
-        'Reloading a filtered page restores the same filters from the URL.',
+        "A category page lists its own products and those of its children, with a product count per category.",
+        "Searching ranks an exact name match above a partial name match, and both above a description-only match.",
+        "Selecting a price range and a minimum rating applies both constraints together.",
+        "Reloading a filtered page restores the same filters from the URL.",
       ],
     ),
     plan: planDoc(
-      'Catalog and search',
+      "Catalog and search",
       [
-        { path: 'src/catalog/types.ts', role: 'Product, Variant and Category models' },
-        { path: 'src/catalog/search.ts', role: 'relevance-ranked search, pure' },
-        { path: 'src/catalog/filters.ts', role: 'additive filters and URL round-trip, pure' },
+        { path: "src/catalog/types.ts", role: "Product, Variant and Category models" },
+        { path: "src/catalog/search.ts", role: "relevance-ranked search, pure" },
+        { path: "src/catalog/filters.ts", role: "additive filters and URL round-trip, pure" },
       ],
       [
-        'Name matches outrank description matches, because a shopper searching a product name wants that product first.',
-        'Categories nest exactly two levels — deeper trees complicate navigation without helping catalogues in scope.',
-        'Filter state is encoded in the URL so a filtered list is shareable and the back button behaves.',
+        "Name matches outrank description matches, because a shopper searching a product name wants that product first.",
+        "Categories nest exactly two levels — deeper trees complicate navigation without helping catalogues in scope.",
+        "Filter state is encoded in the URL so a filtered list is shareable and the back button behaves.",
       ],
     ),
-    tasksOpen: tasksDoc('Catalog and search', CATALOG_PHASES),
-    tasksDone: tasksDoc('Catalog and search', CATALOG_PHASES.map((p) => ({ ...p, done: true }))),
+    tasksOpen: tasksDoc("Catalog and search", CATALOG_PHASES),
+    tasksDone: tasksDoc(
+      "Catalog and search",
+      CATALOG_PHASES.map((p) => ({ ...p, done: true })),
+    ),
     src: [
-      { path: 'src/catalog/types.ts', content: catalogTypes },
-      { path: 'src/catalog/search.ts', content: catalogSearch },
-      { path: 'src/catalog/filters.ts', content: catalogFilters },
-      { path: 'README.md', content: readmeAfterCatalog },
+      { path: "src/catalog/types.ts", content: catalogTypes },
+      { path: "src/catalog/search.ts", content: catalogSearch },
+      { path: "src/catalog/filters.ts", content: catalogFilters },
+      { path: "README.md", content: readmeAfterCatalog },
     ],
     verifySummary:
-      'Build and tests pass. Search ranking orders exact name matches first; price and rating filters compose additively and survive a URL round-trip.',
+      "Build and tests pass. Search ranking orders exact name matches first; price and rating filters compose additively and survive a URL round-trip.",
     insights: [
       {
-        category: 'architecture',
-        insight: 'Keeping search and filters pure let them be tested without a catalogue fixture or a datastore.',
-        context: 'Catalog and search — search, filters and sort',
+        category: "architecture",
+        insight:
+          "Keeping search and filters pure let them be tested without a catalogue fixture or a datastore.",
+        context: "Catalog and search — search, filters and sort",
       },
       {
-        category: 'product',
-        insight: 'Encoding filter state in the URL removed the need for any client-side filter store.',
-        context: 'Catalog and search — search, filters and sort',
+        category: "product",
+        insight:
+          "Encoding filter state in the URL removed the need for any client-side filter store.",
+        context: "Catalog and search — search, filters and sort",
       },
     ],
   }),
 
-  cycle('002-cart-and-checkout', 'Cart and checkout', SLOW, {
+  cycle("002-cart-and-checkout", "Cart and checkout", SLOW, {
     spec: specDoc(
-      'Cart and checkout',
-      'Shoppers build a cart as a guest or signed in. A guest cart persists in the browser and merges on login. Checkout runs behind authentication, validates stock, and writes an order.',
+      "Cart and checkout",
+      "Shoppers build a cart as a guest or signed in. A guest cart persists in the browser and merges on login. Checkout runs behind authentication, validates stock, and writes an order.",
       [
-        'Adding a variant already in the cart increases its quantity rather than adding a second line.',
-        'Quantities are capped at available stock at the moment of adding.',
-        'On login, a SKU present in both the guest and server carts ends at the higher of the two quantities.',
-        'Checkout rejects the order when any line item exceeds available stock, naming the offending SKU.',
+        "Adding a variant already in the cart increases its quantity rather than adding a second line.",
+        "Quantities are capped at available stock at the moment of adding.",
+        "On login, a SKU present in both the guest and server carts ends at the higher of the two quantities.",
+        "Checkout rejects the order when any line item exceeds available stock, naming the offending SKU.",
       ],
     ),
     plan: planDoc(
-      'Cart and checkout',
+      "Cart and checkout",
       [
-        { path: 'src/cart/types.ts', role: 'Cart, LineItem and Order models' },
-        { path: 'src/cart/cart.ts', role: 'add, remove, quantity and guest-cart merge, pure' },
-        { path: 'src/cart/checkout.ts', role: 'stock validation and order placement' },
+        { path: "src/cart/types.ts", role: "Cart, LineItem and Order models" },
+        { path: "src/cart/cart.ts", role: "add, remove, quantity and guest-cart merge, pure" },
+        { path: "src/cart/checkout.ts", role: "stock validation and order placement" },
       ],
       [
-        'Line items are keyed by variant SKU, not product id, because price and stock live on the variant.',
-        'The merge rule takes the higher quantity so a deliberate guest-side increase is never silently reduced.',
-        'Stock is validated at checkout rather than on add, because a cart can sit idle while stock moves.',
+        "Line items are keyed by variant SKU, not product id, because price and stock live on the variant.",
+        "The merge rule takes the higher quantity so a deliberate guest-side increase is never silently reduced.",
+        "Stock is validated at checkout rather than on add, because a cart can sit idle while stock moves.",
       ],
     ),
-    tasksOpen: tasksDoc('Cart and checkout', CART_PHASES),
-    tasksDone: tasksDoc('Cart and checkout', CART_PHASES.map((p) => ({ ...p, done: true }))),
+    tasksOpen: tasksDoc("Cart and checkout", CART_PHASES),
+    tasksDone: tasksDoc(
+      "Cart and checkout",
+      CART_PHASES.map((p) => ({ ...p, done: true })),
+    ),
     src: [
-      { path: 'src/cart/types.ts', content: cartTypes },
-      { path: 'src/cart/cart.ts', content: cartSrc },
-      { path: 'src/cart/checkout.ts', content: checkoutSrc },
+      { path: "src/cart/types.ts", content: cartTypes },
+      { path: "src/cart/cart.ts", content: cartSrc },
+      { path: "src/cart/checkout.ts", content: checkoutSrc },
     ],
     verifySummary:
-      'Build and tests pass. Guest-cart merge takes the higher quantity per SKU; checkout rejects an out-of-stock line item by name.',
+      "Build and tests pass. Guest-cart merge takes the higher quantity per SKU; checkout rejects an out-of-stock line item by name.",
     insights: [
       {
-        category: 'correctness',
-        insight: 'Validating stock at checkout rather than on add avoided a cart that silently goes stale.',
-        context: 'Cart and checkout — checkout flow',
+        category: "correctness",
+        insight:
+          "Validating stock at checkout rather than on add avoided a cart that silently goes stale.",
+        context: "Cart and checkout — checkout flow",
       },
       {
-        category: 'architecture',
-        insight: 'Passing a price lookup into totalCents kept cart logic independent of the catalogue module.',
-        context: 'Cart and checkout — cart state and guest merge',
+        category: "architecture",
+        insight:
+          "Passing a price lookup into totalCents kept cart logic independent of the catalogue module.",
+        context: "Cart and checkout — cart state and guest merge",
       },
     ],
   }),
 
-  cycle('003-customer-accounts', 'Customer accounts', MED, {
+  cycle("003-customer-accounts", "Customer accounts", MED, {
     spec: specDoc(
-      'Customer accounts',
-      'Customers register, sign in, and manage a profile, saved addresses, a wishlist and their order history. Failed logins lock the account; password resets are single-use and time-limited.',
+      "Customer accounts",
+      "Customers register, sign in, and manage a profile, saved addresses, a wishlist and their order history. Failed logins lock the account; password resets are single-use and time-limited.",
       [
-        'Five failed logins within fifteen minutes lock the account for thirty minutes.',
-        'A password reset link works once and expires one hour after it is issued.',
-        'A customer may save at most five addresses, exactly one of which is the default.',
-        'Marking a new address as default clears the flag on the previous one.',
+        "Five failed logins within fifteen minutes lock the account for thirty minutes.",
+        "A password reset link works once and expires one hour after it is issued.",
+        "A customer may save at most five addresses, exactly one of which is the default.",
+        "Marking a new address as default clears the flag on the previous one.",
       ],
     ),
     plan: planDoc(
-      'Customer accounts',
+      "Customer accounts",
       [
-        { path: 'src/accounts/types.ts', role: 'Customer and Address models' },
-        { path: 'src/accounts/accounts.ts', role: 'address rules, lockout window and wishlist, pure' },
+        { path: "src/accounts/types.ts", role: "Customer and Address models" },
+        {
+          path: "src/accounts/accounts.ts",
+          role: "address rules, lockout window and wishlist, pure",
+        },
       ],
       [
-        'Lockout is computed from a list of failure timestamps rather than a counter, so the fifteen-minute window is a filter and not a scheduled reset.',
-        'The address cap is enforced in the domain rather than the UI, so the back office cannot bypass it.',
-        'Wishlist entries survive an item going out of stock; the entry is labelled instead of removed.',
+        "Lockout is computed from a list of failure timestamps rather than a counter, so the fifteen-minute window is a filter and not a scheduled reset.",
+        "The address cap is enforced in the domain rather than the UI, so the back office cannot bypass it.",
+        "Wishlist entries survive an item going out of stock; the entry is labelled instead of removed.",
       ],
     ),
-    tasksOpen: tasksDoc('Customer accounts', ACCOUNT_PHASES),
-    tasksDone: tasksDoc('Customer accounts', ACCOUNT_PHASES.map((p) => ({ ...p, done: true }))),
+    tasksOpen: tasksDoc("Customer accounts", ACCOUNT_PHASES),
+    tasksDone: tasksDoc(
+      "Customer accounts",
+      ACCOUNT_PHASES.map((p) => ({ ...p, done: true })),
+    ),
     src: [
-      { path: 'src/accounts/types.ts', content: accountTypes },
-      { path: 'src/accounts/accounts.ts', content: accountSrc },
+      { path: "src/accounts/types.ts", content: accountTypes },
+      { path: "src/accounts/accounts.ts", content: accountSrc },
     ],
     verifySummary:
-      'Build and tests pass. Lockout triggers on the fifth failure inside the window; the sixth saved address is rejected.',
+      "Build and tests pass. Lockout triggers on the fifth failure inside the window; the sixth saved address is rejected.",
     insights: [
       {
-        category: 'security',
-        insight: 'Deriving lockout from failure timestamps made the fifteen-minute window a filter rather than a reset job.',
-        context: 'Customer accounts — registration and sessions',
+        category: "security",
+        insight:
+          "Deriving lockout from failure timestamps made the fifteen-minute window a filter rather than a reset job.",
+        context: "Customer accounts — registration and sessions",
       },
       {
-        category: 'architecture',
-        insight: 'Enforcing the address cap in the domain kept the back office from bypassing it.',
-        context: 'Customer accounts — account area',
+        category: "architecture",
+        insight: "Enforcing the address cap in the domain kept the back office from bypassing it.",
+        context: "Customer accounts — account area",
       },
     ],
   }),
@@ -719,15 +766,15 @@ const cycles = [
 // by asking for a cycle the script does not declare. These two turn that from a
 // crashed run into a degraded one. Reaching them means something upstream broke.
 for (const [id, title] of [
-  ['004-reviews-and-ratings', 'Reviews and ratings'],
-  ['005-admin-back-office', 'Admin back office'],
+  ["004-reviews-and-ratings", "Reviews and ratings"],
+  ["005-admin-back-office", "Admin back office"],
 ]) {
   const phases = [
     {
       number: 1,
-      name: 'Implementation',
+      name: "Implementation",
       purpose: `Deliver ${title.toLowerCase()} against the clarified plan.`,
-      tasks: [{ id: 'T001', text: `Implement ${title.toLowerCase()}` }],
+      tasks: [{ id: "T001", text: `Implement ${title.toLowerCase()}` }],
     },
   ];
   cycles.push(
@@ -735,15 +782,20 @@ for (const [id, title] of [
       spec: specDoc(title, `${title} for the Eshopy storefront.`, [
         `${title} is available to shoppers without a page reload.`,
       ]),
-      plan: planDoc(title, [{ path: `src/${id.slice(4)}/index.ts`, role: 'entry point' }], [
-        'Follows the module conventions established by the earlier features.',
-      ]),
+      plan: planDoc(
+        title,
+        [{ path: `src/${id.slice(4)}/index.ts`, role: "entry point" }],
+        ["Follows the module conventions established by the earlier features."],
+      ),
       tasksOpen: tasksDoc(title, phases),
-      tasksDone: tasksDoc(title, phases.map((p) => ({ ...p, done: true }))),
+      tasksDone: tasksDoc(
+        title,
+        phases.map((p) => ({ ...p, done: true })),
+      ),
       src: [{ path: `src/${id.slice(4)}/index.ts`, content: `export const feature = "${id}";\n` }],
-      verifySummary: 'Build and tests pass.',
+      verifySummary: "Build and tests pass.",
       insights: [
-        { category: 'architecture', insight: 'Reused the existing module layout.', context: title },
+        { category: "architecture", insight: "Reused the existing module layout.", context: title },
       ],
     }),
   );
@@ -752,21 +804,21 @@ for (const [id, title] of [
 const manifestFeatures = [
   {
     id: 1,
-    title: 'Catalog and search',
+    title: "Catalog and search",
     description:
-      'Nested categories with product counts, relevance-ranked search over names and descriptions, and additive price, rating and stock filters with URL-encoded state.',
+      "Nested categories with product counts, relevance-ranked search over names and descriptions, and additive price, rating and stock filters with URL-encoded state.",
   },
   {
     id: 2,
-    title: 'Cart and checkout',
+    title: "Cart and checkout",
     description:
-      'Variant-keyed cart with stock-capped quantities, guest carts that merge on login taking the higher quantity, and an authenticated checkout that validates stock before writing an order.',
+      "Variant-keyed cart with stock-capped quantities, guest carts that merge on login taking the higher quantity, and an authenticated checkout that validates stock before writing an order.",
   },
   {
     id: 3,
-    title: 'Customer accounts',
+    title: "Customer accounts",
     description:
-      'Registration with password strength feedback, lockout after five failed logins in fifteen minutes, single-use hourly password resets, and an account area with addresses, wishlist and order history.',
+      "Registration with password strength feedback, lockout after five failed logins in fifteen minutes, single-use hourly password resets, and an account area with addresses, wishlist and order history.",
   },
 ];
 
@@ -806,7 +858,7 @@ const oneShotResponses = [
   {
     // conflict-resolver.ts opens the prompt with
     // "Use the Edit tool to resolve the merge conflict in <file>."
-    matchPrompt: 'resolve the merge conflict in README\\.md',
+    matchPrompt: "resolve the merge conflict in README\\.md",
     isRegex: true,
     // Long enough that the resolver progress modal is legible on camera, short
     // enough not to stall the section.
@@ -817,10 +869,10 @@ const oneShotResponses = [
     cost: 0,
     finishedNormally: true,
     finalText:
-      'Resolved README.md. Kept the catalogue module list from the run branch, ' +
-      'preserved the admin back-office entry and the Contributing section added ' +
-      'on main, and merged the two Status paragraphs into one.',
-    editFile: { path: 'README.md', content: readmeMerged },
+      "Resolved README.md. Kept the catalogue module list from the run branch, " +
+      "preserved the admin back-office entry and the Contributing section added " +
+      "on main, and merged the two Status paragraphs into one.",
+    editFile: { path: "README.md", content: readmeMerged },
   },
 ];
 
@@ -831,14 +883,23 @@ const config = {
   },
   clarification: {
     clarification: { delay: 800 },
-    clarification_product: { delay: 1600, writes: [{ path: '{goalProductDomain}', content: productDomain }] },
-    clarification_technical: { delay: 1600, writes: [{ path: '{goalTechnicalDomain}', content: technicalDomain }] },
+    clarification_product: {
+      delay: 1600,
+      writes: [{ path: "{goalProductDomain}", content: productDomain }],
+    },
+    clarification_technical: {
+      delay: 1600,
+      writes: [{ path: "{goalTechnicalDomain}", content: technicalDomain }],
+    },
     clarification_synthesis: {
       delay: 1800,
-      writes: [{ path: '{goalClarified}', content: clarified }],
-      structured_output: { filesProduced: ['GOAL_clarified.md'] },
+      writes: [{ path: "{goalClarified}", content: clarified }],
+      structured_output: { filesProduced: ["GOAL_clarified.md"] },
     },
-    constitution: { delay: 1400, writes: [{ path: '.specify/memory/constitution.md', content: constitution }] },
+    constitution: {
+      delay: 1400,
+      writes: [{ path: ".specify/memory/constitution.md", content: constitution }],
+    },
     manifest_extraction: { delay: 1500, structured_output: { features: manifestFeatures } },
   },
   dex_loop: { cycles },
@@ -858,8 +919,15 @@ const config = {
 // later cycle shifts by one, and the run finally dies asking for a cycle the
 // script does not declare. Cheaper to catch it here.
 const ALLOWED_TOKENS = new Set([
-  'specDir', 'cycle', 'feature', 'runId', 'shortRunId',
-  'goalFile', 'goalProductDomain', 'goalTechnicalDomain', 'goalClarified',
+  "specDir",
+  "cycle",
+  "feature",
+  "runId",
+  "shortRunId",
+  "goalFile",
+  "goalProductDomain",
+  "goalTechnicalDomain",
+  "goalClarified",
 ]);
 
 const offences = [];
@@ -869,15 +937,15 @@ const scan = (where, text) => {
   }
 };
 const walk = (node, where) => {
-  if (!node || typeof node !== 'object') return;
+  if (!node || typeof node !== "object") return;
   for (const [key, value] of Object.entries(node)) {
-    if (key === 'writes' || key === 'appends') {
+    if (key === "writes" || key === "appends") {
       for (const [i, w] of value.entries()) {
         scan(`${where}.${key}[${i}].path`, w.path);
         if (w.content !== undefined) scan(`${where}.${key}[${i}].content`, w.content);
         if (w.line !== undefined) scan(`${where}.${key}[${i}].line`, w.line);
       }
-    } else if (value && typeof value === 'object') {
+    } else if (value && typeof value === "object") {
       walk(value, `${where}.${key}`);
     }
   }
@@ -885,31 +953,34 @@ const walk = (node, where) => {
 
 if (cycles.length < manifestFeatures.length) {
   console.error(`FATAL: ${cycles.length} cycles but ${manifestFeatures.length} manifest features.`);
-  console.error('The loop runs one cycle per feature and the mock indexes cycles by cycle number,');
-  console.error('so it will ask for a cycle the script does not declare. Add cycles.');
+  console.error("The loop runs one cycle per feature and the mock indexes cycles by cycle number,");
+  console.error("so it will ask for a cycle the script does not declare. Add cycles.");
   process.exit(1);
 }
 
-walk(config, 'config');
+walk(config, "config");
 if (offences.length) {
-  console.error('FATAL: mock-config contains substitution tokens the mock will reject:');
+  console.error("FATAL: mock-config contains substitution tokens the mock will reject:");
   for (const o of offences) console.error(`  ${o}`);
-  console.error('\nMost likely a TypeScript template literal in generated source — write');
-  console.error('string concatenation instead, or the stage dies mid-run.');
+  console.error("\nMost likely a TypeScript template literal in generated source — write");
+  console.error("string concatenation instead, or the stage dies mid-run.");
   process.exit(1);
 }
 
-const dest = path.join(projectDir, '.dex', 'mock-config.json');
+const dest = path.join(projectDir, ".dex", "mock-config.json");
 fs.mkdirSync(path.dirname(dest), { recursive: true });
-fs.writeFileSync(dest, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+fs.writeFileSync(dest, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
-const totalMs = [
-  ...Object.values(config.prerequisites),
-  ...Object.values(config.clarification),
-  ...Object.values(config.completion),
-].reduce((n, d) => n + d.delay, 0)
-  + cycles.reduce((n, c) => n + Object.values(c.stages).reduce((m, s) => m + s.delay, 0), 0);
+const totalMs =
+  [
+    ...Object.values(config.prerequisites),
+    ...Object.values(config.clarification),
+    ...Object.values(config.completion),
+  ].reduce((n, d) => n + d.delay, 0) +
+  cycles.reduce((n, c) => n + Object.values(c.stages).reduce((m, s) => m + s.delay, 0), 0);
 
 console.log(`wrote ${dest}`);
 console.log(`  ${cycles.length} cycles, ${manifestFeatures.length} manifest features`);
-console.log(`  scripted delay total ~${(totalMs / 1000).toFixed(1)}s (excludes orchestrator overhead)`);
+console.log(
+  `  scripted delay total ~${(totalMs / 1000).toFixed(1)}s (excludes orchestrator overhead)`,
+);

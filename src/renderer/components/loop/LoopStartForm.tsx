@@ -3,18 +3,19 @@
  * Not: Does not own form state — receives values + setters from useLoopStartForm via props. Does not start the run.
  * Deps: lucide-react icons, useLoopStartForm setters/state.
  */
-import { useRef, useCallback } from "react";
+
 import {
-  FileText,
   Bold,
-  Italic,
+  Code,
+  FileText,
   Heading1,
   Heading2,
+  Italic,
   List,
   ListOrdered,
-  Code,
   Minus,
 } from "lucide-react";
+import { useCallback, useRef } from "react";
 
 interface ToolbarAction {
   icon: React.ReactNode;
@@ -62,11 +63,7 @@ function applyToolbarAction(
         value.slice(selectionEnd);
       cursorPos = selectionEnd + action.prefix.length + suffix.length;
     } else {
-      newText =
-        value.slice(0, selectionStart) +
-        action.prefix +
-        suffix +
-        value.slice(selectionEnd);
+      newText = value.slice(0, selectionStart) + action.prefix + suffix + value.slice(selectionEnd);
       cursorPos = selectionStart + action.prefix.length;
     }
   }
@@ -138,9 +135,7 @@ export function LoopStartForm({
             marginBottom: 8,
           }}
         >
-          <label
-            style={{ fontSize: "0.78rem", fontWeight: 500, color: "var(--foreground-muted)" }}
-          >
+          <label style={{ fontSize: "0.78rem", fontWeight: 500, color: "var(--foreground-muted)" }}>
             {goalName} — describe your project
           </label>
           {goalDetected && (
@@ -328,7 +323,9 @@ export function LoopStartForm({
           }}
         />
         <button
-          onClick={() => { void pickGoalFile(); }}
+          onClick={() => {
+            void pickGoalFile();
+          }}
           disabled={isRunning}
           style={secondaryButtonStyle}
         >
@@ -356,7 +353,8 @@ export function LoopStartForm({
             lineHeight: 1.4,
           }}
         >
-          Pick an existing markdown file or create a new one with the editor. Conventional name is <code>GOAL.md</code>.
+          Pick an existing markdown file or create a new one with the editor. Conventional name is{" "}
+          <code>GOAL.md</code>.
         </p>
       )}
     </div>

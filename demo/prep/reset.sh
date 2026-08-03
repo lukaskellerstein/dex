@@ -56,7 +56,7 @@ cp "$PROJECT/docs/my-specs/001-Initialization/README.md" "$PROJECT/GOAL.md"
 # checkpoints/_mergeHelpers classifies as a non-content conflict and aborts the
 # merge without ever calling the resolver. Hence: seed it here, the run rewrites
 # it, stage-conflict.sh rewrites it differently on main.
-cat > "$PROJECT/README.md" <<'MD'
+cat >"$PROJECT/README.md" <<'MD'
 # Eshopy
 
 Storefront for a small online shop. See `docs/my-specs/` for the specifications.
@@ -82,7 +82,7 @@ BASE_SHA="$(git -C "$PROJECT" rev-parse HEAD)"
 # fixed, but prep does not rely on that: the demo needs the check green whether
 # or not the auto-fix path runs. Bundled templates, no network, ~0.2s.
 if [[ ! -f "$PROJECT/.specify/integration.json" ]]; then
-  ( cd "$PROJECT" && specify init . --force --integration claude --script sh >/dev/null 2>&1 )
+  (cd "$PROJECT" && specify init . --force --integration claude --script sh >/dev/null 2>&1)
 fi
 if [[ ! -f "$PROJECT/.specify/integration.json" ]]; then
   echo "FATAL: spec-kit init produced no .specify/integration.json in $PROJECT." >&2
@@ -105,7 +105,10 @@ fi
 # from leftover state, stages get skipped, and the recording looks wrong for
 # reasons nobody can see on camera.
 
-fail() { echo "FATAL: reset did not reach a clean state — $1" >&2; exit 1; }
+fail() {
+  echo "FATAL: reset did not reach a clean state — $1" >&2
+  exit 1
+}
 
 [[ "$(git -C "$PROJECT" rev-parse HEAD)" == "$BASE_SHA" ]] || fail "HEAD is not the seeded base commit"
 [[ "$(git -C "$PROJECT" rev-parse --abbrev-ref HEAD)" == "main" ]] || fail "not on main"

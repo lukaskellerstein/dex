@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
 import { FolderOpen } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { projectService } from "../../services/projectService.js";
 
 export type WelcomeNextView = "overview" | "loop-dashboard" | "loop-start";
@@ -101,9 +101,7 @@ export function WelcomeScreen({
         color: "var(--foreground-dim)",
       }}
     >
-      <span style={{ fontSize: "0.88rem" }}>
-        Create a new project or open an existing one
-      </span>
+      <span style={{ fontSize: "0.88rem" }}>Create a new project or open an existing one</span>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, width: 440 }}>
         <div>
           <label
@@ -208,11 +206,7 @@ export function WelcomeScreen({
             {combinedPath}
           </div>
         )}
-        {error && (
-          <div style={{ fontSize: "0.76rem", color: "var(--status-error)" }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ fontSize: "0.76rem", color: "var(--status-error)" }}>{error}</div>}
         <button
           data-testid="welcome-submit"
           onClick={handleSubmit}

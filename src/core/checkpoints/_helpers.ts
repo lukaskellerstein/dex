@@ -37,7 +37,9 @@ export class GitExecError extends Error {
   readonly stdout: string;
 
   constructor(cmd: string, cwd: string, status: number | null, stderr: string, stdout: string) {
-    super(`git command failed (status=${status ?? "n/a"}): ${cmd}\n${stderr || stdout || "(no output)"}`);
+    super(
+      `git command failed (status=${status ?? "n/a"}): ${cmd}\n${stderr || stdout || "(no output)"}`,
+    );
     this.name = "GitExecError";
     this.cmd = cmd;
     this.cwd = cwd;

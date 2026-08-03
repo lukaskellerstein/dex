@@ -51,12 +51,14 @@ Modes unchanged. The new UX surfaces them without obscuring them.
 ## Timeline rendering — what changes
 
 ### Today (broken)
+
 - Lanes of disconnected dots, no edges between consecutive commits.
 - "pending <stage>" labels that mean nothing to users.
 - No commit hashes visible.
 - Right-side `NodeDetailPanel` (300px) and bottom `PastAttemptsList` collapse — both removed.
 
 ### After
+
 - **Branch columns** — one per ref (`main`, `dex/<date>-<id>`, `attempt-<ts>`, `attempt-<ts>-<letter>`). Branch name as column header.
 - **Step-commits only** — commits matching `^\[checkpoint:<stage>:<cycle>\]` in subject. Mid-stage WIP commits don't render or click.
 - **Edges** — between consecutive step-commits on the same branch (reachability — skip non-step commits in between). Branch-off edges from divergence point to the new column's first commit.
@@ -114,7 +116,7 @@ Reuses:
 
 An agent profile is a **folder on disk**. The runner's native config lives inside (`.claude/` for Claude, `.codex/` for Codex, etc.) and Dex-specific knobs that the runner's settings can't express live in `dex.json`. The on-disk shape:
 
-```
+```text
 <projectDir>/.dex/agents/<name>/
   dex.json                  # Dex-specific knobs (see schema below)
   .claude/                  # Claude Code config root (for agentRunner="claude-sdk")

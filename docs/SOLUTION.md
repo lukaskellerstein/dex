@@ -75,7 +75,7 @@ graph TB
 
 [Spec-Kit](https://github.com/github/spec-kit) by GitHub implements Specification-Driven Development (SDD) — specs are the primary artifact, code is generated output. It provides a templated workflow:
 
-```
+```text
 /speckit.constitution → /speckit.specify → /speckit.plan → /speckit.tasks → /speckit.implement
 ```
 

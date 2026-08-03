@@ -26,7 +26,7 @@ grep -nE '\b(merge|branch|fast-forward|rebase|conflict marker|PR)\b' \
   | grep -v 'user-visible string'
 ```
 
-### Expected output
+### Expected output (Step 1)
 
 Empty (no lines).
 
@@ -46,7 +46,7 @@ grep -rnE '"[^"]*\b(merge|branch|fast-forward|rebase|conflict marker|PR)\b[^"]*"
   | grep -v 'r\.branch'
 ```
 
-### Expected output
+### Expected output (Step 2)
 
 Empty (after the explicit exclusions for code-only patterns).
 

@@ -15,43 +15,26 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import type {
-  RunConfig,
-  StepType,
-  GapAnalysisDecision,
-  TerminationReason,
-  LoopTermination,
-  FailureRecord,
-} from "../types.js";
-import { discoverNewSpecDir } from "../parser.js";
-import * as runs from "../runs.js";
-import { updateState, STEP_ORDER } from "../state.js";
-import {
-  loadManifest,
-  getNextFeature,
-  getActiveFeature,
-  updateFeatureStatus,
-  updateFeatureSpecDir,
-} from "../manifest.js";
-import {
-  buildSpecifyPrompt,
-  buildLoopPlanPrompt,
-  buildLoopTasksPrompt,
-  buildFeatureEvaluationPrompt,
-  GAP_ANALYSIS_SCHEMA,
-} from "../prompts.js";
+import { shouldRunStage as shouldRunStageFromDecision } from "../gap-analysis.js";
+import { loadManifest, updateFeatureSpecDir, updateFeatureStatus } from "../manifest.js";
 // Circular: orchestrator.ts and this module call each other's exports at call
 // time; both sides export functions/classes only, so ESM module init is safe.
-import {
-  runStage,
-  AbortError,
-  listSpecDirs,
-} from "../orchestrator.js";
+import { AbortError, listSpecDirs, runStage } from "../orchestrator.js";
+import { discoverNewSpecDir } from "../parser.js";
 import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
-import {
-  parseGapAnalysisDecision,
-  shouldRunStage as shouldRunStageFromDecision,
-} from "../gap-analysis.js";
+import { buildLoopPlanPrompt, buildLoopTasksPrompt, buildSpecifyPrompt } from "../prompts.js";
+import * as runs from "../runs.js";
+import { STEP_ORDER, updateState } from "../state.js";
+import type {
+  FailureRecord,
+  GapAnalysisDecision,
+  LoopTermination,
+  RunConfig,
+  StepType,
+  TerminationReason,
+} from "../types.js";
+import { applyFailureThresholds } from "./cycle-failure-policy.js";
+import { resolveGapAnalysis } from "./cycle-gap-analysis.js";
 import { runImplementVerifyLearnings } from "./cycle-stages.js";
 
 export interface MainLoopResult {
@@ -107,15 +90,31 @@ export async function runMainLoop(
 
   const persistFailure = (specDir: string) => {
     const record = getOrCreateFailureRecord(specDir);
-    runs.upsertFailureCount(config.projectDir, runId, specDir, record.implFailures, record.replanFailures);
+    runs.upsertFailureCount(
+      config.projectDir,
+      runId,
+      specDir,
+      record.implFailures,
+      record.replanFailures,
+    );
     updateState(config.projectDir, {
-      failureCounts: { [specDir]: { implFailures: record.implFailures, replanFailures: record.replanFailures } },
-    }).catch(() => { /* state write failure shouldn't crash the run */ });
+      failureCounts: {
+        [specDir]: { implFailures: record.implFailures, replanFailures: record.replanFailures },
+      },
+    }).catch(() => {
+      /* state write failure shouldn't crash the run */
+    });
   };
 
   // Delegates to the consolidated helper in phase-lifecycle.ts (A6/T043 wire-in).
   const emitSkippedStep = (step: StepType, cycleNum = 0) => {
-    phaseEmitSkippedStep({ ctx, runId, agentRunId: crypto.randomUUID(), step, cycleNumber: cycleNum });
+    phaseEmitSkippedStep({
+      ctx,
+      runId,
+      agentRunId: crypto.randomUUID(),
+      step,
+      cycleNumber: cycleNum,
+    });
   };
 
   // ── Phase B: Autonomous Loop ────────────────────────────
@@ -135,7 +134,10 @@ export async function runMainLoop(
 
     // Check budget
     if (config.maxBudgetUsd && cumulativeCost >= config.maxBudgetUsd) {
-      rlog.run("INFO", `runLoop: budget exceeded ($${cumulativeCost.toFixed(2)} >= $${config.maxBudgetUsd})`);
+      rlog.run(
+        "INFO",
+        `runLoop: budget exceeded ($${cumulativeCost.toFixed(2)} >= $${config.maxBudgetUsd})`,
+      );
       break;
     }
 
@@ -152,126 +154,31 @@ export async function runMainLoop(
     }
 
     // ── Gap Analysis — Deterministic Manifest Walk ──
-    let decision: GapAnalysisDecision;
-    if (resumeSpecDir && cycleNumber === cyclesCompleted + 1) {
-      // Mid-cycle resume: pick RESUME_AT_STEP when a pre-implement stage
-      // (specify or plan) completed before the abort. A completed "tasks"
-      // stage means the pre-implement triad is done → classic RESUME_FEATURE
-      // (jump straight to implement). Any later stage or null also maps to
-      // RESUME_FEATURE since implement/verify/learnings have their own
-      // resume paths.
-      if (resumeLastStage === "specify" || resumeLastStage === "plan") {
-        decision = { type: "RESUME_AT_STEP", specDir: resumeSpecDir, resumeAtStep: resumeLastStage };
-        rlog.run("INFO", `runLoop: resume — using RESUME_AT_STEP(${resumeLastStage}) for ${resumeSpecDir}`);
-      } else {
-        decision = { type: "RESUME_FEATURE", specDir: resumeSpecDir };
-        rlog.run("INFO", `runLoop: resume — skipping gap analysis, using RESUME_FEATURE for ${resumeSpecDir}`);
-      }
-      const traceId = crypto.randomUUID();
-      runs.startAgentRun(config.projectDir, runId, {
-        agentRunId: traceId,
-        runId,
-        specDir: resumeSpecDir,
-        taskPhaseNumber: cycleNumber,
-        taskPhaseName: "loop:gap_analysis",
-        step: "gap_analysis",
-        cycleNumber,
-        featureSlug: path.basename(resumeSpecDir),
-        startedAt: new Date().toISOString(),
-        status: "running",
-      });
-      emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId });
-      runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-      emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
-      resumeSpecDir = null;
-    } else {
-      try {
-        const manifest = loadManifest(config.projectDir);
-        if (!manifest) {
-          throw new Error("Feature manifest not found — manifest extraction should have run before the loop");
-        }
-
-        if (currentRunState) {
-          currentRunState.currentStep = "gap_analysis";
-        }
-
-        const active = getActiveFeature(manifest);
-        const nextPending = getNextFeature(manifest);
-
-        // Emit a synthetic (deterministic, cost=0) gap_analysis stage so the UI shows it completed
-        const emitSyntheticGapAnalysis = (specDir: string) => {
-          const traceId = crypto.randomUUID();
-          runs.startAgentRun(config.projectDir, runId, {
-            agentRunId: traceId,
-            runId,
-            specDir: specDir || null,
-            taskPhaseNumber: cycleNumber,
-            taskPhaseName: "loop:gap_analysis",
-            step: "gap_analysis",
-            cycleNumber,
-            featureSlug: specDir ? path.basename(specDir) : null,
-            startedAt: new Date().toISOString(),
-            status: "running",
-          });
-          emit({ type: "step_started", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, specDir });
-          runs.completeAgentRun(config.projectDir, runId, traceId, { status: "completed", costUsd: 0, durationMs: 0 });
-          emit({ type: "step_completed", runId, cycleNumber, step: "gap_analysis", agentRunId: traceId, costUsd: 0, durationMs: 0 });
-        };
-
-        if (active) {
-          if (active.specDir) {
-            // Active feature with specDir — evaluate RESUME vs REPLAN (LLM call)
-            const evaluationPrompt = buildFeatureEvaluationPrompt(config, active.specDir);
-            const evalResult = await runStage(
-              config, evaluationPrompt, emit, rlog, runId, cycleNumber,
-              "gap_analysis", active.specDir,
-              { type: "json_schema", schema: GAP_ANALYSIS_SCHEMA as unknown as Record<string, unknown> }
-            );
-            cumulativeCost += evalResult.cost;
-            // Delegate to gap-analysis.parseGapAnalysisDecision (A5 wire-in).
-            // The parser throws on null/malformed; the surrounding try/catch
-            // surfaces it as `gap analysis failed` and breaks the cycle —
-            // matches the previous behaviour exactly.
-            decision = parseGapAnalysisDecision(evalResult.structuredOutput, active.specDir);
-          } else {
-            // Active but no specDir — re-run specify for this feature (deterministic)
-            emitSyntheticGapAnalysis("");
-            decision = {
-              type: "NEXT_FEATURE",
-              name: active.title,
-              description: active.description,
-              featureId: active.id,
-            };
-          }
-        } else if (nextPending) {
-          // Deterministic — no LLM call needed
-          updateFeatureStatus(config.projectDir, nextPending.id, "active");
-          emitSyntheticGapAnalysis("");
-          decision = {
-            type: "NEXT_FEATURE",
-            name: nextPending.title,
-            description: nextPending.description,
-            featureId: nextPending.id,
-          };
-        } else {
-          decision = { type: "GAPS_COMPLETE" };
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        rlog.run("ERROR", `runLoop: gap analysis failed: ${msg}`);
-        emit({ type: "error", message: `Gap analysis failed: ${msg}` });
-        break;
-      }
-    }
+    // Body extracted to cycle-gap-analysis.ts (A4.5 follow-up). The three
+    // effects it used to perform inline are returned instead: a failure that
+    // broke the loop, the cost increment, and consuming `resumeSpecDir`.
+    const gap = await resolveGapAnalysis({
+      ctx,
+      config,
+      runId,
+      cycleNumber,
+      resumeSpecDir: resumeSpecDir && cycleNumber === cyclesCompleted + 1 ? resumeSpecDir : null,
+      resumeLastStage,
+    });
+    if (gap.kind === "failed") break;
+    let decision: GapAnalysisDecision = gap.decision;
+    cumulativeCost += gap.costDelta;
+    if (gap.consumedResume) resumeSpecDir = null;
 
     // Record the cycle
     const decisionType = decision.type;
     const featureName = decision.type === "NEXT_FEATURE" ? decision.name : null;
-    let specDir = decision.type === "RESUME_FEATURE"
-      || decision.type === "REPLAN_FEATURE"
-      || decision.type === "RESUME_AT_STEP"
-      ? decision.specDir
-      : null;
+    let specDir =
+      decision.type === "RESUME_FEATURE" ||
+      decision.type === "REPLAN_FEATURE" ||
+      decision.type === "RESUME_AT_STEP"
+        ? decision.specDir
+        : null;
     let cycleFailed = false;
 
     void cycleId;
@@ -291,43 +198,25 @@ export async function runMainLoop(
       break;
     }
 
-    // ── Failure threshold checks (T038) ──
+    // ── Failure threshold checks (T038) — body in cycle-failure-policy.ts ──
     if (specDir) {
-      const record = getOrCreateFailureRecord(specDir);
-      if (record.replanFailures >= 3) {
-        rlog.run("WARN", `runLoop: skipping feature at ${specDir} — 3 replan failures`);
-        // Mark feature as skipped in manifest
-        const skipManifest = loadManifest(config.projectDir);
-        if (skipManifest) {
-          const skipEntry = skipManifest.features.find((f) => f.specDir === specDir);
-          if (skipEntry) updateFeatureStatus(config.projectDir, skipEntry.id, "skipped");
-        }
-        featuresSkipped.push(specDir);
-        // (loop cycle row removed in 007-sqlite-removal — derived from phases)
-        emit({
-          type: "loop_cycle_completed",
-          runId,
-          cycleNumber,
-          decision: "skipped",
-          featureName,
-          specDir,
-          costUsd: 0,
-        });
-        // Update FeatureArtifacts.status to "skipped"
-        if (activeProjectDir && specDir) {
-          updateState(activeProjectDir, {
-            artifacts: { features: { [specDir]: { status: "skipped" } } },
-            featuresSkipped: [...featuresSkipped],
-          } as never).catch(() => {});
-        }
+      const outcome = applyFailureThresholds({
+        ctx,
+        config,
+        runId,
+        cycleNumber,
+        specDir,
+        featureName,
+        record: getOrCreateFailureRecord(specDir),
+        featuresSkipped,
+      });
+      if (outcome.kind === "skip") {
         cyclesCompleted++;
         runs.updateRunCyclesCompleted(config.projectDir, runId, cyclesCompleted);
         continue;
       }
-      if (record.implFailures >= 3) {
-        // Force replan
+      if (outcome.kind === "replan") {
         decision = { type: "REPLAN_FEATURE", specDir };
-        rlog.run("WARN", `runLoop: forcing replan for ${specDir} — 3 impl failures`);
       }
     }
 
@@ -371,7 +260,13 @@ export async function runMainLoop(
         // right after specify still persists the new dir for resume.
         let newSpecDir: string | null = null;
         const specifyResult = await runStage(
-          config, specifyPrompt, emit, rlog, runId, cycleNumber, "specify",
+          config,
+          specifyPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "specify",
           undefined,
           undefined,
           async () => {
@@ -383,7 +278,18 @@ export async function runMainLoop(
             if (activeProjectDir) {
               await updateState(activeProjectDir, {
                 currentSpecDir: newSpecDir,
-                artifacts: { features: { [newSpecDir]: { specDir: newSpecDir, status: "specifying", spec: null, plan: null, tasks: null, lastImplementedPhase: 0 } } },
+                artifacts: {
+                  features: {
+                    [newSpecDir]: {
+                      specDir: newSpecDir,
+                      status: "specifying",
+                      spec: null,
+                      plan: null,
+                      tasks: null,
+                      lastImplementedPhase: 0,
+                    },
+                  },
+                },
               } as never).catch(() => {});
             }
           },
@@ -413,8 +319,17 @@ export async function runMainLoop(
             artifacts: { features: { [targetSpecDir]: { status: "planning" } } },
           } as never).catch(() => {});
         }
-        const planPrompt = buildLoopPlanPrompt(config, specPath);
-        const planResult = await runStage(config, planPrompt, emit, rlog, runId, cycleNumber, "plan", targetSpecDir);
+        const planPrompt = buildLoopPlanPrompt(specPath);
+        const planResult = await runStage(
+          config,
+          planPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "plan",
+          targetSpecDir,
+        );
         cycleCost += planResult.cost;
 
         if (abortController?.signal.aborted) throw new AbortError();
@@ -432,8 +347,17 @@ export async function runMainLoop(
         if (currentRunState) {
           currentRunState.currentStep = "tasks";
         }
-        const tasksPrompt = buildLoopTasksPrompt(config, specPath);
-        const tasksResult = await runStage(config, tasksPrompt, emit, rlog, runId, cycleNumber, "tasks", targetSpecDir);
+        const tasksPrompt = buildLoopTasksPrompt(specPath);
+        const tasksResult = await runStage(
+          config,
+          tasksPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "tasks",
+          targetSpecDir,
+        );
         cycleCost += tasksResult.cost;
       }
 
@@ -442,8 +366,13 @@ export async function runMainLoop(
       // ── Implement → Verify → Learnings (extracted to stages/cycle-stages.ts in 011-A4.5) ──
       const implSpecDir = specDir!;
       const ivlResult = await runImplementVerifyLearnings({
-        ctx, config, runId, cycleNumber,
-        specDir: implSpecDir, fullPlanPath, rlog,
+        ctx,
+        config,
+        runId,
+        cycleNumber,
+        specDir: implSpecDir,
+        fullPlanPath,
+        rlog,
       });
       cycleCost += ivlResult.cycleCost;
       const verification = { passed: ivlResult.verifyPassed };
@@ -485,7 +414,6 @@ export async function runMainLoop(
           cumulativeCostUsd: cumulativeCost + cycleCost,
         }).catch(() => {});
       }
-
     } catch (err) {
       // AbortError is a clean exit — not a stage failure
       if (err instanceof AbortError) {
@@ -504,11 +432,19 @@ export async function runMainLoop(
           cycleNumber,
           cyclesCompleted,
           decision: decision.type,
-          decisionDetail: decision.type === "RESUME_FEATURE" || decision.type === "REPLAN_FEATURE" || decision.type === "RESUME_AT_STEP"
-            ? { specDir: decision.specDir, ...(decision.type === "RESUME_AT_STEP" ? { resumeAtStep: decision.resumeAtStep } : {}) }
-            : decision.type === "NEXT_FEATURE"
-              ? { name: decision.name, featureId: decision.featureId }
-              : null,
+          decisionDetail:
+            decision.type === "RESUME_FEATURE" ||
+            decision.type === "REPLAN_FEATURE" ||
+            decision.type === "RESUME_AT_STEP"
+              ? {
+                  specDir: decision.specDir,
+                  ...(decision.type === "RESUME_AT_STEP"
+                    ? { resumeAtStep: decision.resumeAtStep }
+                    : {}),
+                }
+              : decision.type === "NEXT_FEATURE"
+                ? { name: decision.name, featureId: decision.featureId }
+                : null,
           specDir,
           currentStep: currentRunState?.currentStep ?? null,
           stack: err instanceof Error ? err.stack : undefined,
@@ -612,7 +548,10 @@ export async function runMainLoop(
     if (abortController?.signal.aborted) break;
     if (config.maxBudgetUsd && cumulativeCost >= config.maxBudgetUsd) break;
     if (config.maxLoopCycles && cyclesCompleted >= config.maxLoopCycles) break;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) { rlog.run("ERROR", `runLoop: ${consecutiveFailures} consecutive cycle failures — aborting`); break; }
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      rlog.run("ERROR", `runLoop: ${consecutiveFailures} consecutive cycle failures — aborting`);
+      break;
+    }
   }
 
   // ── Termination (T042) ──
@@ -637,7 +576,10 @@ export async function runMainLoop(
   };
 
   emit({ type: "loop_terminated", runId, termination });
-  rlog.run("INFO", `runLoop: terminated — reason=${terminationReason}, cycles=${cyclesCompleted}, features=${featuresCompleted.length}/${featuresSkipped.length}`);
+  rlog.run(
+    "INFO",
+    `runLoop: terminated — reason=${terminationReason}, cycles=${cyclesCompleted}, features=${featuresCompleted.length}/${featuresSkipped.length}`,
+  );
 
   return { cyclesCompleted, cumulativeCost, featuresCompleted, featuresSkipped, termination };
 }

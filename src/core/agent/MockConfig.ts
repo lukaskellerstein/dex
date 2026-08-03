@@ -81,7 +81,9 @@ export interface MockConfig {
 export class MockConfigParseError extends Error {
   readonly filePath: string;
   constructor(filePath: string, cause: unknown) {
-    super(`MockConfigParseError: failed to parse ${filePath}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    super(
+      `MockConfigParseError: failed to parse ${filePath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
     this.name = "MockConfigParseError";
     this.filePath = filePath;
   }
@@ -101,12 +103,20 @@ export class MockConfigMissingEntryError extends Error {
   readonly step: string;
   readonly cycleNumber: number | null;
   readonly featureId: string | null;
-  constructor(phase: string, step: string, cycleNumber: number | null, featureId: string | null, extra?: string) {
+  constructor(
+    phase: string,
+    step: string,
+    cycleNumber: number | null,
+    featureId: string | null,
+    extra?: string,
+  ) {
     const coords = [`phase=${phase}`, `step=${step}`];
     if (cycleNumber !== null) coords.push(`cycle=${cycleNumber}`);
     if (featureId !== null) coords.push(`feature=${featureId}`);
     const suffix = extra ? `. ${extra}` : "";
-    super(`MockConfigMissingEntryError: no script entry for ${coords.join(", ")}${suffix}. Update .dex/mock-config.json.`);
+    super(
+      `MockConfigMissingEntryError: no script entry for ${coords.join(", ")}${suffix}. Update .dex/mock-config.json.`,
+    );
     this.name = "MockConfigMissingEntryError";
     this.phase = phase;
     this.step = step;
@@ -120,7 +130,9 @@ export class MockConfigInvalidPathError extends Error {
   readonly unknownToken: string;
   readonly allowedTokens: readonly string[];
   constructor(badPath: string, unknownToken: string, allowedTokens: readonly string[]) {
-    super(`MockConfigInvalidPathError: path '${badPath}' contains unknown substitution token '{${unknownToken}}'. Allowed tokens: ${allowedTokens.map((t) => `{${t}}`).join(", ")}`);
+    super(
+      `MockConfigInvalidPathError: path '${badPath}' contains unknown substitution token '{${unknownToken}}'. Allowed tokens: ${allowedTokens.map((t) => `{${t}}`).join(", ")}`,
+    );
     this.name = "MockConfigInvalidPathError";
     this.badPath = badPath;
     this.unknownToken = unknownToken;
@@ -131,31 +143,42 @@ export class MockConfigInvalidPathError extends Error {
 // ── Phase → steps mapping ──────────────────────────────────
 // Which top-level key of MockConfig owns each StepType.
 
-export const PHASE_OF_STEP: Record<StepType, "prerequisites" | "clarification" | "dex_loop" | "completion"> = {
-  prerequisites:            "prerequisites",
-  create_branch:            "prerequisites",
-  clarification:            "clarification",
-  clarification_product:    "clarification",
-  clarification_technical:  "clarification",
-  clarification_synthesis:  "clarification",
-  constitution:             "clarification",
-  manifest_extraction:      "clarification",
-  gap_analysis:             "dex_loop",
-  specify:                  "dex_loop",
-  plan:                     "dex_loop",
-  tasks:                    "dex_loop",
-  implement:                "dex_loop",
-  implement_fix:            "dex_loop",
-  verify:                   "dex_loop",
-  learnings:                "dex_loop",
-  completion:               "completion",
-  commit:                   "dex_loop",
+export const PHASE_OF_STEP: Record<
+  StepType,
+  "prerequisites" | "clarification" | "dex_loop" | "completion"
+> = {
+  prerequisites: "prerequisites",
+  create_branch: "prerequisites",
+  clarification: "clarification",
+  clarification_product: "clarification",
+  clarification_technical: "clarification",
+  clarification_synthesis: "clarification",
+  constitution: "clarification",
+  manifest_extraction: "clarification",
+  gap_analysis: "dex_loop",
+  specify: "dex_loop",
+  plan: "dex_loop",
+  tasks: "dex_loop",
+  implement: "dex_loop",
+  implement_fix: "dex_loop",
+  verify: "dex_loop",
+  learnings: "dex_loop",
+  completion: "completion",
+  commit: "dex_loop",
 };
 
 // ── Loader + validator ─────────────────────────────────────
 
 const REQUIRED_TOP_LEVEL = ["prerequisites", "clarification", "dex_loop", "completion"] as const;
-const REQUIRED_CYCLE_STAGES = ["gap_analysis", "specify", "plan", "tasks", "implement", "verify", "learnings"] as const;
+const REQUIRED_CYCLE_STAGES = [
+  "gap_analysis",
+  "specify",
+  "plan",
+  "tasks",
+  "implement",
+  "verify",
+  "learnings",
+] as const;
 
 export function mockConfigPath(projectDir: string): string {
   return path.join(projectDir, ".dex", "mock-config.json");
@@ -168,7 +191,10 @@ export function mockConfigPath(projectDir: string): string {
 export function loadMockConfig(projectDir: string): MockConfig {
   const file = mockConfigPath(projectDir);
   if (!fs.existsSync(file)) {
-    throw new MockConfigInvalidError(file, "file does not exist. Create it or set 'agent': 'claude' in .dex/dex-config.json.");
+    throw new MockConfigInvalidError(
+      file,
+      "file does not exist. Create it or set 'agent': 'claude' in .dex/dex-config.json.",
+    );
   }
   const raw = fs.readFileSync(file, "utf8");
   let parsed: unknown;
@@ -198,9 +224,7 @@ export function loadMockConfig(projectDir: string): MockConfig {
     if (!Array.isArray(oneShotResponses)) {
       throw new MockConfigInvalidError(file, "'oneShotResponses' must be an array if present");
     }
-    oneShotResponses.forEach((r, i) =>
-      validateOneShotResponse(file, `oneShotResponses[${i}]`, r),
-    );
+    oneShotResponses.forEach((r, i) => validateOneShotResponse(file, `oneShotResponses[${i}]`, r));
   }
 
   return {
@@ -227,10 +251,16 @@ function validateOneShotResponse(file: string, where: string, spec: unknown): vo
     throw new MockConfigInvalidError(file, `${where}.isRegex must be a boolean if present`);
   }
   if (r.cost !== undefined && (typeof r.cost !== "number" || r.cost < 0)) {
-    throw new MockConfigInvalidError(file, `${where}.cost must be a non-negative number if present`);
+    throw new MockConfigInvalidError(
+      file,
+      `${where}.cost must be a non-negative number if present`,
+    );
   }
   if (r.delayMs !== undefined && (typeof r.delayMs !== "number" || r.delayMs < 0)) {
-    throw new MockConfigInvalidError(file, `${where}.delayMs must be a non-negative number if present`);
+    throw new MockConfigInvalidError(
+      file,
+      `${where}.delayMs must be a non-negative number if present`,
+    );
   }
   if (r.editFile !== undefined) {
     if (!r.editFile || typeof r.editFile !== "object" || Array.isArray(r.editFile)) {
@@ -248,7 +278,10 @@ function validateOneShotResponse(file: string, where: string, spec: unknown): vo
 
 function validatePhaseEntry(file: string, name: string, entry: unknown): void {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-    throw new MockConfigInvalidError(file, `'${name}' must be an object mapping stage name to descriptor`);
+    throw new MockConfigInvalidError(
+      file,
+      `'${name}' must be an object mapping stage name to descriptor`,
+    );
   }
   for (const [stepName, descriptor] of Object.entries(entry as Record<string, unknown>)) {
     validateStepDescriptor(file, `${name}.${stepName}`, descriptor);
@@ -323,7 +356,11 @@ function validateStepDescriptor(file: string, where: string, desc: unknown): voi
     d.appends.forEach((a, i) => validateAppendSpec(file, `${where}.appends[${i}]`, a));
   }
   if (d.structured_output !== undefined) {
-    if (!d.structured_output || typeof d.structured_output !== "object" || Array.isArray(d.structured_output)) {
+    if (
+      !d.structured_output ||
+      typeof d.structured_output !== "object" ||
+      Array.isArray(d.structured_output)
+    ) {
       throw new MockConfigInvalidError(file, `${where}.structured_output must be a JSON object`);
     }
   }

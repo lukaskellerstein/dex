@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
+import * as runs from "../runs.js";
+import type { AgentStep, UserInputQuestion } from "../types.js";
+import { waitForUserInput } from "../userInput.js";
 import type {
   AgentRunner,
-  TaskPhaseContext,
-  TaskPhaseResult,
-  StepContext,
-  StepResult,
   OneShotContext,
   OneShotResult,
+  StepContext,
+  StepResult,
+  TaskPhaseContext,
+  TaskPhaseResult,
 } from "./AgentRunner.js";
-import type { AgentStep, RunConfig, UserInputQuestion } from "../types.js";
-import * as runs from "../runs.js";
-import { waitForUserInput } from "../userInput.js";
 import {
   estimateCost,
   makeStep,
@@ -22,13 +22,25 @@ import {
 
 /**
  * Claude Code backend — wraps `@anthropic-ai/claude-agent-sdk` `query()`.
- * Construction is cheap: no SDK import until `runStep`/`runTaskPhase` is called.
+ * Stateless: every call takes its config from the passed context, and no SDK
+ * import happens until `runStep`/`runTaskPhase` is called.
  */
 export class ClaudeAgentRunner implements AgentRunner {
-  constructor(_runConfig: RunConfig, _projectDir: string) {}
-
   async runStep(ctx: StepContext): Promise<StepResult> {
-    const { config, prompt: rawPrompt, runId, cycleNumber, step, agentRunId, outputFormat, abortController, emit, rlog, profile, worktreePath } = ctx;
+    const {
+      config,
+      prompt: rawPrompt,
+      runId,
+      cycleNumber,
+      step,
+      agentRunId,
+      outputFormat,
+      abortController,
+      emit,
+      rlog,
+      profile,
+      worktreePath,
+    } = ctx;
     // 010 — apply per-variant agent profile overrides. Each is opt-in: if
     // unset, behavior is byte-identical to pre-010.
     const effectiveModel = profile?.model ?? config.model;
@@ -61,7 +73,10 @@ export class ClaudeAgentRunner implements AgentRunner {
         },
       };
       emit({ type: "agent_step", agentStep: enriched });
-      runs.appendAgentStep(config.projectDir, runId, stepSlug, cycleNumber, { ...enriched, agentRunId });
+      runs.appendAgentStep(config.projectDir, runId, stepSlug, cycleNumber, {
+        ...enriched,
+        agentRunId,
+      });
     };
 
     emitAndStore(makeStep("user_message", stepIndex++, prompt));
@@ -110,7 +125,10 @@ export class ClaudeAgentRunner implements AgentRunner {
                 } else if (q.options.length > 0) {
                   // Fallback: pick the first option if no recommended
                   answers[q.question] = q.options[0].label;
-                  rlog.agentRun("WARN", `canUseTool: no recommended option for "${q.question}", using first option`);
+                  rlog.agentRun(
+                    "WARN",
+                    `canUseTool: no recommended option for "${q.question}", using first option`,
+                  );
                 }
               }
               // Still emit the event so the UI can show what was auto-selected
@@ -149,7 +167,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                         skillName: hookToolInput.skill ?? "",
                         skillArgs: hookToolInput.args ?? "",
                         toolUseId: input.tool_use_id ?? null,
-                      })
+                      }),
                     );
                   } else {
                     emitAndStore(toToolCallStep(input, stepIndex++));
@@ -185,7 +203,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                     emitAndStore(
                       makeStep("skill_result", stepIndex++, stringifyResponse(response), {
                         toolUseId: input.tool_use_id ?? null,
-                      })
+                      }),
                     );
                   } else {
                     emitAndStore(toToolResultStep(input, stepIndex++));
@@ -218,7 +236,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                       subagentId: info.subagentId,
                       subagentType: info.subagentType,
                       description: info.description,
-                    })
+                    }),
                   );
                   activeSubagentSet.add(info.subagentId);
                   return {};
@@ -236,9 +254,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                   if (!knownSubagentIds.has(subagentId)) return {};
                   emit({ type: "subagent_completed", subagentId });
                   runs.completeSubagent(config.projectDir, runId, subagentId);
-                  emitAndStore(
-                    makeStep("subagent_result", stepIndex++, null, { subagentId })
-                  );
+                  emitAndStore(makeStep("subagent_result", stepIndex++, null, { subagentId }));
                   return {};
                 },
               ],
@@ -248,7 +264,10 @@ export class ClaudeAgentRunner implements AgentRunner {
       },
     })) {
       if (isAborted()) {
-        rlog.agentRun("INFO", `runStep(${step}): abort detected in message loop — breaking out (SDK query may continue in background)`);
+        rlog.agentRun(
+          "INFO",
+          `runStep(${step}): abort detected in message loop — breaking out (SDK query may continue in background)`,
+        );
         break;
       }
 
@@ -279,20 +298,30 @@ export class ClaudeAgentRunner implements AgentRunner {
         if (typeof message.total_cost_usd === "number") totalCost = message.total_cost_usd;
         const resultUsage = message.usage as Record<string, unknown> | undefined;
         if (resultUsage) {
-          if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
-          if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
+          if (typeof resultUsage.input_tokens === "number")
+            totalInputTokens = resultUsage.input_tokens;
+          if (typeof resultUsage.output_tokens === "number")
+            totalOutputTokens = resultUsage.output_tokens;
         }
         if (typeof message.result === "string") resultText = message.result;
 
         // Structured output handling
         if (outputFormat) {
           if (message.subtype === "error_max_structured_output_retries") {
-            rlog.agentRun("ERROR", `runStep(${step}): structured output validation failed after max retries`);
-            throw new Error(`Structured output validation failed for ${step} — agent could not produce valid JSON matching the schema`);
+            rlog.agentRun(
+              "ERROR",
+              `runStep(${step}): structured output validation failed after max retries`,
+            );
+            throw new Error(
+              `Structured output validation failed for ${step} — agent could not produce valid JSON matching the schema`,
+            );
           }
           structuredOutput = (message as Record<string, unknown>).structured_output ?? null;
           if (structuredOutput === null) {
-            rlog.agentRun("WARN", `runStep(${step}): outputFormat requested but structured_output is null — falling back to raw text`);
+            rlog.agentRun(
+              "WARN",
+              `runStep(${step}): outputFormat requested but structured_output is null — falling back to raw text`,
+            );
           }
         }
 
@@ -307,10 +336,12 @@ export class ClaudeAgentRunner implements AgentRunner {
 
     // Emit a completed step so the UI timeline ends cleanly (mirrors runTaskPhase behavior)
     if (!isAborted()) {
-      emitAndStore(makeStep("completed", stepIndex++, `Step ${step} completed`, {
-        inputTokens: totalInputTokens || null,
-        outputTokens: totalOutputTokens || null,
-      }));
+      emitAndStore(
+        makeStep("completed", stepIndex++, `Step ${step} completed`, {
+          inputTokens: totalInputTokens || null,
+          outputTokens: totalOutputTokens || null,
+        }),
+      );
     }
 
     return {
@@ -325,7 +356,19 @@ export class ClaudeAgentRunner implements AgentRunner {
   }
 
   async runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult> {
-    const { config, prompt: rawPrompt, runId, taskPhase, agentRunId, abortController, emit, rlog, onTodoWrite, profile, worktreePath } = ctx;
+    const {
+      config,
+      prompt: rawPrompt,
+      runId,
+      taskPhase,
+      agentRunId,
+      abortController,
+      emit,
+      rlog,
+      onTodoWrite,
+      profile,
+      worktreePath,
+    } = ctx;
     // 010 — see runStep above; same overrides applied here.
     const effectiveModel = profile?.model ?? config.model;
     const effectiveCwd = worktreePath ?? config.projectDir;
@@ -346,7 +389,10 @@ export class ClaudeAgentRunner implements AgentRunner {
       ? config.specDir
       : `${config.projectDir}/${config.specDir}`;
 
-    rlog.agentRun("INFO", `runTaskPhase: spawning agent for Phase ${taskPhase.number}: ${taskPhase.name}`);
+    rlog.agentRun(
+      "INFO",
+      `runTaskPhase: spawning agent for Phase ${taskPhase.number}: ${taskPhase.name}`,
+    );
     rlog.agentRun("DEBUG", "runTaskPhase: prompt", { length: prompt.length, prompt });
 
     const taskPhaseSlug = runs.slugForTaskPhaseName(taskPhase.name);
@@ -362,9 +408,15 @@ export class ClaudeAgentRunner implements AgentRunner {
           ...(activeSubagent ? { belongsToSubagent: activeSubagent } : {}),
         },
       };
-      rlog.agentRun("DEBUG", `emitAndStore: step type=${enriched.type}`, { id: enriched.id, seq: enriched.sequenceIndex });
+      rlog.agentRun("DEBUG", `emitAndStore: step type=${enriched.type}`, {
+        id: enriched.id,
+        seq: enriched.sequenceIndex,
+      });
       emit({ type: "agent_step", agentStep: enriched });
-      runs.appendAgentStep(config.projectDir, runId, taskPhaseSlug, taskPhase.number, { ...enriched, agentRunId });
+      runs.appendAgentStep(config.projectDir, runId, taskPhaseSlug, taskPhase.number, {
+        ...enriched,
+        agentRunId,
+      });
     };
 
     // Emit the initial prompt as a user_message step
@@ -375,7 +427,7 @@ export class ClaudeAgentRunner implements AgentRunner {
       makeStep("skill_invoke", stepIndex++, null, {
         skillName,
         skillArgs: `${specPath} --phase ${taskPhase.number}`,
-      })
+      }),
     );
 
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
@@ -400,7 +452,10 @@ export class ClaudeAgentRunner implements AgentRunner {
               hooks: [
                 async (input: Record<string, unknown>) => {
                   const toolName = String(input.tool_name ?? "unknown");
-                  rlog.agentRun("DEBUG", `PreToolUse: ${toolName}`, { toolUseId: input.tool_use_id, toolInput: input.tool_input });
+                  rlog.agentRun("DEBUG", `PreToolUse: ${toolName}`, {
+                    toolUseId: input.tool_use_id,
+                    toolInput: input.tool_input,
+                  });
 
                   // Emit skill_invoke for Skill tool calls
                   if (toolName === "Skill") {
@@ -410,7 +465,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                         skillName: hookToolInput.skill ?? "",
                         skillArgs: hookToolInput.args ?? "",
                         toolUseId: input.tool_use_id ?? null,
-                      })
+                      }),
                     );
                   } else {
                     emitAndStore(toToolCallStep(input, stepIndex++));
@@ -441,7 +496,9 @@ export class ClaudeAgentRunner implements AgentRunner {
               hooks: [
                 async (input: Record<string, unknown>) => {
                   const toolName = String(input.tool_name ?? "unknown");
-                  rlog.agentRun("DEBUG", `PostToolUse: ${toolName}`, { toolUseId: input.tool_use_id });
+                  rlog.agentRun("DEBUG", `PostToolUse: ${toolName}`, {
+                    toolUseId: input.tool_use_id,
+                  });
 
                   // Emit skill_result for Skill tool results
                   if (toolName === "Skill") {
@@ -449,7 +506,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                     emitAndStore(
                       makeStep("skill_result", stepIndex++, stringifyResponse(response), {
                         toolUseId: input.tool_use_id ?? null,
-                      })
+                      }),
                     );
                   } else {
                     emitAndStore(toToolResultStep(input, stepIndex++));
@@ -464,9 +521,14 @@ export class ClaudeAgentRunner implements AgentRunner {
                         status?: string;
                       }>;
                       onTodoWrite(todos);
-                      rlog.agentRun("DEBUG", "PostToolUse: TodoWrite detected, forwarded to orchestrator");
+                      rlog.agentRun(
+                        "DEBUG",
+                        "PostToolUse: TodoWrite detected, forwarded to orchestrator",
+                      );
                     } catch (err) {
-                      rlog.agentRun("WARN", "PostToolUse: failed to process TodoWrite", { err: String(err) });
+                      rlog.agentRun("WARN", "PostToolUse: failed to process TodoWrite", {
+                        err: String(err),
+                      });
                     }
                   }
 
@@ -505,7 +567,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                       subagentId: info.subagentId,
                       subagentType: info.subagentType,
                       description: info.description,
-                    })
+                    }),
                   );
                   // Add AFTER emitting spawn step so the spawn itself isn't tagged
                   activeSubagentSet.add(info.subagentId);
@@ -528,7 +590,10 @@ export class ClaudeAgentRunner implements AgentRunner {
                   // Skip subagents we never saw start — these are session-init
                   // subagents spawned before our hooks were registered.
                   if (!knownSubagentIds.has(subagentId)) {
-                    rlog.agentRun("DEBUG", `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`);
+                    rlog.agentRun(
+                      "DEBUG",
+                      `SubagentStop: ignoring orphan subagent ${subagentId} (no matching start)`,
+                    );
                     return {};
                   }
 
@@ -537,7 +602,7 @@ export class ClaudeAgentRunner implements AgentRunner {
                   emitAndStore(
                     makeStep("subagent_result", stepIndex++, null, {
                       subagentId,
-                    })
+                    }),
                   );
                   return {};
                 },
@@ -588,9 +653,10 @@ export class ClaudeAgentRunner implements AgentRunner {
         const mcpServers = new Map<string, string[]>();
         if (tools) {
           for (const t of tools) {
-            const name = typeof t === "object" && t !== null
-              ? String((t as Record<string, unknown>).name ?? t)
-              : String(t);
+            const name =
+              typeof t === "object" && t !== null
+                ? String((t as Record<string, unknown>).name ?? t)
+                : String(t);
             toolNames.push(name);
             if (name.startsWith("mcp__")) {
               // Format: mcp__<server>__<tool>
@@ -615,7 +681,7 @@ export class ClaudeAgentRunner implements AgentRunner {
             agents: agents ?? [],
             slashCommands: slashCommands ?? [],
             toolCount: toolNames.length,
-          })
+          }),
         );
       }
 
@@ -623,17 +689,13 @@ export class ClaudeAgentRunner implements AgentRunner {
       if (!sessionId && typeof message.session_id === "string") {
         sessionId = message.session_id;
         rlog.agentRun("INFO", `runTaskPhase: session_id=${sessionId}`);
-        emitAndStore(
-          makeStep("text", stepIndex++, `Session: ${sessionId}`, { sessionId })
-        );
+        emitAndStore(makeStep("text", stepIndex++, `Session: ${sessionId}`, { sessionId }));
       }
 
       if (message.type === "assistant") {
         // Content blocks live at message.message.content (SDK wraps the API response)
         const innerMsg = message.message as Record<string, unknown> | undefined;
-        const content = innerMsg?.content as
-          | Array<Record<string, unknown>>
-          | undefined;
+        const content = innerMsg?.content as Array<Record<string, unknown>> | undefined;
 
         // Accumulate per-turn token usage from the API response
         // Try inner message (API response wrapper) first, then outer message
@@ -656,10 +718,7 @@ export class ClaudeAgentRunner implements AgentRunner {
             if (block.type === "text" && typeof block.text === "string") {
               emitAndStore(makeStep("text", stepIndex++, block.text));
             }
-            if (
-              block.type === "thinking" &&
-              typeof block.thinking === "string"
-            ) {
+            if (block.type === "thinking" && typeof block.thinking === "string") {
               emitAndStore(makeStep("thinking", stepIndex++, block.thinking));
             }
           }
@@ -673,8 +732,10 @@ export class ClaudeAgentRunner implements AgentRunner {
         // Extract token totals from result.usage (authoritative final values)
         const resultUsage = message.usage as Record<string, unknown> | undefined;
         if (resultUsage) {
-          if (typeof resultUsage.input_tokens === "number") totalInputTokens = resultUsage.input_tokens;
-          if (typeof resultUsage.output_tokens === "number") totalOutputTokens = resultUsage.output_tokens;
+          if (typeof resultUsage.input_tokens === "number")
+            totalInputTokens = resultUsage.input_tokens;
+          if (typeof resultUsage.output_tokens === "number")
+            totalOutputTokens = resultUsage.output_tokens;
         }
 
         rlog.agentRun("INFO", `runTaskPhase: result received`, {
@@ -685,7 +746,8 @@ export class ClaudeAgentRunner implements AgentRunner {
           usage: resultUsage ?? null,
           isError: message.is_error,
           subtype: message.subtype,
-          result: typeof message.result === "string" ? message.result.slice(0, 500) : message.result,
+          result:
+            typeof message.result === "string" ? message.result.slice(0, 500) : message.result,
           numTurns: message.num_turns,
         });
       }
@@ -696,13 +758,25 @@ export class ClaudeAgentRunner implements AgentRunner {
 
     // Emit a completed step at the end
     if (!isAborted()) {
-      emitAndStore(makeStep("completed", stepIndex++, `Phase ${taskPhase.number}: ${taskPhase.name} completed`, {
-        inputTokens: totalInputTokens || null,
-        outputTokens: totalOutputTokens || null,
-      }));
+      emitAndStore(
+        makeStep(
+          "completed",
+          stepIndex++,
+          `Phase ${taskPhase.number}: ${taskPhase.name} completed`,
+          {
+            inputTokens: totalInputTokens || null,
+            outputTokens: totalOutputTokens || null,
+          },
+        ),
+      );
     }
 
-    return { cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+    return {
+      cost: totalCost,
+      durationMs,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+    };
   }
 
   /**
@@ -766,10 +840,7 @@ export class ClaudeAgentRunner implements AgentRunner {
           // cleanly. Subtypes like "success" / "end_turn" all count as a
           // normal end. Only explicit errors flip this back to false.
           finishedNormally = true;
-          if (
-            typeof message.subtype === "string" &&
-            message.subtype.startsWith("error_")
-          ) {
+          if (typeof message.subtype === "string" && message.subtype.startsWith("error_")) {
             ctx.rlog.agentRun("WARN", `runOneShot: SDK result subtype=${message.subtype}`);
             finishedNormally = false;
           }

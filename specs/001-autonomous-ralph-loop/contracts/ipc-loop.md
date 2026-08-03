@@ -9,6 +9,7 @@
 Existing channel, extended to accept loop-mode config.
 
 **Request** (renderer → main):
+
 ```typescript
 {
   projectDir: string;
@@ -48,6 +49,7 @@ Existing channel, extended to accept loop-mode config.
 Extended with loop-specific state for HMR recovery.
 
 **Response**:
+
 ```typescript
 {
   // Existing fields
@@ -77,29 +79,37 @@ All events flow through `orchestrator:event` (existing channel).
 ### New Event Types
 
 #### `clarification_started`
+
 ```typescript
 { type: "clarification_started"; runId: string }
 ```
+
 Emitted when Phase A begins.
 
 #### `clarification_question`
+
 ```typescript
 { type: "clarification_question"; runId: string; question: string }
 ```
+
 Emitted when the agent asks the user a question during clarification. The renderer displays this in the ClarificationPanel.
 
 #### `clarification_completed`
+
 ```typescript
 { type: "clarification_completed"; runId: string; fullPlanPath: string }
 ```
+
 Emitted when Phase A finishes and `full_plan.md` is written.
 
 #### `loop_cycle_started`
+
 ```typescript
 { type: "loop_cycle_started"; runId: string; cycleNumber: number }
 ```
 
 #### `loop_cycle_completed`
+
 ```typescript
 {
   type: "loop_cycle_completed";
@@ -113,6 +123,7 @@ Emitted when Phase A finishes and `full_plan.md` is written.
 ```
 
 #### `stage_started`
+
 ```typescript
 {
   type: "stage_started";
@@ -125,6 +136,7 @@ Emitted when Phase A finishes and `full_plan.md` is written.
 ```
 
 #### `stage_completed`
+
 ```typescript
 {
   type: "stage_completed";
@@ -137,6 +149,7 @@ Emitted when Phase A finishes and `full_plan.md` is written.
 ```
 
 #### `loop_terminated`
+
 ```typescript
 {
   type: "loop_terminated";

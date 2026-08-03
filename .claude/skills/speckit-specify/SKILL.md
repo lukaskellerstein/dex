@@ -31,6 +31,7 @@ You **MUST** consider the user input before proceeding (if not empty).
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
+
     ```
     ## Extension Hooks
 
@@ -41,7 +42,9 @@ You **MUST** consider the user input before proceeding (if not empty).
     Prompt: {prompt}
     To execute: `/{command}`
     ```
+
   - **Mandatory hook** (`optional: false`):
+
     ```
     ## Extension Hooks
 
@@ -51,6 +54,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -95,11 +99,13 @@ Given that feature description, do this:
    - Copy `.specify/templates/spec-template.md` to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point
    - Set `SPEC_FILE` to `SPECIFY_FEATURE_DIRECTORY/spec.md`
    - Persist the resolved path to `.specify/feature.json`:
+
      ```json
      {
        "feature_directory": "<resolved feature dir>"
      }
      ```
+
      Write the actual resolved directory path value (for example, `specs/003-user-auth`), not the literal string `SPECIFY_FEATURE_DIRECTORY`.
      This allows downstream commands (`/speckit.plan`, `/speckit.tasks`, etc.) to locate the feature directory without relying on git branch name conventions.
 
@@ -244,6 +250,7 @@ Given that feature description, do this:
      - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
    - For each executable hook, output the following based on its `optional` flag:
      - **Optional hook** (`optional: true`):
+
        ```
        ## Extension Hooks
 
@@ -254,7 +261,9 @@ Given that feature description, do this:
        Prompt: {prompt}
        To execute: `/{command}`
        ```
+
      - **Mandatory hook** (`optional: false`):
+
        ```
        ## Extension Hooks
 
@@ -262,6 +271,7 @@ Given that feature description, do this:
        Executing: `/{command}`
        EXECUTE_COMMAND: {command}
        ```
+
    - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 **NOTE:** Branch creation is handled by the `before_specify` hook (git extension). Spec directory and file creation are always handled by this core command.

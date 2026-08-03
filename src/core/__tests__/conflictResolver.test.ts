@@ -1,14 +1,14 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveConflicts } from "../conflict-resolver.ts";
-import type { ResolverContext, ResolverResult } from "../conflict-resolver.ts";
+import test from "node:test";
 import { MockAgentRunner } from "../agent/MockAgentRunner.ts";
-import { mockConfigPath, type MockOneShotResponse } from "../agent/MockConfig.ts";
+import { type MockOneShotResponse, mockConfigPath } from "../agent/MockConfig.ts";
+import type { ResolverContext } from "../conflict-resolver.ts";
+import { resolveConflicts } from "../conflict-resolver.ts";
 import type { ConflictResolverConfig } from "../dexConfig.ts";
-import type { RunConfig, OrchestratorEvent } from "../types.ts";
+import type { OrchestratorEvent, RunConfig } from "../types.ts";
 
 const VALID_BASE = {
   enabled: true,
@@ -50,7 +50,11 @@ function mkProject(oneShotResponses: MockOneShotResponse[] = []): string {
 }
 
 function rmTmp(dir: string): void {
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 const RESOLVER_CFG: ConflictResolverConfig = {
@@ -61,10 +65,7 @@ const RESOLVER_CFG: ConflictResolverConfig = {
   verifyCommand: null, // Skip verification by default for unit tests.
 };
 
-function makeCtx(
-  projectDir: string,
-  overrides: Partial<ResolverContext> = {},
-): ResolverContext {
+function makeCtx(projectDir: string, overrides: Partial<ResolverContext> = {}): ResolverContext {
   const events: OrchestratorEvent[] = [];
   const runner = new MockAgentRunner({} as RunConfig, projectDir);
   const runConfig: RunConfig = {
@@ -90,7 +91,9 @@ function makeCtx(
     emit: (e) => events.push(e),
     abortController: null,
     rlog: {
-      run: () => {}, agentRun: () => {}, subagentEvent: () => {},
+      run: () => {},
+      agentRun: () => {},
+      subagentEvent: () => {},
     } as unknown as ResolverContext["rlog"],
     ...overrides,
     // Carry the events array through metadata so tests can inspect it.
@@ -152,14 +155,14 @@ test("resolver: clean single-file resolution succeeds + emits expected event seq
 test("resolver: multi-file — both succeed, file-start emitted once per file, done is terminal", async () => {
   const dir = mkProject([
     {
-      matchPrompt: "Resolve the merge conflict in a\\.txt",
+      matchPrompt: "resolve the merge conflict in a\\.txt",
       isRegex: true,
       finalText: "ok",
       cost: 0.02,
       editFile: { path: "a.txt", content: "merged a\n" },
     },
     {
-      matchPrompt: "Resolve the merge conflict in b\\.txt",
+      matchPrompt: "resolve the merge conflict in b\\.txt",
       isRegex: true,
       finalText: "ok",
       cost: 0.03,
@@ -248,10 +251,10 @@ test("resolver: max_iterations halts before exceeding cap", async () => {
 test("resolver: cost_cap halts before next iteration would exceed it", async () => {
   const dir = mkProject([
     {
-      matchPrompt: "Resolve the merge conflict in a\\.txt",
+      matchPrompt: "resolve the merge conflict in a\\.txt",
       isRegex: true,
       finalText: "ok",
-      cost: 0.20, // First iteration burns most of the budget.
+      cost: 0.2, // First iteration burns most of the budget.
       editFile: { path: "a.txt", content: "merged\n" },
     },
   ]);
@@ -260,7 +263,7 @@ test("resolver: cost_cap halts before next iteration would exceed it", async () 
     writeConflictedFile(dir, "b.txt");
     const ctx = makeCtx(dir, {
       conflictedPaths: ["a.txt", "b.txt"],
-      config: { ...RESOLVER_CFG, costCapUsd: 0.30 },
+      config: { ...RESOLVER_CFG, costCapUsd: 0.3 },
     });
     const r = await resolveConflicts(ctx);
     // First iteration costs 0.20; estimated next iteration 0.20 → 0.20+0.20=0.40 > 0.30, halt.
@@ -269,7 +272,7 @@ test("resolver: cost_cap halts before next iteration would exceed it", async () 
       assert.equal(r.reason, "cost_cap");
       assert.deepEqual(r.resolvedFiles, ["a.txt"]);
       assert.ok(r.failedFiles.includes("b.txt"));
-      assert.equal(r.costUsd, 0.20);
+      assert.equal(r.costUsd, 0.2);
     }
   } finally {
     rmTmp(dir);

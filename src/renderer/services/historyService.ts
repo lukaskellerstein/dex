@@ -4,11 +4,11 @@
  * Deps: window.dexAPI history methods; RunRecord / AgentRunRecord / AgentStepRecord / SubagentRecord / SpecStats from core/runs.
  */
 import type {
-  RunRecord,
   AgentRunRecord,
   AgentStepRecord,
-  SubagentRecord,
+  RunRecord,
   SpecStats,
+  SubagentRecord,
 } from "../../core/runs.js";
 
 export type HistoryErrorCode =
@@ -59,11 +59,7 @@ export const historyService = {
     return call(() => window.dexAPI.getLatestProjectRun(projectDir));
   },
 
-  getAgentSteps(
-    projectDir: string,
-    runId: string,
-    agentRunId: string,
-  ): Promise<AgentStepRecord[]> {
+  getAgentSteps(projectDir: string, runId: string, agentRunId: string): Promise<AgentStepRecord[]> {
     return call(() => window.dexAPI.getAgentSteps(projectDir, runId, agentRunId));
   },
 
@@ -72,9 +68,7 @@ export const historyService = {
     runId: string,
     agentRunId: string,
   ): Promise<SubagentRecord[]> {
-    return call(() =>
-      window.dexAPI.getAgentRunSubagents(projectDir, runId, agentRunId),
-    );
+    return call(() => window.dexAPI.getAgentRunSubagents(projectDir, runId, agentRunId));
   },
 
   getLatestAgentRun(
@@ -82,21 +76,14 @@ export const historyService = {
     specDir: string,
     taskPhaseNumber: number,
   ): Promise<AgentRunRecord | null> {
-    return call(() =>
-      window.dexAPI.getLatestAgentRun(projectDir, specDir, taskPhaseNumber),
-    );
+    return call(() => window.dexAPI.getLatestAgentRun(projectDir, specDir, taskPhaseNumber));
   },
 
-  getSpecAgentRuns(
-    projectDir: string,
-    specDir: string,
-  ): Promise<AgentRunRecord[]> {
+  getSpecAgentRuns(projectDir: string, specDir: string): Promise<AgentRunRecord[]> {
     return call(() => window.dexAPI.getSpecAgentRuns(projectDir, specDir));
   },
 
   getSpecAggregateStats(projectDir: string, specDir: string): Promise<SpecStats> {
-    return call(() =>
-      window.dexAPI.getSpecAggregateStats(projectDir, specDir),
-    );
+    return call(() => window.dexAPI.getSpecAggregateStats(projectDir, specDir));
   },
 };

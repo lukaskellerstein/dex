@@ -24,6 +24,10 @@ demo/timeline.json
 __pycache__/
 *.pyc
 
+# Machine-local Claude Code overrides. Also covered by a global ignore on this
+# machine, but that does not travel with a clone — keep it here too.
+.claude/settings.local.json
+
 # Secrets — never committed. Runtime config goes in .env (with a committed
 # .env.example carrying only the names); credential values belong in
 # ~/.secrets/secrets.enc.yaml, outside every repo. See .claude/rules/12-security.md.

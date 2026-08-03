@@ -17,7 +17,8 @@ The Dex autonomous loop has three categories of failure at agent boundaries:
 The `/speckit-specify` skill (from spec-kit) processes `$ARGUMENTS` as the feature description — the raw text after the command name. It auto-generates a 2-4 word short name, determines the next sequential number by scanning `specs/`, and creates `specs/<NNN>-<short-name>/spec.md`.
 
 Current prompt (`src/core/prompts.ts:217-222`):
-```
+
+```text
 /speckit-specify
 
 Feature name: project-foundation
@@ -31,7 +32,8 @@ The structured `Feature name:` / `Feature description:` / `Project directory:` f
 ### Non-deterministic gap analysis
 
 The gap analysis agent receives the full plan + list of existing spec dirs, and outputs one of:
-```
+
+```text
 NEXT_FEATURE: {name} | {description}
 RESUME_FEATURE: {specDir}
 REPLAN_FEATURE: {specDir}
@@ -74,6 +76,7 @@ message.structured_output  // parsed JSON matching the schema
 The agent still uses tools (Read, Write, Bash, etc.) normally — only the **final response** is schema-constrained. This means agents can do their full work AND return machine-readable results.
 
 Type definitions from the installed SDK (`@anthropic-ai/claude-agent-sdk`):
+
 ```typescript
 // entrypoints/sdk/runtimeTypes.d.ts
 outputFormat?: OutputFormat;
@@ -87,6 +90,7 @@ subtype: '...' | 'error_max_structured_output_retries';
 ```
 
 Runtime behavior (`sdk.mjs`):
+
 ```javascript
 const jsonSchema = outputFormat?.type === "json_schema" ? outputFormat.schema : undefined;
 args.push("--json-schema", jsonStringify(jsonSchema));
@@ -828,6 +832,7 @@ export type GapAnalysisDecision =
 ```
 
 Add new stage types:
+
 ```typescript
 export type LoopStageType = 
   | "manifest_extraction"   // NEW — one-time feature extraction
@@ -838,6 +843,7 @@ export type LoopStageType =
 ```
 
 Add new event types:
+
 ```typescript
 // In OrchestratorEvent union:
 | { type: "manifest_created"; runId: string; featureCount: number }
@@ -846,6 +852,7 @@ Add new event types:
 ```
 
 Add config fields:
+
 ```typescript
 // In RunConfig:
 maxVerifyRetries?: number;       // default: 1 — fix-reverify attempts per cycle before deferring

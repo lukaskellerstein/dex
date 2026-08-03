@@ -14,8 +14,9 @@
  *      surfaces as a missing `step_candidate` emit or a moved `paused` event).
  *   3. tsc --noEmit (this file compiles).
  */
-import test from "node:test";
+
 import assert from "node:assert/strict";
+import test from "node:test";
 import type { FinalizeStageInput } from "../stages/finalize.ts";
 
 // Test fixtures — minimal shapes that satisfy the input interface without

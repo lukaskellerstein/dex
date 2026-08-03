@@ -14,12 +14,13 @@
  *      shows as missing/reordered `step_started` or "TaskPhase N started"
  *      log lines).
  */
-import test from "node:test";
+
 import assert from "node:assert/strict";
+import test from "node:test";
 import type {
-  PhaseStartInput,
   PhaseCompleteInput,
   PhaseFailureInput,
+  PhaseStartInput,
   SkippedStepInput,
 } from "../phase-lifecycle.ts";
 

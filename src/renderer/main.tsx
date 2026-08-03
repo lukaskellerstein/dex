@@ -30,7 +30,7 @@ window.addEventListener("error", (e) => {
     source: e.filename,
     line: e.lineno,
     col: e.colno,
-    stack: e.error && e.error.stack ? String(e.error.stack) : null,
+    stack: e.error?.stack ? String(e.error.stack) : null,
   });
 });
 
@@ -51,5 +51,5 @@ const root = createRoot(document.getElementById("root")!);
 root.render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>
+  </React.StrictMode>,
 );

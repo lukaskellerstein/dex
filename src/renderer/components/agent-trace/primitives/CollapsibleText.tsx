@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { type CSSProperties, useState } from "react";
 
 interface CollapsibleTextProps {
   text: string;
@@ -11,11 +11,7 @@ interface CollapsibleTextProps {
  * Pre-wrapped text with a "Show more / Show less" toggle once the content
  * exceeds `threshold` characters (default 300).
  */
-export function CollapsibleText({
-  text,
-  threshold = 300,
-  style,
-}: CollapsibleTextProps) {
+export function CollapsibleText({ text, threshold = 300, style }: CollapsibleTextProps) {
   const [expanded, setExpanded] = useState(false);
   const needsCollapse = text.length > threshold;
 

@@ -1,6 +1,6 @@
 import { ipcMain } from "electron";
-import * as runs from "../../core/runs.js";
 import type { AgentRunRecord, RunRecord } from "../../core/runs.js";
+import * as runs from "../../core/runs.js";
 
 export function registerHistoryHandlers(): void {
   ipcMain.handle("history:get-run", (_event, projectDir: string, runId: string) => {
@@ -35,7 +35,12 @@ export function registerHistoryHandlers(): void {
 
   ipcMain.handle(
     "history:get-latest-agent-run",
-    (_event, projectDir: string, specDir: string, taskPhaseNumber: number): AgentRunRecord | null => {
+    (
+      _event,
+      projectDir: string,
+      specDir: string,
+      taskPhaseNumber: number,
+    ): AgentRunRecord | null => {
       const list = runs.listRuns(projectDir);
       let best: AgentRunRecord | null = null;
       for (const run of list) {

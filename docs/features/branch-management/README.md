@@ -120,10 +120,11 @@ The system is in **exactly one** of these states at any moment. There is no stat
 `branchOps.deleteBranch(projectDir, branchName, opts?)` — `src/core/checkpoints/branchOps.ts:166`
 
 1. **Refuse if** branch is protected (`main`/`master`), not Dex-owned, or `state.json.status === "running" && HEAD === branchName`.
-2. **Lost-work check** — find commits reachable from `branchName` but not from any other tracked branch (`main`, `master`, `dex/*`, `selected-*`). If any exist and the caller hasn't passed `confirmedLoss: true`, return `{ ok: false, error: "would_lose_work", lostSteps }`. The renderer shows `<DeleteBranchConfirm>` and re-invokes with `confirmedLoss: true` on user confirm.
-3. **HEAD handling** — if `branchName` is HEAD, switch to `main` (fallback `master`). If neither exists, return `{ ok: false, error: "no_primary_to_switch_to" }`.
-4. **Delete** — `git branch -D <branchName>` (force-delete; the user has already accepted the loss).
-5. **Refresh timeline** — renderer re-invokes `checkpoints:listTimeline`.
+2. **Primary-branch check** — if `branchName` is HEAD, resolve the branch to switch to: `main`, fallback `master`. If neither exists, return `{ ok: false, error: "no_primary_to_switch_to" }`. This runs **before** the lost-work check on purpose: both conditions can hold at once, but only this one is unrecoverable, and reporting `would_lose_work` first would send the caller through a confirm-and-retry that then fails here anyway.
+3. **Lost-work check** — find commits reachable from `branchName` but not from any other tracked branch (`main`, `master`, `dex/*`, `selected-*`). If any exist and the caller hasn't passed `confirmedLoss: true`, return `{ ok: false, error: "would_lose_work", lostSteps }`. The renderer shows `<DeleteBranchConfirm>` and re-invokes with `confirmedLoss: true` on user confirm.
+4. **Switch off HEAD** — checkout the branch resolved in step 2.
+5. **Delete** — `git branch -D <branchName>` (force-delete; the user has already accepted the loss).
+6. **Refresh timeline** — renderer re-invokes `checkpoints:listTimeline`.
 
 `deleteBranch` does **not** touch the working tree. Dirty edits are not a blocker — this is intentional and differs from `jumpTo`.
 

@@ -28,14 +28,13 @@ export function InitRepoPrompt({ projectDir, onSkip, onInit }: Props) {
       }
     >
       <p style={{ marginBottom: 10 }}>
-        <code style={{ fontFamily: "var(--font-mono)" }}>{projectDir}</code> is not
-        under version control.
+        <code style={{ fontFamily: "var(--font-mono)" }}>{projectDir}</code> is not under version
+        control.
       </p>
       <p style={{ color: "var(--foreground-muted)", fontSize: 13 }}>
-        Dex's checkpoint system uses git under the hood. Initialize now to turn on
-        the Timeline — jump back to any stage, remove a version, or promote one to
-        main. You can skip — the timeline will stay disabled with a banner until
-        you come back to it.
+        Dex's checkpoint system uses git under the hood. Initialize now to turn on the Timeline —
+        jump back to any stage, remove a version, or promote one to main. You can skip — the
+        timeline will stay disabled with a banner until you come back to it.
       </p>
     </CheckpointModal>
   );

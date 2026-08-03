@@ -5,41 +5,37 @@
  */
 
 import { execSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
-import { submitUserAnswer } from "./userInput.js";
 import type { OrchestrationContext, RunState } from "./context.js";
-import { runPrerequisites as runPrerequisitesPhase } from "./stages/prerequisites.js";
+import { createBranch, getCurrentBranch } from "./git.js";
+import { deriveGoalPaths } from "./goal-paths.js";
+import { parseTasksFile } from "./parser.js";
+import { finalizeRun, initRun, runtimeState } from "./run-lifecycle.js";
+import * as runs from "./runs.js";
+import { runBuild } from "./stages/build.js";
 import { runClarificationPhase } from "./stages/clarification.js";
 import { runMainLoop } from "./stages/main-loop.js";
-import type { EmitFn, RunConfig } from "./types.js";
-import { parseTasksFile } from "./parser.js";
-import { getCurrentBranch, createBranch } from "./git.js";
-import { runBuild } from "./stages/build.js";
-import { runStage } from "./stages/run-stage.js";
-import { RunTaskState, runPhase, buildPrompt } from "./stages/run-phase.js";
 import { ensureManifest } from "./stages/manifest-extraction.js";
-import { deriveGoalPaths } from "./goal-paths.js";
+import { runPrerequisites as runPrerequisitesPhase } from "./stages/prerequisites.js";
+import { buildPrompt, RunTaskState, runPhase } from "./stages/run-phase.js";
+import { runStage } from "./stages/run-stage.js";
 import {
-  initRun,
-  finalizeRun,
-  runtimeState,
-} from "./run-lifecycle.js";
-import {
-  loadState,
   clearState,
   detectStaleState,
-  resolveWorkingTreeConflict,
+  loadState,
   reconcileState,
+  resolveWorkingTreeConflict,
   updateState,
 } from "./state.js";
-import * as runs from "./runs.js";
+import type { EmitFn, RunConfig } from "./types.js";
+import { submitUserAnswer } from "./userInput.js";
 
 // Re-exports for IPC + stage modules. Keeps "./orchestrator.js" as the single
 // import point for external consumers — extracted modules can move freely
 // without churning all call sites.
-export { submitUserAnswer, RunTaskState, runPhase, buildPrompt, runBuild, runStage };
+export { buildPrompt, RunTaskState, runBuild, runPhase, runStage, submitUserAnswer };
 
 /** Sentinel error thrown when abort is detected between stages to skip remaining work. */
 export class AbortError extends Error {
@@ -72,10 +68,7 @@ export function getActiveContext(): OrchestrationContext | null {
 // ── Spec discovery (used by IPC + build/loop runners) ───────────────────────
 
 export function listSpecDirs(projectDir: string): string[] {
-  const candidates = [
-    path.join(projectDir, "specs"),
-    path.join(projectDir, ".specify", "specs"),
-  ];
+  const candidates = [path.join(projectDir, "specs"), path.join(projectDir, ".specify", "specs")];
   for (const specsRoot of candidates) {
     if (fs.existsSync(specsRoot)) {
       const entries = fs.readdirSync(specsRoot, { withFileTypes: true });
@@ -124,8 +117,15 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
     if (!(err instanceof AbortError)) throw err;
   } finally {
     await finalizeRun({
-      config, emit, runId, rlog,
-      branchName, baseBranch, taskPhasesCompleted, totalCost, runStart,
+      config,
+      emit,
+      runId,
+      rlog,
+      branchName,
+      baseBranch,
+      taskPhasesCompleted,
+      totalCost,
+      runStart,
     });
   }
 }
@@ -167,7 +167,9 @@ function resolveGoalPath(config: RunConfig, rlog: import("./log.js").RunLogger):
     try {
       const persisted = JSON.parse(fs.readFileSync(stateFile, "utf-8"))?.config?.descriptionFile;
       if (typeof persisted === "string" && persisted.length > 0) {
-        const abs = path.isAbsolute(persisted) ? persisted : path.join(config.projectDir, persisted);
+        const abs = path.isAbsolute(persisted)
+          ? persisted
+          : path.join(config.projectDir, persisted);
         tried.push(abs);
         if (fs.existsSync(abs)) {
           rlog.run("INFO", "runLoop: using goal from state.json", { goal: abs });
@@ -204,7 +206,12 @@ async function runLoop(
   emit: EmitFn,
   runId: string,
   rlog: import("./log.js").RunLogger,
-): Promise<{ taskPhasesCompleted: number; totalCost: number; baseBranch: string; branchName: string }> {
+): Promise<{
+  taskPhasesCompleted: number;
+  totalCost: number;
+  baseBranch: string;
+  branchName: string;
+}> {
   const goalPath = resolveGoalPath(config, rlog);
   const goalPaths = deriveGoalPaths(goalPath);
 
@@ -212,7 +219,10 @@ async function runLoop(
   if (config.resume) {
     const staleCheck = await detectStaleState(config.projectDir);
     if (staleCheck === "stale" || staleCheck === "completed") {
-      rlog.run("INFO", `runLoop: stale state detected (${staleCheck}) — clearing and starting fresh`);
+      rlog.run(
+        "INFO",
+        `runLoop: stale state detected (${staleCheck}) — clearing and starting fresh`,
+      );
       await clearState(config.projectDir);
       config = { ...config, resume: false };
     } else if (staleCheck === "none") {
@@ -256,7 +266,10 @@ async function runLoop(
         resumeSpecDir = reconciliation.resumeFrom.specDir;
       }
       rlog.run("INFO", "runLoop: resuming from state file", {
-        resumeSpecDir, resumeLastStage, cumulativeCost, cyclesCompleted,
+        resumeSpecDir,
+        resumeLastStage,
+        cumulativeCost,
+        cyclesCompleted,
         drift: reconciliation.driftSummary,
       });
     }
@@ -270,7 +283,18 @@ async function runLoop(
     if (!ctx) throw new Error("runLoop: prerequisites needs currentContext but it's null");
     await runPrerequisitesPhase(ctx, runId);
     if (runtimeState.abortController?.signal.aborted) {
-      emit({ type: "loop_terminated", runId, termination: { reason: "user_abort", cyclesCompleted: 0, totalCostUsd: 0, totalDurationMs: 0, featuresCompleted: [], featuresSkipped: [] } });
+      emit({
+        type: "loop_terminated",
+        runId,
+        termination: {
+          reason: "user_abort",
+          cyclesCompleted: 0,
+          totalCostUsd: 0,
+          totalDurationMs: 0,
+          featuresCompleted: [],
+          featuresSkipped: [],
+        },
+      });
       return { taskPhasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
     }
   } else {
@@ -278,8 +302,22 @@ async function runLoop(
     // Synthetic events so the UI can reconstruct the stepper.
     emit({ type: "prerequisites_started", runId });
     const prereqTraceId = crypto.randomUUID();
-    emit({ type: "step_started", runId, cycleNumber: 0, step: "prerequisites", agentRunId: prereqTraceId });
-    emit({ type: "step_completed", runId, cycleNumber: 0, step: "prerequisites", agentRunId: prereqTraceId, costUsd: 0, durationMs: 0 });
+    emit({
+      type: "step_started",
+      runId,
+      cycleNumber: 0,
+      step: "prerequisites",
+      agentRunId: prereqTraceId,
+    });
+    emit({
+      type: "step_completed",
+      runId,
+      cycleNumber: 0,
+      step: "prerequisites",
+      agentRunId: prereqTraceId,
+      costUsd: 0,
+      durationMs: 0,
+    });
     emit({ type: "prerequisites_completed", runId });
   }
 
@@ -297,7 +335,7 @@ async function runLoop(
     rlog.run("INFO", `runLoop: resuming on branch ${branchName}, baseBranch=${baseBranch}`);
   } else {
     baseBranch = getCurrentBranch(config.projectDir);
-    branchName = createBranch(config.projectDir, config.mode);
+    branchName = createBranch(config.projectDir);
     rlog.run("INFO", `runLoop: created branch ${branchName} from ${baseBranch}`);
     if (runtimeState.activeProjectDir) {
       await updateState(runtimeState.activeProjectDir, { baseBranch });
@@ -310,7 +348,10 @@ async function runLoop(
   {
     const existingSpecsAtStart = listSpecDirs(config.projectDir);
     const result = await runClarificationPhase(ctxForClarify, {
-      config, runId, goalPath, clarifiedPath,
+      config,
+      runId,
+      goalPath,
+      clarifiedPath,
       productDomainPath: goalPaths.productDomain,
       technicalDomainPath: goalPaths.technicalDomain,
       existingSpecsAtStart,
@@ -323,24 +364,36 @@ async function runLoop(
   // ── Manifest Extraction (stages/manifest-extraction.ts) ──
   {
     const result = await ensureManifest(ctxForClarify, {
-      config, runId, fullPlanPath, rlog, seedCumulativeCost: cumulativeCost,
+      config,
+      runId,
+      fullPlanPath,
+      rlog,
+      seedCumulativeCost: cumulativeCost,
     });
     cumulativeCost = result.cumulativeCost;
   }
 
   // ── Phase B: Autonomous Loop (stages/main-loop.ts) ──
   const mainLoopResult = await runMainLoop(ctxForClarify, {
-    config, runId, fullPlanPath,
+    config,
+    runId,
+    fullPlanPath,
     cyclesCompletedSeed: cyclesCompleted,
     cumulativeCostSeed: cumulativeCost,
     featuresCompletedSeed: featuresCompleted,
     featuresSkippedSeed: featuresSkipped,
-    resumeSpecDir, resumeLastStage,
+    resumeSpecDir,
+    resumeLastStage,
   });
   cyclesCompleted = mainLoopResult.cyclesCompleted;
   cumulativeCost = mainLoopResult.cumulativeCost;
 
-  return { taskPhasesCompleted: cyclesCompleted, totalCost: cumulativeCost, baseBranch, branchName };
+  return {
+    taskPhasesCompleted: cyclesCompleted,
+    totalCost: cumulativeCost,
+    baseBranch,
+    branchName,
+  };
 }
 
 // ── Stop ───────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
-import React from 'react';
-import { AbsoluteFill, Img, staticFile } from 'remotion';
-import type { Section } from '../lib/timeline';
-import { Camera } from '../components/Camera';
-import { theme } from '../lib/theme';
+import type React from "react";
+import { AbsoluteFill, Img, staticFile } from "remotion";
+import { Camera } from "../components/Camera";
+import { theme } from "../lib/theme";
+import type { Section } from "../lib/timeline";
 
 /**
  * A still image beat — architecture diagram, before/after screenshot, chart.
@@ -20,8 +20,8 @@ export const StillSection: React.FC<{ section: Section }> = ({ section }) => {
           color: theme.color.textMuted,
           fontFamily: theme.font.sans,
           fontSize: 28,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         {`Missing still for section ${section.id}`}
@@ -34,7 +34,7 @@ export const StillSection: React.FC<{ section: Section }> = ({ section }) => {
       <AbsoluteFill style={{ backgroundColor: theme.color.surfaceSolid }}>
         <Img
           src={staticFile(section.still)}
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
       </AbsoluteFill>
     </Camera>

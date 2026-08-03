@@ -4,10 +4,10 @@
  * Deps: getActiveContext (for runner/abort), parser.{deriveTaskPhaseStatus, extractTaskIds}, types.{RunConfig, TaskPhase, Task, EmitFn}, log.RunLogger.
  */
 
-import type { RunConfig, TaskPhase, Task, EmitFn } from "../types.js";
 import type { RunLogger } from "../log.js";
-import { deriveTaskPhaseStatus, extractTaskIds } from "../parser.js";
 import { getActiveContext } from "../orchestrator.js";
+import { deriveTaskPhaseStatus, extractTaskIds } from "../parser.js";
+import type { EmitFn, RunConfig, Task, TaskPhase } from "../types.js";
 
 const STATUS_RANK: Record<string, number> = {
   not_done: 0,
@@ -34,9 +34,7 @@ export class RunTaskState {
   }
 
   /** Apply TodoWrite statuses. Promotes only (never demotes). Returns current phases. */
-  updateFromTodoWrite(
-    todos: Array<{ content?: string; status?: string }>,
-  ): TaskPhase[] {
+  updateFromTodoWrite(todos: Array<{ content?: string; status?: string }>): TaskPhase[] {
     const updates = new Map<string, "in_progress" | "done">();
 
     for (const todo of todos) {
@@ -98,9 +96,7 @@ export class RunTaskState {
     if (filter === "all") {
       return this.phases.filter((p) => p.status !== "complete");
     }
-    return this.phases.filter(
-      (p) => filter.includes(p.number) && p.status !== "complete",
-    );
+    return this.phases.filter((p) => filter.includes(p.number) && p.status !== "complete");
   }
 }
 
@@ -118,12 +114,13 @@ export function buildPrompt(config: RunConfig, phase: TaskPhase): string {
   // The prompt starts with the slash command — the SDK harness expands it as
   // a user invocation (disable-model-invocation only blocks the model from
   // calling the Skill tool on its own, not user-invoked slash commands).
-  const afterSteps = config.mode === "plan"
-    ? `After analyzing:
+  const afterSteps =
+    config.mode === "plan"
+      ? `After analyzing:
 - Update ${specPath}/tasks.md with accurate task statuses
 - If you learned operational patterns, update CLAUDE.md
 - Commit: git add -A -- ':!.dex/' && git commit -m "plan: TaskPhase ${phase.number} gap analysis"`
-    : `IMPORTANT — update tasks.md incrementally:
+      : `IMPORTANT — update tasks.md incrementally:
 - After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md before moving to the next task. This drives a real-time progress UI.
 
 After implementing all tasks:

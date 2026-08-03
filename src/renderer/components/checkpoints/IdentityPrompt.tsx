@@ -56,8 +56,8 @@ export function IdentityPrompt({
       }
     >
       <p style={{ marginBottom: 12, color: "var(--foreground-muted)", fontSize: 12 }}>
-        Checkpoints tag real git commits, which need a name and email. These are
-        written only to this project's <code>.git/config</code>, never globally.
+        Checkpoints tag real git commits, which need a name and email. These are written only to
+        this project's <code>.git/config</code>, never globally.
       </p>
       <label style={{ display: "block", marginBottom: 10 }}>
         <div style={{ fontSize: 12, marginBottom: 4 }}>Name</div>

@@ -16,22 +16,18 @@ export const LOST_WORK_BODY =
 export const LOST_WORK_REMOVE = "Remove";
 export const LOST_WORK_CANCEL = "Cancel";
 
-export const DELETE_MID_RUN =
-  "This version is currently being built — pause the run first.";
+export const DELETE_MID_RUN = "This version is currently being built — pause the run first.";
 
 export const DELETE_NO_PRIMARY =
   "Cannot remove this version because the project has no primary version to fall back to.";
 
-export const DELETE_FAILED = (detail: string): string =>
-  `Couldn't remove this version: ${detail}`;
+export const DELETE_FAILED = (detail: string): string => `Couldn't remove this version: ${detail}`;
 
 // ── Promote a saved version to main ───────────────────────────────
 
 export const PROMOTE_MENU_ITEM = "Merge into main";
-export const PROMOTE_MENU_DISABLED_TOOLTIP =
-  "This version can't be merged into main.";
-export const PROMOTE_MENU_ALREADY_MERGED_TOOLTIP =
-  "Already merged into main.";
+export const PROMOTE_MENU_DISABLED_TOOLTIP = "This version can't be merged into main.";
+export const PROMOTE_MENU_ALREADY_MERGED_TOOLTIP = "Already merged into main.";
 
 export const PROMOTE_CONFIRM_TITLE = "Merge into main?";
 export const PROMOTE_CONFIRM_BODY =
@@ -42,8 +38,7 @@ export const PROMOTE_CONFIRM_CANCEL = "Cancel";
 
 export const PROMOTE_MID_RUN_BRANCH =
   "This version is currently being built — pause the run first.";
-export const PROMOTE_MID_RUN_MAIN =
-  "Main is currently being built — pause the run first.";
+export const PROMOTE_MID_RUN_MAIN = "Main is currently being built — pause the run first.";
 
 export const PROMOTE_NON_CONTENT_CONFLICT =
   "This version has a kind of conflict AI can't resolve yet. The merge has been undone. Edit the files manually and try again.";
@@ -51,8 +46,7 @@ export const PROMOTE_NON_CONTENT_CONFLICT =
 export const POST_MERGE_TOAST = (sourceBranch: string): string =>
   `Merged ${sourceBranch} into main.`;
 
-export const PROMOTE_FAILED = (detail: string): string =>
-  `Couldn't merge into main: ${detail}`;
+export const PROMOTE_FAILED = (detail: string): string => `Couldn't merge into main: ${detail}`;
 
 // ── Diff summary helpers (used by the promote-confirm modal) ───────
 

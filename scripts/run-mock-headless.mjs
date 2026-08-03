@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 /**
  * Drive a full mock run against a project without the Electron UI.
  *
@@ -16,23 +17,20 @@
  * src/core/userInput.js before running anything. Using dist/ removes the
  * Node-version dependency and exercises exactly the code the app ships.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const args = process.argv.slice(2);
-const goalIdx = args.indexOf('--goal');
+const goalIdx = args.indexOf("--goal");
 const goalFile = goalIdx === -1 ? null : args[goalIdx + 1];
-const positional = args.filter(
-  (_, i) => goalIdx === -1 || (i !== goalIdx && i !== goalIdx + 1),
-);
+const positional = args.filter((_, i) => goalIdx === -1 || (i !== goalIdx && i !== goalIdx + 1));
 const projectDir = positional[0];
 
 if (!projectDir) {
-  console.error('Usage: run-mock-headless.mjs <projectDir> [--goal <file>]');
+  console.error("Usage: run-mock-headless.mjs <projectDir> [--goal <file>]");
   process.exit(2);
 }
 if (!fs.existsSync(projectDir)) {
@@ -42,11 +40,11 @@ if (!fs.existsSync(projectDir)) {
 
 // Compile on demand rather than telling the user to remember. tsc is
 // incremental, so this is nearly free when dist/ is already current.
-const orchestratorPath = path.join(repoRoot, 'dist', 'core', 'orchestrator.js');
+const orchestratorPath = path.join(repoRoot, "dist", "core", "orchestrator.js");
 if (!fs.existsSync(orchestratorPath)) {
-  console.log('dist/ missing — compiling…');
+  console.log("dist/ missing — compiling…");
   try {
-    execFileSync('npx', ['tsc'], { cwd: repoRoot, stdio: 'inherit' });
+    execFileSync("npx", ["tsc"], { cwd: repoRoot, stdio: "inherit" });
   } catch {
     console.error("Compile failed. Fix the type errors, or run 'npx tsc' manually.");
     process.exit(1);
@@ -57,13 +55,13 @@ if (!fs.existsSync(orchestratorPath)) {
   process.exit(1);
 }
 
-const agentConfigPath = path.join(projectDir, '.dex', 'dex-config.json');
+const agentConfigPath = path.join(projectDir, ".dex", "dex-config.json");
 const agent = fs.existsSync(agentConfigPath)
-  ? JSON.parse(fs.readFileSync(agentConfigPath, 'utf8')).agent
-  : 'claude';
-if (agent !== 'mock') {
+  ? JSON.parse(fs.readFileSync(agentConfigPath, "utf8")).agent
+  : "claude";
+if (agent !== "mock") {
   console.error(`.dex/dex-config.json selects agent "${agent}", not "mock".`);
-  console.error('This script drives a scripted run; against a real backend it would');
+  console.error("This script drives a scripted run; against a real backend it would");
   console.error('spend money and take minutes per stage. Set {"agent":"mock"} first.');
   process.exit(2);
 }
@@ -77,30 +75,31 @@ let stepsCompleted = 0;
 const emit = (ev) => {
   counts.set(ev.type, (counts.get(ev.type) ?? 0) + 1);
   switch (ev.type) {
-    case 'run_started':
-      console.log(`▶ run ${ev.runId.slice(0, 8)}${ev.branchName ? ` on ${ev.branchName}` : ''}`);
+    case "run_started":
+      console.log(`▶ run ${ev.runId.slice(0, 8)}${ev.branchName ? ` on ${ev.branchName}` : ""}`);
       break;
-    case 'loop_cycle_started':
+    case "loop_cycle_started":
       console.log(`── cycle ${ev.cycleNumber} ──`);
       break;
-    case 'step_started':
+    case "step_started":
       process.stdout.write(`   ${ev.step}…`);
       break;
-    case 'step_completed':
+    case "step_completed":
       stepsCompleted++;
       console.log(` ${ev.durationMs ?? 0}ms`);
       break;
-    case 'manifest_created':
+    case "manifest_created":
       console.log(`   manifest: ${ev.featureCount} features`);
       break;
-    case 'stage_candidate':
-    case 'step_candidate':
-      if (ev.checkpointTag) console.log(`   → ${ev.checkpointTag} ${ev.candidateSha?.slice(0, 7) ?? ''}`);
+    case "stage_candidate":
+    case "step_candidate":
+      if (ev.checkpointTag)
+        console.log(`   → ${ev.checkpointTag} ${ev.candidateSha?.slice(0, 7) ?? ""}`);
       break;
-    case 'loop_terminated':
+    case "loop_terminated":
       console.log(`■ terminated: ${ev.termination?.reason}`);
       break;
-    case 'error':
+    case "error":
       errors.push(ev.message);
       console.error(`✗ ${ev.message}`);
       break;
@@ -111,12 +110,12 @@ const emit = (ev) => {
 
 const config = {
   projectDir,
-  specDir: '',
-  mode: 'loop',
-  model: 'claude-opus-4-6',
+  specDir: "",
+  mode: "loop",
+  model: "claude-opus-4-6",
   maxIterations: 50,
   maxTurns: 75,
-  phases: 'all',
+  phases: "all",
   autoClarification: true,
   ...(goalFile ? { descriptionFile: path.resolve(goalFile) } : {}),
 };
@@ -130,7 +129,9 @@ try {
   process.exit(1);
 }
 
-console.log(`\n━━ ${((Date.now() - start) / 1000).toFixed(1)}s, ${stepsCompleted} steps completed ━━`);
+console.log(
+  `\n━━ ${((Date.now() - start) / 1000).toFixed(1)}s, ${stepsCompleted} steps completed ━━`,
+);
 console.log(Object.fromEntries([...counts].sort()));
 
 // A run can finish while having emitted error events — the loop catches

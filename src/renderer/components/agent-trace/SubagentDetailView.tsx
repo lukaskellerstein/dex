@@ -1,11 +1,6 @@
+import { ArrowLeft, CheckCircle, GitBranch, Loader2 } from "lucide-react";
 import { useMemo } from "react";
-import {
-  ArrowLeft,
-  CheckCircle,
-  Loader2,
-  GitBranch,
-} from "lucide-react";
-import type { SubagentInfo, AgentStep } from "../../../core/types.js";
+import type { AgentStep, SubagentInfo } from "../../../core/types.js";
 import { AgentStepList } from "./AgentStepList.js";
 
 interface SubagentDetailViewProps {
@@ -29,9 +24,8 @@ export function SubagentDetailView({
   const isRunning = parentIsRunning && !subagent.completedAt;
 
   // For duration: if completedAt is missing but we have steps, use the last step's timestamp
-  const lastStepTime = parentSteps.length > 0
-    ? parentSteps[parentSteps.length - 1].createdAt
-    : null;
+  const lastStepTime =
+    parentSteps.length > 0 ? parentSteps[parentSteps.length - 1].createdAt : null;
   const endTime = subagent.completedAt ?? (isRunning ? null : lastStepTime);
   const durationMs = endTime
     ? new Date(endTime).getTime() - new Date(subagent.startedAt).getTime()
@@ -42,8 +36,9 @@ export function SubagentDetailView({
   const isParallel = useMemo(() => {
     const t0 = new Date(subagent.startedAt).getTime();
     return allSubagents.some(
-      (s) => s.subagentId !== subagent.subagentId
-        && Math.abs(new Date(s.startedAt).getTime() - t0) < 2000
+      (s) =>
+        s.subagentId !== subagent.subagentId &&
+        Math.abs(new Date(s.startedAt).getTime() - t0) < 2000,
     );
   }, [allSubagents, subagent.subagentId, subagent.startedAt]);
 
@@ -87,7 +82,8 @@ export function SubagentDetailView({
           }
         }
         // Stop searching once we hit a non-tool-call/non-spawn step far enough back
-        if (taskCalls.length > 0 && prev.type !== "tool_call" && prev.type !== "subagent_spawn") break;
+        if (taskCalls.length > 0 && prev.type !== "tool_call" && prev.type !== "subagent_spawn")
+          break;
       }
 
       // Try to match by description first (most reliable for parallel spawns)
@@ -98,14 +94,18 @@ export function SubagentDetailView({
           return input?.description === spawnDesc;
         });
         if (match) {
-          matchedPrompt = (match.step.metadata?.toolInput as Record<string, unknown>)?.prompt as string | undefined;
+          matchedPrompt = (match.step.metadata?.toolInput as Record<string, unknown>)?.prompt as
+            | string
+            | undefined;
         }
       }
 
       // Fallback: for single spawns, just take the nearest Task/Agent call
       if (!matchedPrompt && taskCalls.length > 0) {
         const nearest = taskCalls[0];
-        matchedPrompt = (nearest.step.metadata?.toolInput as Record<string, unknown>)?.prompt as string | undefined;
+        matchedPrompt = (nearest.step.metadata?.toolInput as Record<string, unknown>)?.prompt as
+          | string
+          | undefined;
       }
 
       if (matchedPrompt) {
@@ -123,9 +123,7 @@ export function SubagentDetailView({
     }
 
     // Primary: collect steps tagged with belongsToSubagent matching this subagent
-    const tagged = parentSteps.filter(
-      (s) => (s.metadata?.belongsToSubagent as string) === subId
-    );
+    const tagged = parentSteps.filter((s) => (s.metadata?.belongsToSubagent as string) === subId);
 
     if (tagged.length > 0) {
       result.push(...tagged);
@@ -133,17 +131,11 @@ export function SubagentDetailView({
       // Fallback for sequential subagents: capture steps in the spawn→result window
       let capturing = false;
       for (const step of parentSteps) {
-        if (
-          step.type === "subagent_spawn" &&
-          (step.metadata?.subagentId as string) === subId
-        ) {
+        if (step.type === "subagent_spawn" && (step.metadata?.subagentId as string) === subId) {
           capturing = true;
           continue;
         }
-        if (
-          step.type === "subagent_result" &&
-          (step.metadata?.subagentId as string) === subId
-        ) {
+        if (step.type === "subagent_result" && (step.metadata?.subagentId as string) === subId) {
           break;
         }
         if (capturing) {
@@ -169,7 +161,14 @@ export function SubagentDetailView({
     }
 
     return result;
-  }, [parentSteps, subagent.subagentId, subagent.startedAt, subagent.completedAt, subagent.description, isParallel]);
+  }, [
+    parentSteps,
+    subagent.subagentId,
+    subagent.startedAt,
+    subagent.completedAt,
+    subagent.description,
+    isParallel,
+  ]);
 
   return (
     <div
@@ -219,16 +218,18 @@ export function SubagentDetailView({
           Parent Agent
         </button>
         {isParallel && (
-          <span style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: "0.7rem",
-            color: "var(--foreground-dim)",
-            padding: "2px 6px",
-            borderRadius: "var(--radius)",
-            background: "var(--primary-muted)",
-          }}>
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "0.7rem",
+              color: "var(--foreground-dim)",
+              padding: "2px 6px",
+              borderRadius: "var(--radius)",
+              background: "var(--primary-muted)",
+            }}
+          >
             <GitBranch size={10} />
             parallel
           </span>
@@ -245,10 +246,7 @@ export function SubagentDetailView({
         >
           {isRunning ? (
             <>
-              <Loader2
-                size={12}
-                style={{ animation: "spin 1s linear infinite" }}
-              />
+              <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
               Running
             </>
           ) : (

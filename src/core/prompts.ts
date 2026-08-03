@@ -11,9 +11,16 @@ export const MANIFEST_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          id: { type: "number", description: "Feature number from the priority table (1, 2, 3...)" },
+          id: {
+            type: "number",
+            description: "Feature number from the priority table (1, 2, 3...)",
+          },
           title: { type: "string", description: "Feature name from the priority table" },
-          description: { type: "string", description: "Rich description including user stories, acceptance criteria, relevant data model entities, and scope constraints" },
+          description: {
+            type: "string",
+            description:
+              "Rich description including user stories, acceptance criteria, relevant data model entities, and scope constraints",
+          },
         },
         required: ["id", "title", "description"],
         additionalProperties: false,
@@ -37,7 +44,10 @@ export const GAP_ANALYSIS_SCHEMA = {
 export const VERIFY_SCHEMA = {
   type: "object",
   properties: {
-    passed: { type: "boolean", description: "true if ALL acceptance criteria pass and build/tests succeed" },
+    passed: {
+      type: "boolean",
+      description: "true if ALL acceptance criteria pass and build/tests succeed",
+    },
     buildSucceeded: { type: "boolean", description: "true if the project compiles without errors" },
     testsSucceeded: { type: "boolean", description: "true if all tests pass (or no tests exist)" },
     failures: {
@@ -45,7 +55,10 @@ export const VERIFY_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          criterion: { type: "string", description: "The acceptance criterion or check that failed" },
+          criterion: {
+            type: "string",
+            description: "The acceptance criterion or check that failed",
+          },
           description: { type: "string", description: "What went wrong and what was expected" },
           severity: { type: "string", enum: ["blocking", "minor"] },
         },
@@ -67,7 +80,10 @@ export const LEARNINGS_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          category: { type: "string", enum: ["build", "testing", "api", "architecture", "tooling", "workaround"] },
+          category: {
+            type: "string",
+            enum: ["build", "testing", "api", "architecture", "tooling", "workaround"],
+          },
           insight: { type: "string", description: "One-line actionable insight" },
           context: { type: "string", description: "Brief context for when this applies" },
         },
@@ -101,7 +117,6 @@ export function buildProductClarificationPrompt(
   productDomainPath: string,
 ): string {
   const goalName = path.basename(goalFilePath);
-  const productDomainName = path.basename(productDomainPath);
   return `You are conducting the PRODUCT clarification session for a software project. The user has provided an initial project description in ${goalName}. Your job is to read it, identify gaps in the product definition, and ask clarifying questions focused exclusively on the product domain.
 
 ## Instructions
@@ -149,7 +164,6 @@ export function buildTechnicalClarificationPrompt(
 ): string {
   const goalName = path.basename(goalFilePath);
   const productDomainName = path.basename(productDomainPath);
-  const technicalDomainName = path.basename(technicalDomainPath);
   return `You are conducting the TECHNICAL clarification session for a software project. The product domain has already been clarified. Your job is to read the product decisions and ask clarifying questions focused exclusively on the technical domain.
 
 ## Instructions
@@ -275,10 +289,7 @@ Process features in the exact order they appear in the priority table. Do not sk
 
 // ── Feature Evaluation Prompt (RESUME vs REPLAN) ──
 
-export function buildFeatureEvaluationPrompt(
-  config: RunConfig,
-  specDir: string
-): string {
+export function buildFeatureEvaluationPrompt(config: RunConfig, specDir: string): string {
   return `You are evaluating whether a partially-completed feature should be resumed or replanned.
 
 ## Instructions
@@ -311,7 +322,7 @@ ${config.projectDir}`;
 export function buildVerifyFixPrompt(
   config: RunConfig,
   specDir: string,
-  failures: Array<{ criterion: string; description: string; severity: string }>
+  failures: Array<{ criterion: string; description: string; severity: string }>,
 ): string {
   const failureList = failures
     .map((f, i) => `${i + 1}. **${f.criterion}**: ${f.description}`)
@@ -337,10 +348,7 @@ ${config.projectDir}`;
 
 // ── T007: Constitution Prompt ──
 
-export function buildConstitutionPrompt(
-  config: RunConfig,
-  fullPlanPath: string
-): string {
+export function buildConstitutionPrompt(config: RunConfig, fullPlanPath: string): string {
   return `/speckit-constitution
 
 Read the full project plan at ${fullPlanPath} and the project instructions at ${config.projectDir}/CLAUDE.md for detailed technical context about the project being built. The project directory is ${config.projectDir}.`;
@@ -348,28 +356,19 @@ Read the full project plan at ${fullPlanPath} and the project instructions at ${
 
 // ── Specify Prompt ──
 
-export function buildSpecifyPrompt(
-  featureName: string,
-  featureDescription: string
-): string {
+export function buildSpecifyPrompt(featureName: string, featureDescription: string): string {
   return `/speckit-specify ${featureName}: ${featureDescription}`;
 }
 
 // ── T009: Loop Plan Prompt ──
 
-export function buildLoopPlanPrompt(
-  config: RunConfig,
-  specPath: string
-): string {
+export function buildLoopPlanPrompt(specPath: string): string {
   return `/speckit-plan ${specPath}`;
 }
 
 // ── T010: Loop Tasks Prompt ──
 
-export function buildLoopTasksPrompt(
-  config: RunConfig,
-  specPath: string
-): string {
+export function buildLoopTasksPrompt(specPath: string): string {
   return `/speckit-tasks ${specPath}`;
 }
 
@@ -378,7 +377,7 @@ export function buildLoopTasksPrompt(
 export function buildVerifyPrompt(
   config: RunConfig,
   specDir: string,
-  fullPlanPath: string
+  fullPlanPath: string,
 ): string {
   return `You are a verification agent. Your job is to verify that the implementation in the project matches the specification.
 
@@ -405,10 +404,7 @@ Your structured output must accurately reflect what you observed. Set passed=tru
 
 // ── Learnings Prompt ──
 
-export function buildLearningsPrompt(
-  config: RunConfig,
-  specDir: string
-): string {
+export function buildLearningsPrompt(config: RunConfig, specDir: string): string {
   return `You are a learnings agent. Review the work done on the spec at ${specDir} and extract operational insights.
 
 ## Instructions
@@ -436,7 +432,7 @@ ${config.projectDir}
 export function buildImplementPrompt(
   config: RunConfig,
   phase: TaskPhase,
-  fullPlanPath: string
+  fullPlanPath: string,
 ): string {
   const specPath = config.specDir.startsWith("/")
     ? config.specDir

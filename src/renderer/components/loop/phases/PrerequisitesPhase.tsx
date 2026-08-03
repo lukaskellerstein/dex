@@ -1,6 +1,6 @@
 import type { PrerequisiteCheck } from "../../../../core/types.js";
 import type { UiLoopStage } from "../../../hooks/useOrchestrator.js";
-import { VerticalStepper, type StepItem } from "../VerticalStepper.js";
+import { type StepItem, VerticalStepper } from "../VerticalStepper.js";
 
 const CHECK_LABELS: Record<
   string,
@@ -75,9 +75,9 @@ export function PrerequisitesPhase({ checks, step }: PrerequisitesPhaseProps) {
       id: name,
       title: labels.title,
       description: isFailed
-        ? check?.message ?? labels.failDescription
+        ? (check?.message ?? labels.failDescription)
         : check?.status === "fixed"
-          ? check.message ?? "Skipped."
+          ? (check.message ?? "Skipped.")
           : check?.status === "pass"
             ? `${labels.title} verified.`
             : labels.description,

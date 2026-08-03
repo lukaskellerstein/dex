@@ -13,7 +13,7 @@ SHA="${3:-HEAD}"
 
 case "$NAME" in
   checkpoint/*) TAG="$NAME" ;;
-  *)            TAG="checkpoint/$NAME" ;;
+  *) TAG="checkpoint/$NAME" ;;
 esac
 
 cd "$PROJECT"

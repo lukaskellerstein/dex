@@ -1,11 +1,6 @@
-import type {
-  EmitFn,
-  StepType,
-  TaskPhase,
-  RunConfig,
-} from "../types.js";
-import type { RunLogger } from "../log.js";
 import type { ClaudeProfile } from "../agent-profile.js";
+import type { RunLogger } from "../log.js";
+import type { EmitFn, RunConfig, StepType, TaskPhase } from "../types.js";
 
 /** Context passed to runStep. Everything a runner needs to execute one step. */
 export interface StepContext {
@@ -123,7 +118,4 @@ export interface AgentRunner {
   runOneShot(ctx: OneShotContext): Promise<OneShotResult>;
 }
 
-export type AgentRunnerFactory = (
-  runConfig: RunConfig,
-  projectDir: string,
-) => AgentRunner;
+export type AgentRunnerFactory = (runConfig: RunConfig, projectDir: string) => AgentRunner;

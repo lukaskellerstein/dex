@@ -115,10 +115,7 @@ function FileListResult({ content }: { content: string | null }) {
 const SUPPRESS_RESULT = new Set(["Write", "Edit", "TodoWrite"]);
 
 /** Tools with a formatted result renderer */
-const FORMATTED_TOOLS: Record<
-  string,
-  React.ComponentType<{ content: string | null }>
-> = {
+const FORMATTED_TOOLS: Record<string, React.ComponentType<{ content: string | null }>> = {
   Read: ReadResult,
   Bash: BashResult,
   Grep: FileListResult,

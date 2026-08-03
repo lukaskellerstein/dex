@@ -6,11 +6,11 @@
 
 import crypto from "node:crypto";
 import path from "node:path";
-import * as runs from "../runs.js";
-import type { RunConfig, EmitFn, StepType } from "../types.js";
 import type { RunLogger } from "../log.js";
-import { finalizeStageCheckpoint } from "./finalize.js";
 import { getActiveContext } from "../orchestrator.js";
+import * as runs from "../runs.js";
+import type { EmitFn, RunConfig, StepType } from "../types.js";
+import { finalizeStageCheckpoint } from "./finalize.js";
 
 export async function runStage(
   config: RunConfig,
@@ -30,7 +30,14 @@ export async function runStage(
    * abort — mirrors the existing "persist new spec dir even on Stop" rule.
    */
   preCheckpoint?: () => Promise<void>,
-): Promise<{ result: string; structuredOutput: unknown | null; cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
+): Promise<{
+  result: string;
+  structuredOutput: unknown | null;
+  cost: number;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+}> {
   const ctx = getActiveContext();
   if (!ctx) {
     throw new Error("runStage called before currentContext was resolved — run() must set it");
@@ -88,7 +95,14 @@ export async function runStage(
     emit,
     rlog,
   });
-  const { result: resultText, structuredOutput, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens } = stageResult;
+  const {
+    result: resultText,
+    structuredOutput,
+    cost: totalCost,
+    durationMs,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+  } = stageResult;
 
   const stageStatus = isAborted() ? "stopped" : "completed";
   runs.completeAgentRun(projectDir, runId, agentRunId, {
@@ -133,5 +147,12 @@ export async function runStage(
     });
   }
 
-  return { result: resultText, structuredOutput, cost: totalCost, durationMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+  return {
+    result: resultText,
+    structuredOutput,
+    cost: totalCost,
+    durationMs,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+  };
 }

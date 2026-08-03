@@ -15,6 +15,7 @@ Non-goals: no behavioural changes to Record Mode, Go-Back, Jump-to-Checkpoint, o
 ## Files to delete
 
 ### Variant-groups feature (full tear-out)
+
 - `src/core/checkpoints/variants.ts`
 - `src/core/checkpoints/variantGroups.ts`
 - `src/core/agent-overlay.ts` — only consumer is `variants.ts`
@@ -25,9 +26,11 @@ Non-goals: no behavioural changes to Record Mode, Go-Back, Jump-to-Checkpoint, o
 - `src/renderer/components/checkpoints/AgentProfileForm.tsx`
 
 ### Right-click menu
+
 - `src/renderer/components/checkpoints/CommitContextMenu.tsx`
 
 ### Step-Candidate prompt
+
 - `src/renderer/components/checkpoints/CandidatePrompt.tsx`
 
 ## Files to edit
@@ -126,7 +129,7 @@ Re-check `src/core/__tests__/finalize.test.ts` still passes after pruning.
 
 Two existing spec READMEs describe the removed UI as authoritative. After this cleanup they become ghost specs. Append a one-line banner at the top of each:
 
-**`docs/my-specs/008-interactive-checkpoint/README.md`** — add `> **Status:** The "Keep this", "Unmark kept", "Try N ways from here", and Step Candidate prompt sections of this spec are superseded by `012-cleanup`. Record Mode auto-promote, Go-Back, and Jump-to-Checkpoint remain authoritative.` directly below the H1.
+**`docs/my-specs/008-interactive-checkpoint/README.md`** — add `> **Status:** The "Keep this", "Unmark kept", "Try N ways from here", and Step Candidate prompt sections of this spec are superseded by`012-cleanup`. Record Mode auto-promote, Go-Back, and Jump-to-Checkpoint remain authoritative.` directly below the H1.
 
 **`docs/my-specs/010-interactive-timeline/README.md`** — add the same banner directly below the H1.
 

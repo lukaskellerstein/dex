@@ -1,5 +1,5 @@
-import { ReactNode } from "react";
-import { RefreshCw, Play, Pause, FolderOpen } from "lucide-react";
+import { FolderOpen, Pause, Play, RefreshCw } from "lucide-react";
+import type { ReactNode } from "react";
 import type { RunConfig } from "../../../core/types.js";
 
 interface AggregateStats {
@@ -44,16 +44,18 @@ export function Topbar({
 
   return (
     <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        flex: 1,
-        height: "100%",
-        gap: 12,
-        paddingLeft: 14,
-        paddingRight: 8,
-        WebkitAppRegion: "no-drag",
-      } as React.CSSProperties}
+      style={
+        {
+          display: "flex",
+          alignItems: "center",
+          flex: 1,
+          height: "100%",
+          gap: 12,
+          paddingLeft: 14,
+          paddingRight: 8,
+          WebkitAppRegion: "no-drag",
+        } as React.CSSProperties
+      }
     >
       {/* App Brand */}
       <button
@@ -74,14 +76,14 @@ export function Topbar({
           cursor: "pointer",
           transition: "color 0.15s",
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground-muted)"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "var(--foreground)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "var(--foreground-muted)";
+        }}
       >
-        <img
-          src="./logo.png"
-          alt="Dex"
-          style={{ width: 18, height: 18, borderRadius: 3 }}
-        />
+        <img src="./logo.png" alt="Dex" style={{ width: 18, height: 18, borderRadius: 3 }} />
         Dex
       </button>
 
@@ -209,9 +211,7 @@ export function Topbar({
       )}
 
       {/* Debug badge — always visible when a project is open, regardless of view. */}
-      {projectDir && debugBadge && (
-        <div style={{ flexShrink: 0 }}>{debugBadge}</div>
-      )}
+      {projectDir && debugBadge && <div style={{ flexShrink: 0 }}>{debugBadge}</div>}
 
       {/* Run Controls (compact) — only when there's something to start or resume. */}
       {projectDir && (isRunning || aggregate.unfinishedSpecs > 0 || isPausedLoop) && (
@@ -238,9 +238,7 @@ export function Topbar({
             </button>
           ) : (
             <button
-              onClick={() =>
-                onStart({ projectDir: projectDir! })
-              }
+              onClick={() => onStart({ projectDir: projectDir! })}
               disabled={!canStart}
               style={{
                 display: "flex",

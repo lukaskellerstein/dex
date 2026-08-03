@@ -62,11 +62,13 @@ Exposed via `contextBridge.exposeInMainWorld`.
 ## Updated RunConfig (via `startRun`)
 
 ### Before
+
 ```typescript
 { resumeRunId?: string }
 ```
 
 ### After
+
 ```typescript
 { resume?: boolean }
 ```

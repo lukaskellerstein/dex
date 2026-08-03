@@ -10,13 +10,7 @@ import type { StepType } from "../types.js";
 
 export const CHECKPOINT_MESSAGE_PREFIX = "[checkpoint:";
 
-const PARALLELIZABLE_STEPS: StepType[] = [
-  "gap_analysis",
-  "specify",
-  "plan",
-  "tasks",
-  "learnings",
-];
+const PARALLELIZABLE_STEPS: StepType[] = ["gap_analysis", "specify", "plan", "tasks", "learnings"];
 
 /**
  * Files that materially change in each step — used for path-filtered diffs
@@ -78,11 +72,7 @@ export function selectedBranchName(date: Date = new Date()): string {
   return `selected-${stamp}`;
 }
 
-export function labelFor(
-  step: StepType,
-  cycleNumber: number,
-  featureSlug?: string | null
-): string {
+export function labelFor(step: StepType, cycleNumber: number, featureSlug?: string | null): string {
   const pretty = PRETTY_LABELS[step] ?? step;
   if (cycleNumber === 0) return pretty;
   const feature = featureSlug ? ` · ${featureSlug}` : "";
@@ -93,9 +83,7 @@ export function isParallelizable(step: StepType): boolean {
   return PARALLELIZABLE_STEPS.includes(step);
 }
 
-export function parseCheckpointTag(
-  tag: string
-): { step: StepType; cycleNumber: number } | null {
+export function parseCheckpointTag(tag: string): { step: StepType; cycleNumber: number } | null {
   const cycleMatch = tag.match(TAG_RE_CYCLE);
   if (cycleMatch) {
     const cycleNumber = Number(cycleMatch[1]);

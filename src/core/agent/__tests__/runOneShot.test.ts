@@ -1,12 +1,12 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import test from "node:test";
+import type { OrchestratorEvent, RunConfig } from "../../types.ts";
+import type { OneShotContext } from "../AgentRunner.ts";
 import { MockAgentRunner } from "../MockAgentRunner.ts";
 import { mockConfigPath } from "../MockConfig.ts";
-import type { OneShotContext } from "../AgentRunner.ts";
-import type { RunConfig, AgentStep, OrchestratorEvent } from "../../types.ts";
 
 const VALID_BASE = {
   prerequisites: { prerequisites: { delay: 0 } },
@@ -46,10 +46,18 @@ function mkProject(extraConfig: Record<string, unknown> = {}): string {
 }
 
 function rmTmp(dir: string): void {
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
-function makeCtx(projectDir: string, prompt: string, overrides: Partial<OneShotContext> = {}): OneShotContext {
+function makeCtx(
+  projectDir: string,
+  prompt: string,
+  overrides: Partial<OneShotContext> = {},
+): OneShotContext {
   const events: OrchestratorEvent[] = [];
   const runConfig: RunConfig = {
     projectDir,
@@ -67,7 +75,9 @@ function makeCtx(projectDir: string, prompt: string, overrides: Partial<OneShotC
     abortController: null,
     emit: (e: OrchestratorEvent) => events.push(e),
     rlog: {
-      run: () => {}, agentRun: () => {}, subagentEvent: () => {},
+      run: () => {},
+      agentRun: () => {},
+      subagentEvent: () => {},
     } as unknown as OneShotContext["rlog"],
     ...overrides,
   };
@@ -104,7 +114,9 @@ test("runOneShot: matches scripted regex response", async () => {
   const dir = mkProject({
     oneShotResponses: [
       {
-        matchPrompt: "merge conflict.*<<<<<<<",
+        // [\s\S] not . — the prompt spans lines and the mock compiles the
+        // pattern with no flags, so `.` would stop at the newline.
+        matchPrompt: "merge conflict[\\s\\S]*<<<<<<<",
         isRegex: true,
         finalText: "resolved",
       },
@@ -187,9 +199,7 @@ test("runOneShot: returns permissive default when oneShotResponses unset", async
 
 test("runOneShot: honours finishedNormally:false override (agent gave up)", async () => {
   const dir = mkProject({
-    oneShotResponses: [
-      { matchPrompt: "give up", finalText: "I cannot", finishedNormally: false },
-    ],
+    oneShotResponses: [{ matchPrompt: "give up", finalText: "I cannot", finishedNormally: false }],
   });
   try {
     const runner = new MockAgentRunner({} as RunConfig, dir);

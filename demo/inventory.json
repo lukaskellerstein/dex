@@ -11,15 +11,36 @@
       "rendererBrowserCapturable": false,
       "launch": "./dev-setup.sh",
       "captureNotes": "Renderer loads via loadURL(http://localhost:5500) in dev but is dead in a plain browser (window.dexAPI comes from the preload). Capture the frameless Electron window directly, or drive/screenshot via CDP on port 9333 (scripts/test-014-cdp.mjs shows the pattern).",
-      "nativeOnly": ["frameless custom title bar + window controls", "native folder-picker dialog (welcome-pick-folder — opaque to automation, type paths instead)", "DEBUG badge clipboard copy"]
+      "nativeOnly": [
+        "frameless custom title bar + window controls",
+        "native folder-picker dialog (welcome-pick-folder — opaque to automation, type paths instead)",
+        "DEBUG badge clipboard copy"
+      ]
     }
   },
   "vocabulary": [
-    "autonomous loop", "cycle", "stage / step", "fresh agent per stage", "Ralph Wiggum loop",
-    "spec-kit", "clarification", "constitution", "feature manifest", "gap analysis",
-    "specify / plan / tasks / implement / verify / learnings", "step commit", "checkpoint",
-    "run branch (dex/*)", "selected-* fork", "Make this the new main", "agent trace",
-    "subagent", "Loop dashboard", "Steps tab", "Timeline tab", "Pause that means pause"
+    "autonomous loop",
+    "cycle",
+    "stage / step",
+    "fresh agent per stage",
+    "Ralph Wiggum loop",
+    "spec-kit",
+    "clarification",
+    "constitution",
+    "feature manifest",
+    "gap analysis",
+    "specify / plan / tasks / implement / verify / learnings",
+    "step commit",
+    "checkpoint",
+    "run branch (dex/*)",
+    "selected-* fork",
+    "Make this the new main",
+    "agent trace",
+    "subagent",
+    "Loop dashboard",
+    "Steps tab",
+    "Timeline tab",
+    "Pause that means pause"
   ],
   "capabilities": [
     {
@@ -152,14 +173,38 @@
     }
   ],
   "avoid": [
-    { "what": "Live real-Claude run on camera", "why": "Slow (minutes per stage), bills real API money, non-deterministic, and requires an authenticated Claude Code CLI. Pre-record once as B-roll if the rich trace is wanted." },
-    { "what": "Agent Trace close-ups during a mock run", "why": "Trace shows literal '[mock] phase/step' placeholder text — exposes the run as scripted." },
-    { "what": "Interactive clarification Q&A panel ('Dex needs your input')", "why": "No scripted path to trigger it under mock (questions come from the real agent's AskUserQuestion); with Automatic Clarification on it never appears. Cannot be staged deterministically today." },
-    { "what": "Cost readouts / budget ceiling under mock", "why": "Everything reads $0.00 — visibly fake if narration claims cost tracking." },
-    { "what": "scripts/reset-example-to.sh, trigger-mock-via-cdp.mjs, and the dex-ecommerce scenario docs as-is", "why": "All hardcode /home/lukas/... Linux paths; dex-ecommerce does not exist on this Mac. Verified by ls and by reading the scripts." },
-    { "what": "specs/009-.../quickstart-assets/mock-config.example.json verbatim", "why": "Stale format — uses removed 'from' fixture references and a nonexistent fixtures/mock-run/ dir; fails current validation which requires inline 'content'." },
-    { "what": "Native folder-picker button on the welcome screen", "why": "Native dialog — invisible to capture automation and breaks scripted takes. Type the path instead." },
-    { "what": "PR creation via gh", "why": "Requires GitHub auth and pushes to a real remote; ends outside the app in a browser." }
+    {
+      "what": "Live real-Claude run on camera",
+      "why": "Slow (minutes per stage), bills real API money, non-deterministic, and requires an authenticated Claude Code CLI. Pre-record once as B-roll if the rich trace is wanted."
+    },
+    {
+      "what": "Agent Trace close-ups during a mock run",
+      "why": "Trace shows literal '[mock] phase/step' placeholder text — exposes the run as scripted."
+    },
+    {
+      "what": "Interactive clarification Q&A panel ('Dex needs your input')",
+      "why": "No scripted path to trigger it under mock (questions come from the real agent's AskUserQuestion); with Automatic Clarification on it never appears. Cannot be staged deterministically today."
+    },
+    {
+      "what": "Cost readouts / budget ceiling under mock",
+      "why": "Everything reads $0.00 — visibly fake if narration claims cost tracking."
+    },
+    {
+      "what": "scripts/reset-example-to.sh, trigger-mock-via-cdp.mjs, and the dex-ecommerce scenario docs as-is",
+      "why": "All hardcode /home/lukas/... Linux paths; dex-ecommerce does not exist on this Mac. Verified by ls and by reading the scripts."
+    },
+    {
+      "what": "specs/009-.../quickstart-assets/mock-config.example.json verbatim",
+      "why": "Stale format — uses removed 'from' fixture references and a nonexistent fixtures/mock-run/ dir; fails current validation which requires inline 'content'."
+    },
+    {
+      "what": "Native folder-picker button on the welcome screen",
+      "why": "Native dialog — invisible to capture automation and breaks scripted takes. Type the path instead."
+    },
+    {
+      "what": "PR creation via gh",
+      "why": "Requires GitHub auth and pushes to a real remote; ends outside the app in a browser."
+    }
   ],
   "state": {
     "seedScript": "NONE usable on this machine — must be authored. Recipe: (1) create a fresh git repo with a GOAL.md (e.g. /Users/lukaskellerstein/Projects/Github/lukaskellerstein/dex-demo-shop), (2) mkdir .dex && echo '{\"agent\":\"mock\"}' > .dex/dex-config.json, (3) write .dex/mock-config.json with required top-level keys {prerequisites, clarification, dex_loop, completion}, inline 'content' writes, all 7 required stages per cycle (gap_analysis, specify, plan, tasks, implement, verify, learnings), manifest features count == cycles count, delays 800-2000ms, (4) sanity-check with: node scripts/validate-mock-config.mjs <projectDir>",

@@ -256,6 +256,7 @@ After this scenario, restore the original `main` naming: `cd dex-ecommerce && gi
    git checkout -q -b dex/2026-05-04-orphan
    git branch -D main
    ```
+
 3. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions

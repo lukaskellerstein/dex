@@ -25,8 +25,14 @@ Each pillar alone has critical gaps. Dex exists because the combination eliminat
 
 | Used alone            | What breaks                                                                                                                                                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Ralph Wiggum loop** | No structured specs — the agent picks tasks from a free-form TODO, builds the wrong thing, and burns budget. No UI, no abort, no cost tracking, no failure recovery beyond "kill the terminal." |     | **Spec-kit** | No autonomous loop — specs are great but someone has to manually run each phase, check results, and decide what's next. It's a sequential human-driven workflow. |     | **Claude Code (interactive)** | Single session degrades after ~100K tokens. No persistent memory across sessions. No structured planning. No verification beyond "it compiles." One task at a time, human-driven. | **Dex fuses all three:** **Ralph's loop** provides context isolation and self-improvement — fresh `query()` per stage, learnings persist via filesystem **Spec-kit** provides structured planning — specs with acceptance criteria before any code is written, constitution-governed consistency |
+| **Ralph Wiggum loop** | No structured specs — the agent picks tasks from a free-form TODO, builds the wrong thing, and burns budget. No UI, no abort, no cost tracking, no failure recovery beyond "kill the terminal." |
+| **Spec-kit** | No autonomous loop — specs are great but someone has to manually run each phase, check results, and decide what's next. It's a sequential human-driven workflow. |
+| **Claude Code (interactive)** | Single session degrades after ~100K tokens. No persistent memory across sessions. No structured planning. No verification beyond "it compiles." One task at a time, human-driven. |
 
+**Dex fuses all three:**
+
+- **Ralph's loop** provides context isolation and self-improvement — fresh `query()` per stage, learnings persist via filesystem
+- **Spec-kit** provides structured planning — specs with acceptance criteria before any code is written, constitution-governed consistency
 - **Claude Agent SDK** provides programmatic control — typed hooks, abort, MCP browser verification, session management
 
 The result: describe a project, clarify it into a complete plan, then walk away. Dex autonomously specs, plans, implements, verifies (including browser E2E), and recovers from failures — feature by feature, stage by stage.
@@ -244,7 +250,7 @@ Stop is a pause, not a kill. Resume re-enters at the next uncompleted stage of t
 
 ## Project Structure
 
-```
+```text
 dex/
 ├── src/
 │   ├── main/                    # Electron main process

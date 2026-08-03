@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from "react";
 import {
   AbsoluteFill,
   Easing,
@@ -8,9 +8,9 @@ import {
   staticFile,
   useCurrentFrame,
   useVideoConfig,
-} from 'remotion';
-import type { Section } from '../lib/timeline';
-import { EASE_OUT, theme } from '../lib/theme';
+} from "remotion";
+import { EASE_OUT, theme } from "../lib/theme";
+import type { Section } from "../lib/timeline";
 
 /**
  * Opening or closing card: the logo mark, a line of text, and nothing else. A demo's
@@ -44,7 +44,7 @@ export const TitleCard: React.FC<{ section: Section }> = ({ section }) => {
       frame,
       [Math.round(fps * delaySeconds), Math.round(fps * (delaySeconds + overSeconds))],
       [0, 1],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(...EASE_OUT) },
+      { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.bezier(...EASE_OUT) },
     );
 
   const logoIn = fadeIn(0, 0.45);
@@ -57,28 +57,28 @@ export const TitleCard: React.FC<{ section: Section }> = ({ section }) => {
     <AbsoluteFill
       style={{
         backgroundColor: theme.color.surfaceSolid,
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: "center",
+        justifyContent: "center",
         fontFamily: theme.font.sans,
         padding: theme.safeArea.x,
       }}
     >
       <div
         style={{
-          position: 'relative',
+          position: "relative",
           width: LOGO_SIZE,
           height: LOGO_SIZE,
           marginBottom: 44,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         {/* Bloom behind the mark: the logo is a lit object, and on a near-black field it
             otherwise floats with no relationship to the background. */}
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             inset: -LOGO_SIZE * 0.42,
             opacity: logoIn * 0.55,
             transform: `scale(${interpolate(settle, [0, 1], [0.7, 1])})`,
@@ -86,7 +86,7 @@ export const TitleCard: React.FC<{ section: Section }> = ({ section }) => {
           }}
         />
         <Img
-          src={staticFile('brand/logo.png')}
+          src={staticFile("brand/logo.png")}
           style={{
             width: LOGO_SIZE,
             height: LOGO_SIZE,
@@ -103,8 +103,8 @@ export const TitleCard: React.FC<{ section: Section }> = ({ section }) => {
           color: theme.color.text,
           fontSize: theme.titleCard.titleSize,
           fontWeight: 650,
-          letterSpacing: '-0.02em',
-          textAlign: 'center',
+          letterSpacing: "-0.02em",
+          textAlign: "center",
           lineHeight: 1.1,
           maxWidth: 1500,
         }}
@@ -121,7 +121,7 @@ export const TitleCard: React.FC<{ section: Section }> = ({ section }) => {
             color: theme.color.textMuted,
             fontSize: theme.titleCard.subtitleSize,
             fontWeight: 450,
-            textAlign: 'center',
+            textAlign: "center",
             maxWidth: 1100,
           }}
         >

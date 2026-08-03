@@ -138,7 +138,12 @@ export interface UserInputQuestion {
 
 // ── Prerequisites Check Types ──
 
-export type PrerequisiteCheckName = "claude_cli" | "specify_cli" | "git_init" | "github_repo" | "speckit_init";
+export type PrerequisiteCheckName =
+  | "claude_cli"
+  | "specify_cli"
+  | "git_init"
+  | "github_repo"
+  | "speckit_init";
 type PrerequisiteCheckStatus = "running" | "pass" | "fail" | "fixed";
 
 export interface PrerequisiteCheck {
@@ -154,4 +159,4 @@ export interface PrerequisiteCheck {
 // call sites continue to work. New code can import directly from the source.
 
 export type { RunConfig } from "./config.js";
-export type { OrchestratorEvent, EmitFn } from "./events.js";
+export type { EmitFn, OrchestratorEvent } from "./events.js";

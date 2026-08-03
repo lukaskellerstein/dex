@@ -3,25 +3,26 @@
  * Not: Does not derive grouping/synthesis (logic in AgentStepList.logic.ts). Does not render individual step bodies — AgentStepItem owns that.
  * Deps: AgentStepList.logic.ts (processSteps/groupToolCalls/buildTimelineRows), AgentStepItem, SubagentList, computeStats, StatsBar, CopyBadge.
  */
-import { useRef, useEffect, useMemo } from "react";
-import { Copy, Bot, Clock } from "lucide-react";
+
+import { Bot, Clock, Copy } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
 import type { AgentStep, SubagentInfo } from "../../../core/types.js";
-import { AgentStepItem } from "./AgentStepItem.js";
-import { SubagentList } from "./SubagentList.js";
 import { computeStats } from "../../utils/computeStats.js";
-import { StatsBar } from "../shared/StatsBar.js";
-import { CopyBadge } from "../shared/CopyBadge.js";
 import { formatDurationShort as formatDuration } from "../../utils/formatters.js";
+import { CopyBadge } from "../shared/CopyBadge.js";
+import { StatsBar } from "../shared/StatsBar.js";
+import { AgentStepItem } from "./AgentStepItem.js";
 import {
-  LINE_LEFT,
-  DOT_SIZE,
-  CONTENT_LEFT,
-  formatTime,
-  formatDelta,
-  processSteps,
-  groupToolCalls,
   buildTimelineRows,
+  CONTENT_LEFT,
+  DOT_SIZE,
+  formatDelta,
+  formatTime,
+  groupToolCalls,
+  LINE_LEFT,
+  processSteps,
 } from "./AgentStepList.logic.js";
+import { SubagentList } from "./SubagentList.js";
 
 interface AgentStepListProps {
   steps: AgentStep[];
@@ -198,8 +199,7 @@ export function AgentStepList({
                 const prevStep = idx > 0 ? grouped[idx - 1].step : null;
                 const deltaMs =
                   prevStep && step.createdAt && prevStep.createdAt
-                    ? new Date(step.createdAt).getTime() -
-                      new Date(prevStep.createdAt).getTime()
+                    ? new Date(step.createdAt).getTime() - new Date(prevStep.createdAt).getTime()
                     : null;
 
                 return (
@@ -241,8 +241,7 @@ export function AgentStepList({
               const prevStep = startIdx > 0 ? grouped[startIdx - 1].step : null;
               const deltaMs =
                 prevStep && firstStep.createdAt && prevStep.createdAt
-                  ? new Date(firstStep.createdAt).getTime() -
-                    new Date(prevStep.createdAt).getTime()
+                  ? new Date(firstStep.createdAt).getTime() - new Date(prevStep.createdAt).getTime()
                   : null;
 
               return (

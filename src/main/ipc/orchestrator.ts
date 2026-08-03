@@ -1,7 +1,7 @@
-import { ipcMain, type BrowserWindow } from "electron";
-import type { RunConfig, OrchestratorEvent } from "../../core/types.js";
-import { run, stopRun, getRunState, submitUserAnswer } from "../../core/orchestrator.js";
+import { type BrowserWindow, ipcMain } from "electron";
+import { getRunState, run, stopRun, submitUserAnswer } from "../../core/orchestrator.js";
 import { loadState } from "../../core/state.js";
+import type { OrchestratorEvent, RunConfig } from "../../core/types.js";
 
 /**
  * 011-A1 residual singleton note.
@@ -20,9 +20,7 @@ import { loadState } from "../../core/state.js";
  *
  * See: specs/011-refactoring/contracts/orchestration-context.md
  */
-export function registerOrchestratorHandlers(
-  getWindow: () => BrowserWindow | null
-): void {
+export function registerOrchestratorHandlers(getWindow: () => BrowserWindow | null): void {
   const emit = (event: OrchestratorEvent) => {
     const win = getWindow();
     if (win && !win.isDestroyed()) {
@@ -30,17 +28,14 @@ export function registerOrchestratorHandlers(
     }
   };
 
-  ipcMain.handle(
-    "orchestrator:start",
-    async (_event, config: RunConfig) => {
-      run(config, emit).catch((err) => {
-        emit({
-          type: "error",
-          message: err instanceof Error ? err.message : String(err),
-        });
+  ipcMain.handle("orchestrator:start", async (_event, config: RunConfig) => {
+    run(config, emit).catch((err) => {
+      emit({
+        type: "error",
+        message: err instanceof Error ? err.message : String(err),
       });
-    }
-  );
+    });
+  });
 
   ipcMain.handle("orchestrator:stop", () => {
     stopRun();
@@ -50,7 +45,7 @@ export function registerOrchestratorHandlers(
     "orchestrator:answer-question",
     (_event, requestId: string, answers: Record<string, string>) => {
       submitUserAnswer(requestId, answers);
-    }
+    },
   );
 
   ipcMain.handle("orchestrator:getRunState", () => {

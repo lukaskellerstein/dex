@@ -78,7 +78,9 @@ function profileDir(projectDir: string, name: string): string {
  * Validate a parsed `dex.json` payload. Returns null on success, a human-readable
  * reason string on failure.
  */
-function validateDexJson(value: unknown): { ok: true; value: DexJsonShape } | { ok: false; reason: string } {
+function validateDexJson(
+  value: unknown,
+): { ok: true; value: DexJsonShape } | { ok: false; reason: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, reason: "dex.json must be a JSON object" };
   }
@@ -155,7 +157,12 @@ export function buildOverlaySummary(agentDir: string): OverlaySummary {
   if (fs.existsSync(mcpJson)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(mcpJson, "utf-8"));
-      if (parsed && typeof parsed === "object" && parsed.mcpServers && typeof parsed.mcpServers === "object") {
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        parsed.mcpServers &&
+        typeof parsed.mcpServers === "object"
+      ) {
         mcpServers = Object.keys(parsed.mcpServers).length;
       }
     } catch {
@@ -203,7 +210,12 @@ export function listProfiles(projectDir: string): ProfileEntry[] {
     const folderPath = path.join(dir, e.name);
     const dexJsonPath = path.join(folderPath, "dex.json");
     if (!fs.existsSync(dexJsonPath)) {
-      result.push({ kind: "warn", folder: e.name, agentDir: folderPath, reason: "missing dex.json" });
+      result.push({
+        kind: "warn",
+        folder: e.name,
+        agentDir: folderPath,
+        reason: "missing dex.json",
+      });
       continue;
     }
     let raw: unknown;

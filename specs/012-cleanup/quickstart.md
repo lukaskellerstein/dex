@@ -85,12 +85,14 @@ Wait for the run to enter the `tasks` stage or later (step-commits visible on th
 1. Open the Timeline tab.
 2. `mcp__electron-chrome__take_snapshot` — record uid of any step-commit dot.
 3. Trigger a right-click on a commit dot via `mcp__electron-chrome__evaluate_script` (synthesize a `contextmenu` event):
+
    ```js
    () => {
      const dot = document.querySelector('[data-testid^="timeline-commit-"]');
      dot.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
    }
    ```
+
 4. `mcp__electron-chrome__take_snapshot` — assert no popover/menu element is present.
 5. `mcp__electron-chrome__list_console_messages` — assert no error logged from this action.
 
@@ -125,6 +127,7 @@ Pass criterion: no modal, Resume succeeded.
 
 1. After a stage with `step_candidate` has completed, locate the **DEBUG badge** (Loop Dashboard header or trace breadcrumb bar).
 2. `mcp__electron-chrome__evaluate_script` to read the payload directly (do **not** rely on clipboard read via MCP — flaky):
+
    ```js
    async () => {
      const state = await window.dexAPI.getRunState();

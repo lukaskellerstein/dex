@@ -25,10 +25,10 @@ User-visible copy lives in a single `branchOps/copy.ts` module so the constituti
 **Project Type**: Existing Electron desktop app — single project, fixed layout (`src/main/`, `src/core/`, `src/renderer/`). No new top-level structure.
 **Performance Goals**: Delete + clean-promote both complete inside 2s p95 on the existing example project (one shell+git checkout + one branch delete + one timeline refresh). Resolver per-file iteration latency is bounded by SDK round-trip (~5–30s typical for `claude-opus-4-7`); per-promotion total is bounded by `costCapUsd` (default $0.50) and `maxIterations` (default 5).
 **Constraints**:
-  - **Constitutional**: `src/core/` MUST remain free of `electron` / `src/main/` / `src/renderer/` imports — every new core module honours this. The conflict-resolver harness is a pure function over `AgentRunner` and `safeExec`/`gitExec`; it emits via the injected `EmitFn` rather than touching IPC directly.
-  - **No git jargon in user-visible strings**: enforced via spec FR-028; copy is centralised in `src/renderer/components/checkpoints/branchOps/copy.ts`. A grep test in CI ensures the forbidden words don't leak into user-visible code paths.
-  - **Mid-run safety**: every destructive op acquires `withLock(projectDir, ...)` and refuses when `state.json.status === "running"` for the target branch.
-  - **Rollback completeness**: any failed promotion (resolver cancel, max-iter, cost cap, verify fail with rollback) MUST leave the working tree, primary, and source branches indistinguishable from the pre-attempt state. `git merge --abort` is the canonical rollback; the resolver never moves files outside the merge boundary.
+- **Constitutional**: `src/core/` MUST remain free of `electron` / `src/main/` / `src/renderer/` imports — every new core module honours this. The conflict-resolver harness is a pure function over `AgentRunner` and `safeExec`/`gitExec`; it emits via the injected `EmitFn` rather than touching IPC directly.
+- **No git jargon in user-visible strings**: enforced via spec FR-028; copy is centralised in `src/renderer/components/checkpoints/branchOps/copy.ts`. A grep test in CI ensures the forbidden words don't leak into user-visible code paths.
+- **Mid-run safety**: every destructive op acquires `withLock(projectDir, ...)` and refuses when `state.json.status === "running"` for the target branch.
+- **Rollback completeness**: any failed promotion (resolver cancel, max-iter, cost cap, verify fail with rollback) MUST leave the working tree, primary, and source branches indistinguishable from the pre-attempt state. `git merge --abort` is the canonical rollback; the resolver never moves files outside the merge boundary.
 **Scale/Scope**: Single project per orchestrator process. Timeline shows ≤ ~50 saved versions in practice (a typical `dex-ecommerce` session has 5–15). Resolver expected to run on 1–10 conflicting files per promotion; the `costCapUsd` ceiling is the real scale guard. ≈ 16 files touched, 4 deleted (the `unselect` surface), 12 new (incl. spec docs already present).
 
 ## Constitution Check
@@ -120,7 +120,7 @@ src/
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| _(none)_  | _(n/a)_    | _(n/a)_                              |
+| *(none)*  | *(n/a)*    | *(n/a)*                              |
 
 ### Notable design decisions that aren't violations but deserve a paper trail
 

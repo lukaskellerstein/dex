@@ -1,18 +1,18 @@
 import {
+  AlertTriangle,
   Clock,
   DollarSign,
+  GitFork,
   Hash,
   Layers,
-  Wrench,
   Plug,
-  GitFork,
   Sparkles,
-  AlertTriangle,
+  Wrench,
 } from "lucide-react";
 import type { AgentStats } from "../../utils/computeStats.js";
 import {
-  formatDurationDetailed as formatDuration,
   formatCost,
+  formatDurationDetailed as formatDuration,
   formatTokens,
 } from "../../utils/formatters.js";
 
@@ -37,9 +37,7 @@ function MetricItem({
         color: color ?? "var(--foreground-muted)",
       }}
     >
-      <span style={{ color: color ?? "var(--foreground-dim)", display: "flex" }}>
-        {icon}
-      </span>
+      <span style={{ color: color ?? "var(--foreground-dim)", display: "flex" }}>{icon}</span>
       <span style={{ color: color ?? "var(--foreground-dim)" }}>{label}</span>
       <span>{value}</span>
     </div>
@@ -81,17 +79,34 @@ export function StatsBar({ stats, compact }: StatsBarProps) {
           flexWrap: "wrap",
         }}
       >
-        <MetricItem icon={<Clock size={11} />} label="duration" value={formatDuration(stats.durationMs)} />
+        <MetricItem
+          icon={<Clock size={11} />}
+          label="duration"
+          value={formatDuration(stats.durationMs)}
+        />
         <Separator />
-        <MetricItem icon={<DollarSign size={11} />} label="cost" value={formatCost(stats.costUsd)} />
+        <MetricItem
+          icon={<DollarSign size={11} />}
+          label="cost"
+          value={formatCost(stats.costUsd)}
+        />
         <Separator />
         <MetricItem icon={<Hash size={11} />} label="in" value={formatTokens(stats.inputTokens)} />
         <Separator />
-        <MetricItem icon={<Hash size={11} />} label="out" value={formatTokens(stats.outputTokens)} />
+        <MetricItem
+          icon={<Hash size={11} />}
+          label="out"
+          value={formatTokens(stats.outputTokens)}
+        />
         {stats.errorCount > 0 && (
           <>
             <Separator />
-            <MetricItem icon={<AlertTriangle size={11} />} label="errors" value={String(stats.errorCount)} highlight="error" />
+            <MetricItem
+              icon={<AlertTriangle size={11} />}
+              label="errors"
+              value={String(stats.errorCount)}
+              highlight="error"
+            />
           </>
         )}
       </div>
@@ -111,7 +126,11 @@ export function StatsBar({ stats, compact }: StatsBarProps) {
         flexWrap: "wrap",
       }}
     >
-      <MetricItem icon={<Clock size={12} />} label="duration" value={formatDuration(stats.durationMs)} />
+      <MetricItem
+        icon={<Clock size={12} />}
+        label="duration"
+        value={formatDuration(stats.durationMs)}
+      />
       <Separator />
       <MetricItem icon={<DollarSign size={12} />} label="cost" value={formatCost(stats.costUsd)} />
       <Separator />
@@ -125,11 +144,20 @@ export function StatsBar({ stats, compact }: StatsBarProps) {
       <Separator />
       <MetricItem icon={<Plug size={12} />} label="mcp" value={String(stats.mcpCount)} />
       <Separator />
-      <MetricItem icon={<GitFork size={12} />} label="subagents" value={String(stats.subagentCount)} />
+      <MetricItem
+        icon={<GitFork size={12} />}
+        label="subagents"
+        value={String(stats.subagentCount)}
+      />
       <Separator />
       <MetricItem icon={<Sparkles size={12} />} label="skills" value={String(stats.skillCount)} />
       <Separator />
-      <MetricItem icon={<AlertTriangle size={12} />} label="errors" value={String(stats.errorCount)} highlight={stats.errorCount > 0 ? "error" : undefined} />
+      <MetricItem
+        icon={<AlertTriangle size={12} />}
+        label="errors"
+        value={String(stats.errorCount)}
+        highlight={stats.errorCount > 0 ? "error" : undefined}
+      />
     </div>
   );
 }

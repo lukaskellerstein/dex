@@ -4,7 +4,7 @@ The canonical vocabulary for the Dex orchestrator process. Every layer of the co
 
 ## The 5-level hierarchy
 
-```
+```text
 Phase           4 user-facing buckets: Prerequisites · Clarification · Dex Loop · Completion
 └── Cycle              iteration N (only inside the Dex Loop phase)
     └── Step                   unit of process work; kind: "script" | "agent" | "interactive"

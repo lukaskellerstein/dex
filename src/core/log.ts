@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DEX_HOME, LOGS_ROOT, FALLBACK_LOG, migrateIfNeeded } from "./paths.js";
+import { DEX_HOME, FALLBACK_LOG, LOGS_ROOT, migrateIfNeeded } from "./paths.js";
 
 type LogLevel = "INFO" | "ERROR" | "DEBUG" | "WARN";
 
@@ -41,11 +41,17 @@ export class RunLogger {
 
   /** Set the active agent-run directory — call at agent-run start */
   startAgentRun(taskPhaseNumber: number, taskPhaseName: string, agentRunId: string): void {
-    const slug = taskPhaseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const slug = taskPhaseName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
     this.agentRunDir = path.join(this.runDir, `phase-${taskPhaseNumber}_${slug}`);
     fs.mkdirSync(path.join(this.agentRunDir, "subagents"), { recursive: true });
     this.run("INFO", `TaskPhase ${taskPhaseNumber} started: ${taskPhaseName}`, { agentRunId });
-    this.agentRun("INFO", `TaskPhase ${taskPhaseNumber}: ${taskPhaseName} — agentRunId=${agentRunId}`);
+    this.agentRun(
+      "INFO",
+      `TaskPhase ${taskPhaseNumber}: ${taskPhaseName} — agentRunId=${agentRunId}`,
+    );
   }
 
   /** Log to the current agent-run's agent.log */
@@ -72,7 +78,6 @@ export class RunLogger {
     this.agentRun(level, `[subagent:${subagentId}] ${msg}`, data);
     this.subagent(subagentId, level, msg, data);
   }
-
 }
 
 /** Fallback logger used before a run starts (global orchestrator log). */

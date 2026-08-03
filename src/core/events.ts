@@ -4,14 +4,14 @@
 
 import type { RunConfig } from "./config.js";
 import type {
-  TaskPhase,
   AgentStep,
-  SubagentInfo,
-  StepType,
+  DriftSummary,
   LoopTermination,
   PrerequisiteCheck,
+  StepType,
+  SubagentInfo,
+  TaskPhase,
   UserInputQuestion,
-  DriftSummary,
 } from "./types.js";
 
 export type OrchestratorEvent =
@@ -81,7 +81,13 @@ export type OrchestratorEvent =
   // Manifest & structured output events
   | { type: "manifest_created"; runId: string; featureCount: number }
   | { type: "manifest_drift_detected"; runId: string }
-  | { type: "verify_failed"; runId: string; cycleNumber: number; blockingCount: number; summary: string }
+  | {
+      type: "verify_failed";
+      runId: string;
+      cycleNumber: number;
+      blockingCount: number;
+      summary: string;
+    }
   // User input request/response (AskUserQuestion)
   | { type: "user_input_request"; runId: string; requestId: string; questions: UserInputQuestion[] }
   | { type: "user_input_response"; requestId: string; answers: Record<string, string> }
@@ -129,12 +135,7 @@ export type OrchestratorEvent =
       type: "conflict-resolver:done";
       ok: boolean;
       costTotal: number;
-      reason?:
-        | "max_iterations"
-        | "cost_cap"
-        | "verify_failed"
-        | "agent_gave_up"
-        | "user_cancelled";
+      reason?: "max_iterations" | "cost_cap" | "verify_failed" | "agent_gave_up" | "user_cancelled";
     };
 
 export type EmitFn = (event: OrchestratorEvent) => void;

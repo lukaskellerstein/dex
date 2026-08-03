@@ -3,14 +3,12 @@ import { ipcRenderer } from "electron";
 export const projectApi = {
   openProject: () => ipcRenderer.invoke("project:open"),
   listSpecs: (dir: string) => ipcRenderer.invoke("project:list-specs", dir),
-  parseSpec: (dir: string, spec: string) =>
-    ipcRenderer.invoke("project:parse-spec", dir, spec),
+  parseSpec: (dir: string, spec: string) => ipcRenderer.invoke("project:parse-spec", dir, spec),
   readFile: (filePath: string) =>
     ipcRenderer.invoke("project:read-file", filePath) as Promise<string | null>,
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke("project:write-file", filePath, content) as Promise<boolean>,
-  pickFolder: () =>
-    ipcRenderer.invoke("project:pick-folder") as Promise<string | null>,
+  pickFolder: () => ipcRenderer.invoke("project:pick-folder") as Promise<string | null>,
   pickGoalFile: (defaultDir: string) =>
     ipcRenderer.invoke("project:pick-goal-file", defaultDir) as Promise<string | null>,
   createProject: (parentDir: string, name: string) =>

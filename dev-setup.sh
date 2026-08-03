@@ -3,7 +3,7 @@
 # dev-setup.sh — Start all Dex components for development.
 #
 # Starts Vite dev server (HMR) and Electron with CDP enabled so the
-# AI agent can test UI changes via the electron-chrome MCP server.
+# AI agent can test UI changes via the electron-playwright MCP server.
 #
 # Usage:
 #   ./dev-setup.sh
@@ -16,9 +16,10 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="${HOME}/.dex/dev-logs"
 mkdir -p "$LOG_DIR"
 
-# Truncate old logs
-> "$LOG_DIR/vite.log"
-> "$LOG_DIR/electron.log"
+# Truncate old logs (`: >` rather than a bare `>` — shellcheck SC2188 flags a
+# redirection with no command, and the no-op keeps the intent explicit)
+: >"$LOG_DIR/vite.log"
+: >"$LOG_DIR/electron.log"
 
 # --- Cleanup on exit ---
 PIDS=()
@@ -71,7 +72,7 @@ echo "Compiling TypeScript..."
 
 # --- 3. Start Vite dev server for the renderer ---
 # Kill any stale process on the Vite port
-if lsof -ti ":${VITE_PORT}" > /dev/null 2>&1; then
+if lsof -ti ":${VITE_PORT}" >/dev/null 2>&1; then
   echo "Killing stale process on port ${VITE_PORT}..."
   lsof -ti ":${VITE_PORT}" | xargs kill 2>/dev/null || true
   sleep 0.5
@@ -84,7 +85,7 @@ PIDS+=($!)
 # Wait for Vite to be ready
 echo "Waiting for Vite dev server..."
 for i in $(seq 1 30); do
-  if curl -sf "http://localhost:${VITE_PORT}" > /dev/null 2>&1; then
+  if curl -sf "http://localhost:${VITE_PORT}" >/dev/null 2>&1; then
     echo "Vite dev server is ready."
     break
   fi
@@ -96,7 +97,7 @@ done
 
 # --- 4. Start Electron with CDP ---
 # Kill any stale process on the devtools port
-if lsof -ti ":${DEVTOOLS_PORT}" > /dev/null 2>&1; then
+if lsof -ti ":${DEVTOOLS_PORT}" >/dev/null 2>&1; then
   echo "Killing stale process on port ${DEVTOOLS_PORT}..."
   lsof -ti ":${DEVTOOLS_PORT}" | xargs kill 2>/dev/null || true
   sleep 0.5

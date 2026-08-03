@@ -16,16 +16,9 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainSeconds}s`;
 }
 
-export function ProgressBar({
-  phases,
-  totalCost,
-  totalDuration,
-}: ProgressBarProps) {
-  const completedPhases = phases.filter(
-    (p) => p.status === "complete"
-  ).length;
-  const progress =
-    phases.length > 0 ? (completedPhases / phases.length) * 100 : 0;
+export function ProgressBar({ phases, totalCost, totalDuration }: ProgressBarProps) {
+  const completedPhases = phases.filter((p) => p.status === "complete").length;
+  const progress = phases.length > 0 ? (completedPhases / phases.length) * 100 : 0;
 
   return (
     <div
@@ -73,8 +66,7 @@ export function ProgressBar({
         </span>
         {totalCost > 0 && (
           <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <DollarSign size={12} />
-            ${totalCost.toFixed(2)}
+            <DollarSign size={12} />${totalCost.toFixed(2)}
           </span>
         )}
         {totalDuration > 0 && (

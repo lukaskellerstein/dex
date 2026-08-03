@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import test from "node:test";
 import { jumpTo } from "../checkpoints.ts";
 
 function mkTmpRepo(): string {
@@ -237,15 +237,28 @@ test("jumpTo: dirty + force save → exactly one new commit on current branch, n
     const r = jumpTo(dir, sha2, { force: "save" });
     assert.equal(r.ok, true);
 
-    // No new branch was created.
+    // No *autosave* branch was created: 013 replaced the old `attempt-<ts>-saved`
+    // branch with a plain commit on the current branch. A `selected-*` fork is a
+    // separate, expected mechanism — sha2 is not reachable from main here, so
+    // click-to-jump has to fork one to land on it.
     const branchesAfter = execSync("git branch --list", { cwd: dir, encoding: "utf-8" }).trim();
-    assert.equal(branchesAfter, branchesBefore, "no new branch should be created");
+    const nameOf = (line: string): string => line.replace(/^[*+]?\s*/, "").trim();
+    const before = new Set(branchesBefore.split("\n").map(nameOf).filter(Boolean));
+    const added = branchesAfter
+      .split("\n")
+      .map(nameOf)
+      .filter(Boolean)
+      .filter((b) => !before.has(b));
+    assert.ok(
+      added.every((b) => b.startsWith("selected-")),
+      `only selected-* navigation forks may be created, got: ${added.join(", ")}`,
+    );
 
     // Exactly one autosave commit exists somewhere — verify by subject.
-    const autosaveLog = execSync(
-      `git log --all --grep='^dex: pre-jump autosave' --oneline`,
-      { cwd: dir, encoding: "utf-8" },
-    ).trim();
+    const autosaveLog = execSync(`git log --all --grep='^dex: pre-jump autosave' --oneline`, {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
     const autosaveCount = autosaveLog ? autosaveLog.split("\n").length : 0;
     assert.equal(autosaveCount, 1, "exactly one autosave commit should exist");
 
@@ -290,10 +303,10 @@ test("jumpTo: dirty + force save on detached HEAD → friendly refusal, no commi
       }
     }
     // No autosave commit was created on any ref.
-    const autosaveLog = execSync(
-      `git log --all --grep='^dex: pre-jump autosave' --oneline`,
-      { cwd: dir, encoding: "utf-8" },
-    ).trim();
+    const autosaveLog = execSync(`git log --all --grep='^dex: pre-jump autosave' --oneline`, {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
     assert.equal(autosaveLog, "", "no autosave commit should exist after refusal");
     // HEAD did not move.
     assert.equal(head(dir), sha1);
@@ -343,10 +356,7 @@ test("jumpTo: dirty + force save on selected-* branch → autosave lands on sele
       cwd: dir,
       encoding: "utf-8",
     }).trim();
-    assert.ok(
-      stillThere.length > 0,
-      `selected-* branch ${selectedBranch} must survive auto-prune`,
-    );
+    assert.ok(stillThere.length > 0, `selected-* branch ${selectedBranch} must survive auto-prune`);
 
     // HEAD moved to sha3.
     assert.equal(head(dir), sha3);

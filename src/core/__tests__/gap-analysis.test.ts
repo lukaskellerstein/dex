@@ -1,10 +1,10 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import {
-  parseGapAnalysisDecision,
   applyGapAnalysisDecision,
-  shouldRunStage,
   getDecisionSpecDir,
+  parseGapAnalysisDecision,
+  shouldRunStage,
 } from "../gap-analysis.ts";
 import type { GapAnalysisDecision, StepType } from "../types.ts";
 
@@ -27,10 +27,7 @@ test("parseGapAnalysisDecision: REPLAN_FEATURE round-trips", () => {
 });
 
 test("parseGapAnalysisDecision: throws on null", () => {
-  assert.throws(
-    () => parseGapAnalysisDecision(null, "specs/x"),
-    /expected object, got null/,
-  );
+  assert.throws(() => parseGapAnalysisDecision(null, "specs/x"), /expected object, got null/);
 });
 
 test("parseGapAnalysisDecision: throws on non-object (string)", () => {
@@ -139,14 +136,7 @@ test("applyGapAnalysisDecision: GAPS_COMPLETE → terminate", () => {
 
 // ── shouldRunStage: per-decision matrix ─────────────────────────────────────
 
-const allSteps: StepType[] = [
-  "specify",
-  "plan",
-  "tasks",
-  "implement",
-  "verify",
-  "learnings",
-];
+const allSteps: StepType[] = ["specify", "plan", "tasks", "implement", "verify", "learnings"];
 
 test("shouldRunStage: NEXT_FEATURE runs every cycle stage except gap_analysis", () => {
   const d: GapAnalysisDecision = {
@@ -155,7 +145,8 @@ test("shouldRunStage: NEXT_FEATURE runs every cycle stage except gap_analysis", 
     description: "y",
     featureId: 1,
   };
-  for (const s of allSteps) assert.equal(shouldRunStage(d, s), true, `NEXT_FEATURE should run ${s}`);
+  for (const s of allSteps)
+    assert.equal(shouldRunStage(d, s), true, `NEXT_FEATURE should run ${s}`);
   assert.equal(shouldRunStage(d, "gap_analysis"), false);
 });
 
@@ -198,14 +189,8 @@ test("shouldRunStage: GAPS_COMPLETE runs nothing", () => {
 // ── getDecisionSpecDir ──────────────────────────────────────────────────────
 
 test("getDecisionSpecDir: returns specDir for RESUME/REPLAN/RESUME_AT_STEP", () => {
-  assert.equal(
-    getDecisionSpecDir({ type: "RESUME_FEATURE", specDir: "a" }),
-    "a",
-  );
-  assert.equal(
-    getDecisionSpecDir({ type: "REPLAN_FEATURE", specDir: "b" }),
-    "b",
-  );
+  assert.equal(getDecisionSpecDir({ type: "RESUME_FEATURE", specDir: "a" }), "a");
+  assert.equal(getDecisionSpecDir({ type: "REPLAN_FEATURE", specDir: "b" }), "b");
   assert.equal(
     getDecisionSpecDir({ type: "RESUME_AT_STEP", specDir: "c", resumeAtStep: "plan" }),
     "c",

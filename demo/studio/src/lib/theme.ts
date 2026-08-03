@@ -8,27 +8,26 @@
 
 export const theme = {
   font: {
-    sans:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif',
+    sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
   },
   color: {
-    ink: '#0B0D10',
-    surface: 'rgba(12, 14, 18, 0.82)',
-    surfaceSolid: '#0C0E12',
-    text: '#FFFFFF',
-    textMuted: 'rgba(255, 255, 255, 0.68)',
-    accent: '#5B8CFF',
+    ink: "#0B0D10",
+    surface: "rgba(12, 14, 18, 0.82)",
+    surfaceSolid: "#0C0E12",
+    text: "#FFFFFF",
+    textMuted: "rgba(255, 255, 255, 0.68)",
+    accent: "#5B8CFF",
     // Same hue as accent, as a bare triple so components can animate the alpha.
-    accentRgb: '91, 140, 255',
+    accentRgb: "91, 140, 255",
     // Dex's own violet (--primary in src/renderer/styles/theme.css), used where the
     // product's identity is the subject rather than the overlay layer: the logo bloom
     // and the title-card rule. Kept separate from `accent` so the neutral overlay
     // system stays neutral over captured footage.
-    brand: '#7C3AED',
-    brandRgb: '124, 58, 237',
-    panel: '#111318',
-    letterbox: '#07080A',
+    brand: "#7C3AED",
+    brandRgb: "124, 58, 237",
+    panel: "#111318",
+    letterbox: "#07080A",
   },
   radius: { sm: 8, md: 14, lg: 22 },
   // Captions and lower-thirds sit inside this margin so they survive any crop.
@@ -50,9 +49,9 @@ export const theme = {
     fontSize: 22,
     // Roughly two-thirds the caption's weight on screen: enough to read, not enough to
     // compete for the eye while the caption is running.
-    color: 'rgba(255, 255, 255, 0.86)',
-    background: 'rgba(9, 11, 15, 0.72)',
-    border: '1px solid rgba(255, 255, 255, 0.11)',
+    color: "rgba(255, 255, 255, 0.86)",
+    background: "rgba(9, 11, 15, 0.72)",
+    border: "1px solid rgba(255, 255, 255, 0.11)",
     // Distance from the frame bottom. A captured desktop app fills the frame edge to
     // edge, so the plate cannot simply sit in a margin — it has to occupy the one strip
     // the app leaves empty. Measured across all five captured sections, that strip is

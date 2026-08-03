@@ -241,6 +241,7 @@ export class MockConfigInvalidPathError extends Error {
 ```
 
 Every error's message format: `"<ClassName>: <human message>. <structured details>"`. Example:
+
 ```
 MockConfigMissingEntryError: no script entry for phase=dex_loop, stage=implement, cycle=2, feature=f-001.
 Available cycles in script: 1, 2 (stage keys in cycle 2: gap_analysis, specify, plan, tasks). Update .dex/mock-config.json.

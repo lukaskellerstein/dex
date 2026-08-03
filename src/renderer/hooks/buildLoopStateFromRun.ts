@@ -1,10 +1,6 @@
-import type { StepType } from "../../core/types.js";
 import type { RunRecord } from "../../core/runs.js";
-import type {
-  UiLoopCycle,
-  UiLoopStage,
-  ImplementSubPhase,
-} from "./useOrchestrator.js";
+import type { StepType } from "../../core/types.js";
+import type { ImplementSubPhase, UiLoopCycle, UiLoopStage } from "./useOrchestrator.js";
 
 export interface LoopStateRebuild {
   preCycleStages: UiLoopStage[];
@@ -24,12 +20,8 @@ export function buildLoopStateFromRun(
   runData: RunRecord,
   currentCycle: number | null,
 ): LoopStateRebuild {
-  const loopTraces = runData.agentRuns.filter((pt) =>
-    pt.taskPhaseName.startsWith("loop:"),
-  );
-  const implTraces = runData.agentRuns.filter(
-    (pt) => !pt.taskPhaseName.startsWith("loop:"),
-  );
+  const loopTraces = runData.agentRuns.filter((pt) => pt.taskPhaseName.startsWith("loop:"));
+  const implTraces = runData.agentRuns.filter((pt) => !pt.taskPhaseName.startsWith("loop:"));
 
   const preCycleStages: UiLoopStage[] = [];
   const cycleMap = new Map<number, UiLoopStage[]>();
@@ -73,11 +65,7 @@ export function buildLoopStateFromRun(
       taskPhaseName: pt.taskPhaseName,
       agentRunId: pt.agentRunId,
       status:
-        pt.status === "completed"
-          ? "completed"
-          : pt.status === "stopped"
-            ? "stopped"
-            : "running",
+        pt.status === "completed" ? "completed" : pt.status === "stopped" ? "stopped" : "running",
       costUsd: pt.costUsd ?? 0,
       durationMs: pt.durationMs ?? 0,
     });
@@ -85,13 +73,11 @@ export function buildLoopStateFromRun(
   }
 
   const loopCycles: UiLoopCycle[] = [];
-  for (const [cycleNumber, stages] of Array.from(cycleMap.entries()).sort(
-    (a, b) => a[0] - b[0],
-  )) {
+  for (const [cycleNumber, stages] of Array.from(cycleMap.entries()).sort((a, b) => a[0] - b[0])) {
     const isActive = cycleNumber === currentCycle;
     const allCompleted = stages.every((s) => s.status === "completed");
     const specDir = stages.find((s) => s.specDir)?.specDir ?? null;
-    const implPhases = specDir ? implBySpecDir.get(specDir) ?? [] : [];
+    const implPhases = specDir ? (implBySpecDir.get(specDir) ?? []) : [];
     loopCycles.push({
       cycleNumber,
       featureName: specDir,
@@ -105,10 +91,7 @@ export function buildLoopStateFromRun(
     });
   }
 
-  const allStages = [
-    ...preCycleStages,
-    ...Array.from(cycleMap.values()).flat(),
-  ];
+  const allStages = [...preCycleStages, ...Array.from(cycleMap.values()).flat()];
   const totalCost = allStages.reduce((sum, s) => sum + s.costUsd, 0);
 
   return { preCycleStages, loopCycles, totalCost };

@@ -8,18 +8,18 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import type { RunConfig, StepType } from "../types.js";
-import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
-import {
-  buildProductClarificationPrompt,
-  buildTechnicalClarificationPrompt,
-  buildClarificationSynthesisPrompt,
-  buildConstitutionPrompt,
-  SYNTHESIS_SCHEMA,
-} from "../prompts.js";
 // Circular: runStage lives in orchestrator.ts and will move into a coordinator
 // surface during A8. Both sides export functions only; ESM resolves call-time refs.
 import { runStage } from "../orchestrator.js";
+import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
+import {
+  buildClarificationSynthesisPrompt,
+  buildConstitutionPrompt,
+  buildProductClarificationPrompt,
+  buildTechnicalClarificationPrompt,
+  SYNTHESIS_SCHEMA,
+} from "../prompts.js";
+import type { RunConfig, StepType } from "../types.js";
 
 class AbortError extends Error {
   constructor() {
@@ -47,9 +47,14 @@ export async function runClarificationPhase(
   },
 ): Promise<{ fullPlanPath: string; cumulativeCost: number }> {
   const {
-    config, runId, goalPath, clarifiedPath,
-    productDomainPath, technicalDomainPath,
-    existingSpecsAtStart, seedCumulativeCost,
+    config,
+    runId,
+    goalPath,
+    clarifiedPath,
+    productDomainPath,
+    technicalDomainPath,
+    existingSpecsAtStart,
+    seedCumulativeCost,
   } = deps;
   const { projectDir, emit, rlog } = ctx;
   const productDomainName = path.basename(productDomainPath);
@@ -60,13 +65,22 @@ export async function runClarificationPhase(
 
   const emitSkippedStep = (step: StepType, cycleNum = 0) => {
     // Delegates to the consolidated helper in phase-lifecycle.ts (T043 wire-in).
-    phaseEmitSkippedStep({ ctx, runId, agentRunId: crypto.randomUUID(), step, cycleNumber: cycleNum });
+    phaseEmitSkippedStep({
+      ctx,
+      runId,
+      agentRunId: crypto.randomUUID(),
+      step,
+      cycleNumber: cycleNum,
+    });
   };
 
   // ── Skip path: prior specs + clarified plan exist ────────
   if (existingSpecsAtStart.length > 0 && fs.existsSync(clarifiedPath)) {
     fullPlanPath = clarifiedPath;
-    rlog.run("INFO", `runLoop: specs exist (${existingSpecsAtStart.length}), skipping clarification, using ${clarifiedPath}`);
+    rlog.run(
+      "INFO",
+      `runLoop: specs exist (${existingSpecsAtStart.length}), skipping clarification, using ${clarifiedPath}`,
+    );
     emit({ type: "clarification_started", runId });
     emitSkippedStep("clarification_product");
     emitSkippedStep("clarification_technical");
@@ -101,7 +115,11 @@ export async function runClarificationPhase(
   if (ctx.abort.signal.aborted) throw new AbortError();
   if (!fs.existsSync(technicalDomainPath)) {
     rlog.run("INFO", "runLoop: starting technical domain clarification");
-    const prompt = buildTechnicalClarificationPrompt(goalPath, productDomainPath, technicalDomainPath);
+    const prompt = buildTechnicalClarificationPrompt(
+      goalPath,
+      productDomainPath,
+      technicalDomainPath,
+    );
     const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_technical");
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
@@ -118,23 +136,39 @@ export async function runClarificationPhase(
   if (!fs.existsSync(clarifiedPath)) {
     rlog.run("INFO", "runLoop: starting clarification synthesis");
     const prompt = buildClarificationSynthesisPrompt(
-      goalPath, productDomainPath, technicalDomainPath, clarifiedPath,
+      goalPath,
+      productDomainPath,
+      technicalDomainPath,
+      clarifiedPath,
     );
     const result = await runStage(
-      config, prompt, emit, rlog, runId, 0, "clarification_synthesis", undefined,
+      config,
+      prompt,
+      emit,
+      rlog,
+      runId,
+      0,
+      "clarification_synthesis",
+      undefined,
       { type: "json_schema", schema: SYNTHESIS_SCHEMA as unknown as Record<string, unknown> },
     );
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
 
     // Best-effort structured-output sanity check; falls back to filesystem probing.
-    const synthesisOutput = result.structuredOutput as { filesProduced?: string[]; goalClarifiedPath?: string } | null;
+    const synthesisOutput = result.structuredOutput as {
+      filesProduced?: string[];
+      goalClarifiedPath?: string;
+    } | null;
     if (synthesisOutput?.goalClarifiedPath) {
       const resolvedPath = path.isAbsolute(synthesisOutput.goalClarifiedPath)
         ? synthesisOutput.goalClarifiedPath
         : path.join(projectDir, synthesisOutput.goalClarifiedPath);
       if (!fs.existsSync(resolvedPath)) {
-        rlog.run("WARN", `Synthesis structured output claimed ${synthesisOutput.goalClarifiedPath} but file not found — falling back to filesystem check`);
+        rlog.run(
+          "WARN",
+          `Synthesis structured output claimed ${synthesisOutput.goalClarifiedPath} but file not found — falling back to filesystem check`,
+        );
       }
     }
 
@@ -152,8 +186,9 @@ export async function runClarificationPhase(
   // [PLACEHOLDER] tokens) from `specify init` — only skip if it's been filled.
   if (ctx.abort.signal.aborted) throw new AbortError();
   const constitutionPath = path.join(projectDir, ".specify", "memory", "constitution.md");
-  const constitutionNeedsGeneration = !fs.existsSync(constitutionPath)
-    || fs.readFileSync(constitutionPath, "utf-8").includes("[PROJECT_NAME]");
+  const constitutionNeedsGeneration =
+    !fs.existsSync(constitutionPath) ||
+    fs.readFileSync(constitutionPath, "utf-8").includes("[PROJECT_NAME]");
   if (constitutionNeedsGeneration) {
     rlog.run("INFO", "runLoop: generating constitution");
     const prompt = buildConstitutionPrompt(config, fullPlanPath);

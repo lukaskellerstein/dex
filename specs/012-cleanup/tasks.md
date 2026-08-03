@@ -137,7 +137,7 @@ description: "Task list for 012-cleanup — retire variant-groups verbs and Step
 
 ### Implementation for US4
 
-- [X] T037 [P] [US4] Edit `docs/my-specs/008-interactive-checkpoint/README.md` — insert directly below the H1 the banner: `> **Status:** The "Keep this", "Unmark kept", "Try N ways from here", and Step Candidate prompt sections of this spec are superseded by `012-cleanup`. Record Mode auto-promote, Go-Back, and Jump-to-Checkpoint remain authoritative.`
+- [X] T037 [P] [US4] Edit `docs/my-specs/008-interactive-checkpoint/README.md` — insert directly below the H1 the banner: `> **Status:** The "Keep this", "Unmark kept", "Try N ways from here", and Step Candidate prompt sections of this spec are superseded by`012-cleanup`. Record Mode auto-promote, Go-Back, and Jump-to-Checkpoint remain authoritative.`
 - [X] T038 [P] [US4] Edit `docs/my-specs/010-interactive-timeline/README.md` — insert the same banner directly below the H1.
 - [X] T039 [US4] Run the audit grep `grep -l "Try N ways\|Keep this\|spawnVariants\|VariantGroupFile\|Unmark kept" docs/my-specs/`. **Result**: 6 hits — 008 README, 010 README, 011-refactoring README, 01X-state-reconciliation README all bannered. 008 plan.md exempt (not a README, per FR-016 wording). 012-cleanup README exempt (this *is* the cleanup spec, source of the banner). For every README that surfaces *and* does not yet carry the banner (e.g. `009-testing-checkpointing`, `01X-state-reconciliation`, etc.), add the same banner directly below the H1. Re-run the grep until every hit either (a) carries the banner, or (b) is intentionally exempt (note any exemptions in the PR description).
 

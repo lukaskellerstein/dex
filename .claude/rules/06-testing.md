@@ -1,5 +1,5 @@
 ---
-description: "Step 4: Testing — define DoD, reset the example project, drive the app via electron-chrome MCP, fix and repeat until passing"
+description: "Step 4: Testing — define DoD, reset the example project, drive the app via electron-playwright MCP, fix and repeat until passing"
 ---
 
 # Step 4: Testing
@@ -17,13 +17,33 @@ Before testing, **write out your DoD checklist in the conversation** so the user
 
 ## 4b. MCP Server & CDP Port
 
-One chrome-devtools MCP server is configured in `.mcp.json`:
+One Playwright MCP server is configured in `.mcp.json`. It attaches to the
+running Electron app over CDP rather than launching its own browser, which is
+why the server carries `--cdp-endpoint` and not `--isolated`:
 
 | MCP Server | CDP Port | Target | Use For |
 |---|---|---|---|
-| `electron-chrome` | 9333 | Electron app | All UI changes (renderer pages, components, IPC-driven UI) |
+| `electron-playwright` | 9333 | Electron app | All UI changes (renderer pages, components, IPC-driven UI) |
 
-Tools available: `mcp__electron-chrome__take_snapshot`, `mcp__electron-chrome__take_screenshot`, `mcp__electron-chrome__click`, `mcp__electron-chrome__evaluate_script`, `mcp__electron-chrome__fill`, `mcp__electron-chrome__navigate_page`, etc.
+The tools are `@playwright/mcp`'s, all prefixed `mcp__electron-playwright__`:
+
+| Tool | Does |
+|---|---|
+| `browser_snapshot` | Accessibility snapshot — the source of the `ref=` handles every interaction needs. Prefer it over a screenshot. |
+| `browser_find` | Search the snapshot for text and get back just the matching nodes plus their `ref`s — cheaper than a full snapshot when you only need one element. |
+| `browser_click` | Click by `ref` |
+| `browser_type` | Type into one element by `ref` |
+| `browser_fill_form` | Fill several fields in one call — takes a `fields` array |
+| `browser_evaluate` | Run `() => { … }` in the page (or `(element) => { … }` with a `ref`) |
+| `browser_console_messages` | All console output; pass `all: true` for the whole session rather than since last navigation |
+| `browser_take_screenshot` | Pixels, for visual confirmation only — you cannot act on a screenshot |
+| `browser_navigate` | Navigate the attached page |
+| `browser_tabs` | List / select / close tabs |
+
+> Playwright MCP identifies elements by **`ref`** taken from a snapshot, not by
+> `uid` and not by CSS selector. Snapshot (or `browser_find`) first, then act on
+> the `ref` it returned — refs go stale after the page changes, so re-snapshot
+> after anything that re-renders.
 
 ## 4c. Example project for end-to-end testing
 
@@ -31,9 +51,14 @@ For any test that exercises the full loop (welcome screen → loop start → aut
 
 | Field | Value |
 |---|---|
-| Parent path | `/home/lukas/Projects/Github/lukaskellerstein` |
+| Parent path | `~/Projects/Github/lukaskellerstein` |
 | Project name | `dex-ecommerce` |
-| Full path | `/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce` |
+| Full path | `~/Projects/Github/lukaskellerstein/dex-ecommerce` |
+
+> `~` is a shell expansion. It works unquoted in the `bash` blocks below, but a
+> value **typed into one of the app's inputs** is read by `fs.existsSync`, which
+> treats `~` as a literal directory name. Expand it first —
+> `echo $HOME/Projects/Github/lukaskellerstein` — and type the result.
 
 ### Step 1 — Reset the example project
 
@@ -87,7 +112,7 @@ git tag --list 'checkpoint/*' | sort
 Sanity check — after reset, inspect the workspace:
 
 ```bash
-cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce && git status --short && ls
+cd ~/Projects/Github/lukaskellerstein/dex-ecommerce && git status --short && ls
 ```
 
 For `initial`, `clean`, or `pristine`, `ls` must show only the root commit's contents (typically `GOAL.md`) and `.git/`. For a checkpoint reset, the tree matches that checkpoint's commit.
@@ -98,12 +123,12 @@ For `initial`, `clean`, or `pristine`, `ls` must show only the root commit's con
 
 ### Step 2 — Ensure the dev server is running
 
-Check `electron-chrome` MCP connectivity via `mcp__electron-chrome__list_pages` (or `curl -fs http://localhost:9333/json/version`). If it fails, `dev-setup.sh` is not running.
+Check `electron-playwright` MCP connectivity via `mcp__electron-playwright__browser_tabs` with `action: "list"` (or `curl -fs http://localhost:9333/json/version`). If it fails, `dev-setup.sh` is not running.
 
 **You are authorized to start the dev server yourself.** Do not ask the user to run it. Run it in the background and continue:
 
 ```sh
-bash /home/lukas/Projects/Github/lukaskellerstein/dex/dev-setup.sh    # run_in_background=true
+bash ~/Projects/Github/lukaskellerstein/dex/dev-setup.sh    # run_in_background=true
 ```
 
 Then poll `~/.dex/dev-logs/vite.log` and `~/.dex/dev-logs/electron.log` (truncated on every start) until you see `ready in` (Vite) and `DevTools listening on ws://127.0.0.1:9333` (Electron) — typically 5–15 seconds. After that, CDP is reachable and you can drive the app. **Never** background the script and immediately fire CDP commands; wait for the readiness lines.
@@ -125,10 +150,10 @@ The welcome screen inputs have stable `data-testid` attributes:
 
 Fill and submit:
 
-1. Snapshot with `mcp__electron-chrome__take_snapshot` to resolve uids for the inputs.
-2. `mcp__electron-chrome__fill` the `welcome-path` input with `/home/lukas/Projects/Github/lukaskellerstein`.
-3. `mcp__electron-chrome__fill` the `welcome-name` input with `dex-ecommerce`.
-4. The submit button label should now read `Open Existing` (because the folder exists after reset). Click it.
+1. `mcp__electron-playwright__browser_snapshot` to resolve the `ref` for each input.
+2. `mcp__electron-playwright__browser_fill_form` with both fields in one call — `welcome-path` set to the **expanded** parent path (`echo $HOME/Projects/Github/lukaskellerstein`; the input does not expand `~`), `welcome-name` set to `dex-ecommerce`.
+3. Re-snapshot — the submit button label should now read `Open Existing` (because the folder exists after reset).
+4. `mcp__electron-playwright__browser_click` on the `welcome-submit` ref.
 
 ### Step 4 — Start the autonomous loop
 
@@ -142,19 +167,30 @@ From here the orchestrator takes over: it creates its own branch, runs clarifica
 
 ## 4d. Test
 
-**UI / Renderer changes** — use `electron-chrome` MCP (CDP port 9333):
+**UI / Renderer changes** — use `electron-playwright` MCP (CDP port 9333):
 1. Ensure `dev-setup.sh` is running.
 2. For any flow that requires an open project, follow section **4c** first.
-3. Use `mcp__electron-chrome__*` tools to verify the change is visible and functional.
+3. Use `mcp__electron-playwright__*` tools to verify the change is visible and functional.
 
 **Core engine changes** (`src/core/`):
-1. Run `npx tsc --noEmit` to verify types compile.
-2. If unit tests exist, run them.
-3. If the change affects UI behavior, verify via `electron-chrome` MCP following section **4c**.
+1. Run `npm run typecheck` to verify types compile — **not** a bare `npx tsc --noEmit`, which
+   uses the build config and therefore skips both the renderer and every `*.test.ts`.
+2. Run the project's tests: `npm test` (core via `node --test`, renderer via `vitest`, plus `check:size`).
+3. If the change affects UI behavior, verify via `electron-playwright` MCP following section **4c**.
 
 **IPC / Main process changes**:
 1. Verify the Electron app starts without errors (check `~/.dex/dev-logs/electron.log`).
-2. Test IPC round-trips via `mcp__electron-chrome__evaluate_script` calling `window.dexAPI.*` methods.
+2. Test IPC round-trips via `mcp__electron-playwright__browser_evaluate` calling `window.dexAPI.*` methods.
+
+**Every code change** — repo-wide lint / format / type check:
+
+```bash
+nvim-tools --json --all
+```
+
+Your change must not add findings, measured against the baseline you took in the
+Understand step. How to read the output (including `gated-off`), and why this
+never replaces `npm test`: [`machine-tools.md`](machine-tools.md).
 
 **Non-testable changes** (docs, config, build scripts): explicitly state why no runtime test is needed.
 
@@ -180,13 +216,13 @@ When something looks wrong, check these sources in order. They are listed from c
 - **App won't load** → `vite.log` for a build error, then `electron.log` for a "Failed to load URL" line.
 - **IPC call returns undefined / throws** → `electron.log`, grep for the handler name (e.g. `project:open-path`) or the error class.
 - **Orchestrator crashes mid-run** → cross-reference `electron.log` and the per-run log tree in 4f.2.
-- **Renderer-side errors** (React render exceptions, unhandled promises in the UI) — these do **not** appear in `electron.log`. Use the DevTools console via MCP: `mcp__electron-chrome__list_console_messages`.
+- **Renderer-side errors** (React render exceptions, unhandled promises in the UI) — these do **not** appear in `electron.log`. Use the DevTools console via MCP: `mcp__electron-playwright__browser_console_messages`.
 
 ### 4f.2 Per-run orchestrator logs — `~/.dex/logs/<project>/<run-id>/`
 
 This is the **authoritative log tree for anything the orchestrator does**. Structured per run, per phase, and per subagent — exactly the granularity you need when debugging a specific agent's behavior. Persisted forever (no truncation on restart).
 
-```
+```text
 ~/.dex/logs/<project-name>/<run-id>/
 ├── run.log                              — run-level lifecycle (prerequisites, branch creation, stage transitions, termination)
 └── phase-<N>_<slug>/                    — one dir per phase the orchestrator opened
@@ -197,7 +233,7 @@ This is the **authoritative log tree for anything the orchestrator does**. Struc
 
 Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 
-```
+```text
 [2026-04-16T20:38:42.431Z] [INFO] run: starting orchestrator {"mode":"loop","model":"claude-opus-4-6",...}
 [2026-04-16T20:38:42.580Z] [INFO] runLoop: created branch con/2026-04-16-3b084c from main
 ```
@@ -221,7 +257,7 @@ Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 
 ### 4f.3 Per-project state — `<projectDir>/.dex/`
 
-Each project gets its own state directory. For the example project that's `/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce/.dex/`. After a reset (section 4c.1), this directory is gone; the loop recreates it on start.
+Each project gets its own state directory. For the example project that's `~/Projects/Github/lukaskellerstein/dex-ecommerce/.dex/`. After a reset (section 4c.1), this directory is gone; the loop recreates it on start.
 
 | File | Contains |
 |---|---|
@@ -252,7 +288,7 @@ Schema (see `specs/007-sqlite-removal/contracts/json-schemas.md` for the authori
 - `window.dexAPI.getAgentRunSubagents(projectDir, runId, agentRunId)` — subagents of one agent run
 - `window.dexAPI.getSpecAgentRuns(projectDir, specDir)` / `getSpecAggregateStats(projectDir, specDir)` — spec-folder roll-ups
 
-Invoke via `mcp__electron-chrome__evaluate_script`:
+Invoke via `mcp__electron-playwright__browser_evaluate` — the `function` parameter takes the arrow function itself:
 
 ```js
 async () => await window.dexAPI.getLatestProjectRun("/abs/path/to/project")
@@ -281,8 +317,7 @@ The JSON files and the per-run log tree in 4f.2 share the same IDs — `runId`, 
 
 For errors that happen in the React app (render exceptions, unhandled rejections in hooks, etc.):
 
-- `mcp__electron-chrome__list_console_messages` — all console output the page has emitted this session.
-- `mcp__electron-chrome__get_console_message` — inspect a single entry.
+- `mcp__electron-playwright__browser_console_messages` — console output. It returns messages since the last navigation by default; pass `all: true` for everything since the session started, and `level` to filter by severity.
 
 This is the **only** place renderer errors surface — they are not in `~/.dex/dev-logs/electron.log` and not in the per-run orchestrator logs.
 
@@ -297,7 +332,7 @@ Clicking it copies the current debug context to the clipboard and briefly flips 
 
 The payload is plain text, formatted like:
 
-```
+```text
 Dex Debug Context
 ─────────────────
 RunID:           <uuid>

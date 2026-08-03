@@ -100,6 +100,7 @@ then return `branch_in_active_run`. This is consistent with the existing `withLo
 ## Logging
 
 The handler writes a single line to the IPC logger on success:
+
 ```
 [INFO] deleteBranch: deleted <branchName>(switchedTo=<...>) (caller=<wcId>)
 ```

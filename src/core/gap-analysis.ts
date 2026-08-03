@@ -29,10 +29,7 @@ type LlmDecision = Extract<GapAnalysisDecision, { type: "RESUME_FEATURE" | "REPL
  * object, missing `decision` field, non-string `decision`, or an unknown
  * decision string). Callers that want a fallback must catch.
  */
-export function parseGapAnalysisDecision(
-  structuredOutput: unknown,
-  specDir: string,
-): LlmDecision {
+export function parseGapAnalysisDecision(structuredOutput: unknown, specDir: string): LlmDecision {
   if (structuredOutput === null || typeof structuredOutput !== "object") {
     throw new Error(
       `parseGapAnalysisDecision: expected object, got ${structuredOutput === null ? "null" : typeof structuredOutput}`,
@@ -51,7 +48,9 @@ export function parseGapAnalysisDecision(
     );
   }
   if (!specDir) {
-    throw new Error("parseGapAnalysisDecision: specDir is required for RESUME_FEATURE / REPLAN_FEATURE");
+    throw new Error(
+      "parseGapAnalysisDecision: specDir is required for RESUME_FEATURE / REPLAN_FEATURE",
+    );
   }
   return { type: decision, specDir };
 }
@@ -65,9 +64,11 @@ export function parseGapAnalysisDecision(
  * required — the function is pure. Sync return is correct and lets the test
  * contract avoid await noise.
  */
-export function applyGapAnalysisDecision(
-  decision: GapAnalysisDecision,
-): { nextSpecDir?: string; nextStep?: StepType; terminate?: boolean } {
+export function applyGapAnalysisDecision(decision: GapAnalysisDecision): {
+  nextSpecDir?: string;
+  nextStep?: StepType;
+  terminate?: boolean;
+} {
   switch (decision.type) {
     case "NEXT_FEATURE":
       return { nextStep: "specify" };
@@ -96,20 +97,17 @@ export function applyGapAnalysisDecision(
  * in one place instead of scattering `default: throw` defenses across the
  * cycle iterator.
  */
-export function shouldRunStage(
-  decision: GapAnalysisDecision,
-  step: StepType,
-): boolean {
+export function shouldRunStage(decision: GapAnalysisDecision, step: StepType): boolean {
   switch (decision.type) {
     case "NEXT_FEATURE":
       return step !== "gap_analysis";
     case "REPLAN_FEATURE":
       return (
-        step === "plan"
-        || step === "tasks"
-        || step === "implement"
-        || step === "verify"
-        || step === "learnings"
+        step === "plan" ||
+        step === "tasks" ||
+        step === "implement" ||
+        step === "verify" ||
+        step === "learnings"
       );
     case "RESUME_FEATURE":
       return step === "implement" || step === "verify" || step === "learnings";

@@ -81,10 +81,12 @@ This document resolves all architectural unknowns identified in Technical Contex
   - Underscore→dash slug: `clarification_product` → `clarification-product`.
 - **User-facing labels**: single function `labelFor(stage, cycleNumber, featureSlug?)` in `src/core/checkpoints.ts`. Examples: `"prerequisites done"`, `"cycle 2 · cart · after tasks"`, `"learnings captured"`. No git vocabulary in labels.
 - **Structured commit message** (commit the tag points at):
+
   ```
   dex: <stage> completed [cycle:<N>] [feature:<slug>] [cost:$X.XX]
   [checkpoint:<stage>:<cycle>]
   ```
+
   Shared constant `CHECKPOINT_MESSAGE_PREFIX = "[checkpoint:"`.
 
 **Rationale**:

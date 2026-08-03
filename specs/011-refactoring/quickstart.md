@@ -232,10 +232,12 @@ Wave-gate verification suite. PR: `phase 2/wave-D: renderer hook tests`. After m
 **Wave-internal (before merge)**: `git reset --hard <prior-gate-tip>` on `011-refactoring`. The prior gate's commit SHA is the rollback target. Branch-local; no other waves affected.
 
 **Post-merge**: revert PR on `main` using the command in the wave's PR description:
+
 ```bash
 git revert <merge-sha> -m 1
 git push origin main
 ```
+
 Then re-run the smoke checklist from the PR description to confirm the revert restored function.
 
 **If the rollback also fails**: stop and escalate to the user. Do not improvise destructive recovery on `main`.

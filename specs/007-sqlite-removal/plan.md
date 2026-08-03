@@ -122,4 +122,4 @@ CLAUDE.md                       # EDITED — dependency list updated, on-disk la
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| _(none)_  | _(none)_   | _(none)_                             |
+| *(none)*  | *(none)*   | *(none)*                             |

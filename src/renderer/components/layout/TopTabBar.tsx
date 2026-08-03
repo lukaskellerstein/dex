@@ -1,4 +1,4 @@
-import { ListChecks, GitBranch } from "lucide-react";
+import { GitBranch, ListChecks } from "lucide-react";
 
 export type TopTab = "steps" | "timeline";
 
@@ -15,16 +15,18 @@ const TABS: { id: TopTab; label: string; Icon: typeof ListChecks }[] = [
 export function TopTabBar({ active, onChange }: Props) {
   return (
     <div
-      style={{
-        display: "flex",
-        alignItems: "stretch",
-        gap: 0,
-        background: "var(--surface)",
-        borderBottom: "1px solid var(--border)",
-        height: 36,
-        paddingLeft: 14,
-        WebkitAppRegion: "no-drag",
-      } as React.CSSProperties}
+      style={
+        {
+          display: "flex",
+          alignItems: "stretch",
+          gap: 0,
+          background: "var(--surface)",
+          borderBottom: "1px solid var(--border)",
+          height: 36,
+          paddingLeft: 14,
+          WebkitAppRegion: "no-drag",
+        } as React.CSSProperties
+      }
     >
       {TABS.map(({ id, label, Icon }) => {
         const isActive = active === id;
@@ -42,9 +44,7 @@ export function TopTabBar({ active, onChange }: Props) {
               height: "100%",
               background: "transparent",
               border: "none",
-              borderBottom: isActive
-                ? "2px solid var(--primary)"
-                : "2px solid transparent",
+              borderBottom: isActive ? "2px solid var(--primary)" : "2px solid transparent",
               color: isActive ? "var(--foreground)" : "var(--foreground-muted)",
               fontSize: "0.82rem",
               fontWeight: isActive ? 600 : 500,
@@ -55,8 +55,7 @@ export function TopTabBar({ active, onChange }: Props) {
               if (!isActive) e.currentTarget.style.color = "var(--foreground)";
             }}
             onMouseLeave={(e) => {
-              if (!isActive)
-                e.currentTarget.style.color = "var(--foreground-muted)";
+              if (!isActive) e.currentTarget.style.color = "var(--foreground-muted)";
             }}
           >
             <Icon size={14} />

@@ -5,7 +5,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { gitExec, safeExec, log, type RunLoggerLike } from "./_helpers.js";
+import { gitExec, log, type RunLoggerLike, safeExec } from "./_helpers.js";
 import { selectedBranchName } from "./tags.js";
 
 // ── Jump-to (010) ────────────────────────────────────────
@@ -99,8 +99,7 @@ export function jumpTo(
         return {
           ok: false,
           error: "git_error",
-          message:
-            "Cannot save changes while in detached-HEAD state. Switch to a branch first.",
+          message: "Cannot save changes while in detached-HEAD state. Switch to a branch first.",
         };
       }
       try {
@@ -181,10 +180,7 @@ function maybePruneEmptySelected(
   if (previousBranch === newBranch) return;
   if (!previousBranch.startsWith("selected-")) return;
 
-  const reachable = safeExec(
-    `git log ${previousBranch} --format=%H ^${newBranch}`,
-    projectDir,
-  )
+  const reachable = safeExec(`git log ${previousBranch} --format=%H ^${newBranch}`, projectDir)
     .split("\n")
     .filter(Boolean);
   if (reachable.length > 0) return; // has commits the new branch doesn't — keep

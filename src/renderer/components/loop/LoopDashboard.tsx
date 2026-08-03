@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
 import { GitBranch } from "lucide-react";
-import type { StepType, LoopTermination, PrerequisiteCheck } from "../../../core/types.js";
-import type { UiLoopCycle, UiLoopStage, LatestAction } from "../../hooks/useOrchestrator.js";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { LoopTermination, PrerequisiteCheck, StepType } from "../../../core/types.js";
+import type { LatestAction, UiLoopCycle, UiLoopStage } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
-import { ProcessStepper } from "./ProcessStepper.js";
 import { useTimeline } from "../checkpoints/hooks/useTimeline.js";
-import { PrerequisitesPhase } from "./phases/PrerequisitesPhase.js";
+import { ProcessStepper } from "./ProcessStepper.js";
 import { ClarificationPhase } from "./phases/ClarificationPhase.js";
-import { LoopPhase } from "./phases/LoopPhase.js";
 import { CompletionPhase } from "./phases/CompletionPhase.js";
+import { LoopPhase } from "./phases/LoopPhase.js";
+import { PrerequisitesPhase } from "./phases/PrerequisitesPhase.js";
+
 type MacroPhase = "prerequisites" | "clarification" | "loop" | "completion";
 type PhaseStatus = "pending" | "active" | "done";
 
@@ -34,8 +35,12 @@ export interface LoopDashboardProps {
 }
 
 const CLARIFICATION_STAGE_TYPES = [
-  "clarification", "clarification_product", "clarification_technical",
-  "clarification_synthesis", "constitution", "manifest_extraction",
+  "clarification",
+  "clarification_product",
+  "clarification_technical",
+  "clarification_synthesis",
+  "constitution",
+  "manifest_extraction",
 ];
 
 function deriveActivePhase(
@@ -44,27 +49,28 @@ function deriveActivePhase(
   preCycleStages: UiLoopStage[],
   cycles: UiLoopCycle[],
   loopTermination: LoopTermination | null,
-  isRunning: boolean
+  isRunning: boolean,
 ): MacroPhase {
   // Only advance to "completion" for genuine termination — not user aborts or budget stops
-  if (loopTermination && !isRunning && loopTermination.reason === "gaps_complete") return "completion";
+  if (loopTermination && !isRunning && loopTermination.reason === "gaps_complete")
+    return "completion";
   const prerequisitesStage = preCycleStages.find((s) => s.type === "prerequisites");
-  if (isCheckingPrerequisites || (prerequisitesStage?.status === "running")) return "prerequisites";
+  if (isCheckingPrerequisites || prerequisitesStage?.status === "running") return "prerequisites";
   if (!prerequisitesStage && isRunning && preCycleStages.length === 0) return "prerequisites";
   const anyClarificationRunning = preCycleStages.some(
-    (s) => CLARIFICATION_STAGE_TYPES.includes(s.type) && s.status === "running"
+    (s) => CLARIFICATION_STAGE_TYPES.includes(s.type) && s.status === "running",
   );
   if (isClarifying || anyClarificationRunning) return "clarification";
   if (cycles.length > 0) return "loop";
-  const clarificationStages = preCycleStages.filter(
-    (s) => CLARIFICATION_STAGE_TYPES.includes(s.type)
+  const clarificationStages = preCycleStages.filter((s) =>
+    CLARIFICATION_STAGE_TYPES.includes(s.type),
   );
   const anyClarificationDone = clarificationStages.some((s) => s.status === "completed");
   // All 5 expected stages must be completed to advance past clarification:
   // clarification_product, clarification_technical, clarification_synthesis,
   // constitution, manifest_extraction
-  const allClarificationDone = clarificationStages.length >= 5
-    && clarificationStages.every((s) => s.status === "completed");
+  const allClarificationDone =
+    clarificationStages.length >= 5 && clarificationStages.every((s) => s.status === "completed");
   if (allClarificationDone && !isClarifying) return "loop";
   // Some done but not all — clarification is still active (paused mid-way)
   if (anyClarificationDone) return "clarification";
@@ -72,10 +78,7 @@ function deriveActivePhase(
   return "prerequisites";
 }
 
-function derivePhaseStatus(
-  phase: MacroPhase,
-  activePhase: MacroPhase,
-): PhaseStatus {
+function derivePhaseStatus(phase: MacroPhase, activePhase: MacroPhase): PhaseStatus {
   const order: MacroPhase[] = ["prerequisites", "clarification", "loop", "completion"];
   const activeIdx = order.indexOf(activePhase);
   const phaseIdx = order.indexOf(phase);
@@ -114,8 +117,7 @@ function mergeCycles(path: UiLoopCycle[], orch: UiLoopCycle[]): UiLoopCycle[] {
       ...c,
       status,
       stages: mergeStages(existing.stages, c.stages),
-      implementPhases:
-        c.implementPhases.length > 0 ? c.implementPhases : existing.implementPhases,
+      implementPhases: c.implementPhases.length > 0 ? c.implementPhases : existing.implementPhases,
     });
   }
   return [...byCycle.values()].sort((a, b) => a.cycleNumber - b.cycleNumber);
@@ -338,7 +340,8 @@ export function LoopDashboard({
   const clarificationStatus = derivePhaseStatus("clarification", activePhase);
   const loopStatus = derivePhaseStatus("loop", activePhase);
   const completionStatus = derivePhaseStatus("completion", activePhase);
-  const finalCompletionStatus: PhaseStatus = effectiveLoopTermination?.reason === "gaps_complete" ? "done" : completionStatus;
+  const finalCompletionStatus: PhaseStatus =
+    effectiveLoopTermination?.reason === "gaps_complete" ? "done" : completionStatus;
 
   const handleSelect = useCallback((phase: MacroPhase) => {
     setSelectedPhase(phase);
@@ -417,12 +420,18 @@ export function LoopDashboard({
         )}
 
         {selectedPhase === "completion" && !effectiveLoopTermination && (
-          <div style={{ textAlign: "center", paddingTop: 60, color: "var(--foreground-dim)", fontSize: "0.82rem" }}>
+          <div
+            style={{
+              textAlign: "center",
+              paddingTop: 60,
+              color: "var(--foreground-dim)",
+              fontSize: "0.82rem",
+            }}
+          >
             Loop has not completed yet
           </div>
         )}
       </div>
-
     </div>
   );
 }

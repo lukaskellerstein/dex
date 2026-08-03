@@ -1,0 +1,18 @@
+{
+  // The root tsconfig.json drives the dist/ build, so it excludes test files —
+  // they must not be emitted. That left src/core/__tests__/** and *.test.ts
+  // type-checked by nothing, which is how runs.test.ts kept calling appendStep()
+  // and startPhase() for months after they were renamed: never compiled, and
+  // never run either.
+  //
+  // This config re-includes them for type checking only (noEmit). Run via
+  // `npm run typecheck`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Core test files import siblings with an explicit .ts extension.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/core/**/*", "src/main/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

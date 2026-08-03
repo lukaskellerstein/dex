@@ -1,13 +1,13 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import test from "node:test";
 import {
   loadMockConfig,
-  mockConfigPath,
-  MockConfigParseError,
   MockConfigInvalidError,
+  MockConfigParseError,
+  mockConfigPath,
   PHASE_OF_STEP,
 } from "../MockConfig.ts";
 
@@ -106,9 +106,7 @@ test("MockConfig: writes entry without 'content' throws", () => {
   const dir = mkProject();
   try {
     const bad = structuredClone(VALID_CONFIG);
-    (bad.dex_loop.cycles[0].stages.specify as Record<string, unknown>).writes = [
-      { path: "x.md" },
-    ];
+    (bad.dex_loop.cycles[0].stages.specify as Record<string, unknown>).writes = [{ path: "x.md" }];
     writeConfig(dir, JSON.stringify(bad));
     assert.throws(() => loadMockConfig(dir), /\.content must be a string/);
   } finally {

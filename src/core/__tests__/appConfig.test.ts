@@ -1,14 +1,14 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import test from "node:test";
 import {
-  loadAppConfig,
   appConfigPath,
+  DEFAULT_APP_CONFIG,
   expandNameTemplate,
   getWelcomeDefaults,
-  DEFAULT_APP_CONFIG,
+  loadAppConfig,
 } from "../appConfig.ts";
 
 function mkTmpHome(): string {
@@ -37,9 +37,12 @@ test("appConfig: missing file seeds defaults to disk and returns them", () => {
 test("appConfig: valid file is parsed", () => {
   const home = mkTmpHome();
   try {
-    writeConfig(home, JSON.stringify({
-      welcome: { defaultLocation: "/tmp/x", defaultName: "alpha-{random:4}" },
-    }));
+    writeConfig(
+      home,
+      JSON.stringify({
+        welcome: { defaultLocation: "/tmp/x", defaultName: "alpha-{random:4}" },
+      }),
+    );
     const cfg = loadAppConfig(home);
     assert.equal(cfg.welcome.defaultLocation, "/tmp/x");
     assert.equal(cfg.welcome.defaultName, "alpha-{random:4}");

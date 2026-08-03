@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrchestratorEvent } from "../../../core/types.js";
 
 type EventHandler = (event: OrchestratorEvent) => void;
@@ -29,7 +29,7 @@ function emit(event: OrchestratorEvent) {
 const baseConfig = {
   projectDir: "/p",
   specDir: "specs/001-foo",
-  mode: "loop",
+  mode: "loop" as const,
   model: "claude-opus-4-6",
   maxIterations: 50,
   maxTurns: 75,
@@ -95,8 +95,12 @@ describe("useRunSession", () => {
     emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
     emit({
       type: "step_completed",
-      runId: "r-1", cycleNumber: 1, step: "specify", agentRunId: "ar-1",
-      costUsd: 0.1, durationMs: 1000,
+      runId: "r-1",
+      cycleNumber: 1,
+      step: "specify",
+      agentRunId: "ar-1",
+      costUsd: 0.1,
+      durationMs: 1000,
     });
     expect(result.current.totalDuration).toBe(1000);
     emit({
@@ -119,15 +123,31 @@ describe("useRunSession", () => {
           name: "Setup",
           purpose: "",
           tasks: [
-            { number: 1, description: "init", status: "done", parallel: false },
-            { number: 2, description: "config", status: "in_progress", parallel: false },
+            {
+              id: "T001",
+              userStory: null,
+              priority: null,
+              description: "init",
+              status: "done",
+              lineNumber: 1,
+              phase: 1,
+            },
+            {
+              id: "T002",
+              userStory: null,
+              priority: null,
+              description: "config",
+              status: "in_progress",
+              lineNumber: 2,
+              phase: 1,
+            },
           ],
           status: "partial",
         },
       ],
     });
     expect(result.current.activeTask).toMatchObject({
-      number: 2,
+      id: "T002",
       description: "config",
       status: "in_progress",
     });

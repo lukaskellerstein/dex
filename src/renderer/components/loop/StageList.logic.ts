@@ -4,7 +4,7 @@
  * Deps: StepType, UiLoopStage, ImplementSubPhase types only.
  */
 import type { StepType } from "../../../core/types.js";
-import type { UiLoopStage, ImplementSubPhase } from "../../hooks/useOrchestrator.js";
+import type { ImplementSubPhase, UiLoopStage } from "../../hooks/useOrchestrator.js";
 
 export const CYCLE_STAGES: StepType[] = [
   "gap_analysis",
@@ -33,16 +33,11 @@ export const STEP_LABELS: Record<StepType, string> = {
   implement_fix: "Implement Fix",
   verify: "Verify",
   learnings: "Learnings",
+  completion: "Completion",
   commit: "Commit",
 };
 
-export type StageStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "skipped"
-  | "failed"
-  | "paused";
+export type StageStatus = "pending" | "running" | "completed" | "skipped" | "failed" | "paused";
 
 export function getStageVisibility(stageType: StepType, decision: string | null): "show" | "skip" {
   if (!decision) return "show";
@@ -154,9 +149,7 @@ export function resolvePausePendingStage(
   currentStage: StepType | null = null,
 ): StepType | null {
   const inWarmup =
-    isRunning &&
-    isActiveCycle &&
-    (currentStage === null || !visibleStages.includes(currentStage));
+    isRunning && isActiveCycle && (currentStage === null || !visibleStages.includes(currentStage));
   const inNavigatedMidCycle =
     !isRunning &&
     visibleStages.some((st) => pathStages.has(st)) &&

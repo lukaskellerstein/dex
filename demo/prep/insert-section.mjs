@@ -15,23 +15,23 @@
  *
  * Without --apply it prints the plan and changes nothing.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const demoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const demoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const argOf = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : null;
 };
-const afterId = argOf('--after');
-const newId = argOf('--id');
-const first = args.includes('--first');
-const apply = args.includes('--apply');
+const afterId = argOf("--after");
+const newId = argOf("--id");
+const first = args.includes("--first");
+const apply = args.includes("--apply");
 
 if ((!afterId && !first) || (afterId && first) || !newId) {
-  console.error('usage: insert-section.mjs (--after <id> | --first) --id <newId> [--apply]');
+  console.error("usage: insert-section.mjs (--after <id> | --first) --id <newId> [--apply]");
   process.exit(2);
 }
 if (!/^\d{2}-[a-z0-9][a-z0-9-]*$/.test(newId)) {
@@ -39,8 +39,8 @@ if (!/^\d{2}-[a-z0-9][a-z0-9-]*$/.test(newId)) {
   process.exit(2);
 }
 
-const storyboardPath = path.join(demoDir, 'storyboard.json');
-const storyboard = JSON.parse(fs.readFileSync(storyboardPath, 'utf8'));
+const storyboardPath = path.join(demoDir, "storyboard.json");
+const storyboard = JSON.parse(fs.readFileSync(storyboardPath, "utf8"));
 
 let insertAt = 0;
 if (!first) {
@@ -54,7 +54,7 @@ if (!first) {
 const targetOrdinal = Number(newId.slice(0, 2));
 if (targetOrdinal !== insertAt + 1) {
   console.error(
-    `--id "${newId}" has ordinal ${targetOrdinal} but inserting ${first ? 'first' : `after "${afterId}"`} ` +
+    `--id "${newId}" has ordinal ${targetOrdinal} but inserting ${first ? "first" : `after "${afterId}"`} ` +
       `puts it at position ${insertAt + 1}.`,
   );
   process.exit(1);
@@ -66,7 +66,7 @@ const renames = [];
 for (let i = insertAt; i < storyboard.sections.length; i++) {
   const s = storyboard.sections[i];
   const slug = s.id.slice(3);
-  const to = `${String(i + 2).padStart(2, '0')}-${slug}`;
+  const to = `${String(i + 2).padStart(2, "0")}-${slug}`;
   renames.push({ from: s.id, to });
 }
 
@@ -76,8 +76,8 @@ const ordered = [...renames].reverse();
 const mediaMoves = [];
 for (const { from, to } of ordered) {
   for (const [dir, exts] of [
-    ['capture', ['.mp4', '.json']],
-    ['audio', ['.mp3', '.json', '.align.json']],
+    ["capture", [".mp4", ".json"]],
+    ["audio", [".mp3", ".json", ".align.json"]],
   ]) {
     for (const ext of exts) {
       const src = path.join(demoDir, dir, `${from}${ext}`);
@@ -88,15 +88,18 @@ for (const { from, to } of ordered) {
   }
 }
 
-console.log(`insert "${newId}" ${first ? 'first' : `after "${afterId}"`} (position ${insertAt + 1})\n`);
-console.log('section renumbering:');
+console.log(
+  `insert "${newId}" ${first ? "first" : `after "${afterId}"`} (position ${insertAt + 1})\n`,
+);
+console.log("section renumbering:");
 for (const { from, to } of renames) console.log(`  ${from} -> ${to}`);
-console.log('\nmedia renames:');
-for (const m of mediaMoves) console.log(`  ${path.relative(demoDir, m.src)} -> ${path.basename(m.dest)}`);
-if (!mediaMoves.length) console.log('  (none found)');
+console.log("\nmedia renames:");
+for (const m of mediaMoves)
+  console.log(`  ${path.relative(demoDir, m.src)} -> ${path.basename(m.dest)}`);
+if (!mediaMoves.length) console.log("  (none found)");
 
 if (!apply) {
-  console.log('\ndry run — pass --apply to write');
+  console.log("\ndry run — pass --apply to write");
   process.exit(0);
 }
 
@@ -111,12 +114,12 @@ for (const { src, dest } of mediaMoves) {
 // Sidecars embed their own id and relative path; leaving them stale would make
 // reconcile trust the wrong duration for the wrong section.
 for (const { dest, dir, ext } of mediaMoves) {
-  if (!ext.endsWith('.json')) continue;
-  const sidecar = JSON.parse(fs.readFileSync(dest, 'utf8'));
-  const id = path.basename(dest).replace(/\.(align\.)?json$/, '');
+  if (!ext.endsWith(".json")) continue;
+  const sidecar = JSON.parse(fs.readFileSync(dest, "utf8"));
+  const id = path.basename(dest).replace(/\.(align\.)?json$/, "");
   sidecar.id = id;
-  if (sidecar.file) sidecar.file = `${dir}/${id}${dir === 'capture' ? '.mp4' : '.mp3'}`;
-  fs.writeFileSync(dest, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  if (sidecar.file) sidecar.file = `${dir}/${id}${dir === "capture" ? ".mp4" : ".mp3"}`;
+  fs.writeFileSync(dest, `${JSON.stringify(sidecar, null, 2)}\n`, "utf8");
 }
 
 const renameMap = new Map(renames.map((r) => [r.from, r.to]));
@@ -126,14 +129,16 @@ for (const s of storyboard.sections) {
 
 storyboard.sections.splice(insertAt, 0, {
   id: newId,
-  beat: 'proof',
-  title: 'PLACEHOLDER — fill in',
-  surface: 'code',
+  beat: "proof",
+  title: "PLACEHOLDER — fill in",
+  surface: "code",
   targetSeconds: 15,
-  voiceover: 'PLACEHOLDER',
-  code: { file: 'PLACEHOLDER', content: 'PLACEHOLDER' },
-  successCriteria: 'PLACEHOLDER',
+  voiceover: "PLACEHOLDER",
+  code: { file: "PLACEHOLDER", content: "PLACEHOLDER" },
+  successCriteria: "PLACEHOLDER",
 });
 
-fs.writeFileSync(storyboardPath, `${JSON.stringify(storyboard, null, 2)}\n`, 'utf8');
-console.log(`\napplied. "${newId}" inserted as a placeholder — fill in its fields, then reconcile.`);
+fs.writeFileSync(storyboardPath, `${JSON.stringify(storyboard, null, 2)}\n`, "utf8");
+console.log(
+  `\napplied. "${newId}" inserted as a placeholder — fill in its fields, then reconcile.`,
+);

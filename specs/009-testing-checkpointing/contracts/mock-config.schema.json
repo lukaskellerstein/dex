@@ -56,23 +56,31 @@
           "required": ["id", "title"],
           "additionalProperties": false,
           "properties": {
-            "id":    { "type": "string", "minLength": 1 },
+            "id": { "type": "string", "minLength": 1 },
             "title": { "type": "string", "minLength": 1 }
           }
         },
         "stages": {
           "type": "object",
-          "required": ["gap_analysis", "specify", "plan", "tasks", "implement", "verify", "learnings"],
+          "required": [
+            "gap_analysis",
+            "specify",
+            "plan",
+            "tasks",
+            "implement",
+            "verify",
+            "learnings"
+          ],
           "additionalProperties": false,
           "properties": {
-            "gap_analysis":   { "$ref": "#/$defs/StepDescriptor" },
-            "specify":        { "$ref": "#/$defs/StepDescriptor" },
-            "plan":           { "$ref": "#/$defs/StepDescriptor" },
-            "tasks":          { "$ref": "#/$defs/StepDescriptor" },
-            "implement":      { "$ref": "#/$defs/StepDescriptor" },
-            "implement_fix":  { "$ref": "#/$defs/StepDescriptor" },
-            "verify":         { "$ref": "#/$defs/StepDescriptor" },
-            "learnings":      { "$ref": "#/$defs/StepDescriptor" }
+            "gap_analysis": { "$ref": "#/$defs/StepDescriptor" },
+            "specify": { "$ref": "#/$defs/StepDescriptor" },
+            "plan": { "$ref": "#/$defs/StepDescriptor" },
+            "tasks": { "$ref": "#/$defs/StepDescriptor" },
+            "implement": { "$ref": "#/$defs/StepDescriptor" },
+            "implement_fix": { "$ref": "#/$defs/StepDescriptor" },
+            "verify": { "$ref": "#/$defs/StepDescriptor" },
+            "learnings": { "$ref": "#/$defs/StepDescriptor" }
           }
         }
       }
@@ -120,7 +128,7 @@
         }
       },
       "oneOf": [
-        { "required": ["from"],    "not": { "required": ["content"] } },
+        { "required": ["from"], "not": { "required": ["content"] } },
         { "required": ["content"], "not": { "required": ["from"] } }
       ]
     },

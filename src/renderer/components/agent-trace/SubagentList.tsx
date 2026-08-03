@@ -1,14 +1,5 @@
-import { useState, useCallback } from "react";
-import {
-  GitFork,
-  Loader2,
-  CheckCircle,
-  Clock,
-  Bot,
-  ChevronDown,
-  Copy,
-  Check,
-} from "lucide-react";
+import { Bot, Check, CheckCircle, ChevronDown, Clock, Copy, GitFork, Loader2 } from "lucide-react";
+import { useCallback, useState } from "react";
 import type { SubagentInfo } from "../../../core/types.js";
 
 interface SubagentListProps {
@@ -37,12 +28,15 @@ function formatTime(iso: string): string {
 
 function CopyBadge({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(`AgentID: ${value}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [value]);
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(`AgentID: ${value}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    },
+    [value],
+  );
 
   return (
     <span
@@ -113,17 +107,12 @@ function SubagentDetail({ sa }: { sa: SubagentInfo }) {
             alignItems: "center",
             gap: 4,
             fontSize: "0.75rem",
-            color: isRunning
-              ? "var(--primary)"
-              : "var(--status-success)",
+            color: isRunning ? "var(--primary)" : "var(--status-success)",
           }}
         >
           {isRunning ? (
             <>
-              <Loader2
-                size={11}
-                style={{ animation: "spin 1s linear infinite" }}
-              />
+              <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
               Running
             </>
           ) : (
@@ -171,7 +160,11 @@ function SubagentDetail({ sa }: { sa: SubagentInfo }) {
   );
 }
 
-export function SubagentList({ subagents, isParentRunning = true, onSubagentClick }: SubagentListProps) {
+export function SubagentList({
+  subagents,
+  isParentRunning = true,
+  onSubagentClick,
+}: SubagentListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (subagents.length === 0) return null;
@@ -194,76 +187,72 @@ export function SubagentList({ subagents, isParentRunning = true, onSubagentClic
           Subagents
         </span>
         {subagents.map((sa) => {
-            const isRunning = isParentRunning && !sa.completedAt;
-            const isExpanded = expandedId === sa.id;
-            const typeLabel = sa.subagentType === "unknown"
-              ? sa.subagentId.slice(0, 8)
-              : sa.subagentType;
-            const label = sa.description
-              ? sa.description.slice(0, 40) +
-                (sa.description.length > 40 ? "..." : "")
-              : typeLabel;
+          const isRunning = isParentRunning && !sa.completedAt;
+          const isExpanded = expandedId === sa.id;
+          const typeLabel =
+            sa.subagentType === "unknown" ? sa.subagentId.slice(0, 8) : sa.subagentType;
+          const label = sa.description
+            ? sa.description.slice(0, 40) + (sa.description.length > 40 ? "..." : "")
+            : typeLabel;
 
-            return (
-              <button
-                key={sa.id}
-                onClick={() => onSubagentClick ? onSubagentClick(sa) : setExpandedId(isExpanded ? null : sa.id)}
-                title={sa.description ?? sa.subagentType}
+          return (
+            <button
+              key={sa.id}
+              onClick={() =>
+                onSubagentClick ? onSubagentClick(sa) : setExpandedId(isExpanded ? null : sa.id)
+              }
+              title={sa.description ?? sa.subagentType}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "3px 10px",
+                borderRadius: 999,
+                border: `1px solid ${isExpanded ? "var(--primary)" : "var(--border)"}`,
+                background: isExpanded
+                  ? "color-mix(in srgb, var(--primary) 10%, var(--surface-elevated))"
+                  : "var(--surface-elevated)",
+                fontSize: "0.8rem",
+                color: "var(--foreground-muted)",
+                cursor: "pointer",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+            >
+              {isRunning ? (
+                <Loader2
+                  size={12}
+                  color="var(--primary)"
+                  style={{ animation: "spin 1s linear infinite" }}
+                />
+              ) : (
+                <CheckCircle size={12} color="var(--status-success)" />
+              )}
+              <span>{label}</span>
+              <span
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "3px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${isExpanded ? "var(--primary)" : "var(--border)"}`,
-                  background: isExpanded
-                    ? "color-mix(in srgb, var(--primary) 10%, var(--surface-elevated))"
-                    : "var(--surface-elevated)",
-                  fontSize: "0.8rem",
-                  color: "var(--foreground-muted)",
-                  cursor: "pointer",
-                  transition: "border-color 0.15s, background 0.15s",
+                  fontSize: "0.68rem",
+                  color: "var(--foreground-dim)",
+                  fontFamily: "var(--font-mono)",
+                  opacity: 0.7,
                 }}
               >
-                {isRunning ? (
-                  <Loader2
-                    size={12}
-                    color="var(--primary)"
-                    style={{ animation: "spin 1s linear infinite" }}
-                  />
-                ) : (
-                  <CheckCircle size={12} color="var(--status-success)" />
-                )}
-                <span>{label}</span>
-                <span
-                  style={{
-                    fontSize: "0.68rem",
-                    color: "var(--foreground-dim)",
-                    fontFamily: "var(--font-mono)",
-                    opacity: 0.7,
-                  }}
-                >
-                  {sa.subagentId.slice(0, 8)}
-                </span>
-                <ChevronDown
-                  size={10}
-                  color="var(--foreground-dim)"
-                  style={{
-                    transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                    transition: "transform 0.15s",
-                  }}
-                />
-              </button>
-            );
+                {sa.subagentId.slice(0, 8)}
+              </span>
+              <ChevronDown
+                size={10}
+                color="var(--foreground-dim)"
+                style={{
+                  transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s",
+                }}
+              />
+            </button>
+          );
         })}
       </div>
 
       {/* Expanded detail panel */}
-      {expandedId && (
-        <SubagentDetail
-          sa={subagents.find((s) => s.id === expandedId)!}
-        />
-      )}
+      {expandedId && <SubagentDetail sa={subagents.find((s) => s.id === expandedId)!} />}
     </div>
   );
 }

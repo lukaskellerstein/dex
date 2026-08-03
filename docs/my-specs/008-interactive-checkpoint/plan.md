@@ -43,6 +43,7 @@ With P1, state.json has no history-relevant fields. `commitCheckpoint` commits `
 Useful for every debug session between now and step mode landing. One field, no behavior change.
 
 **`src/core/types.ts`**:
+
 ```ts
 export type PauseReason = "user_abort" | "step_mode" | "budget" | "failure";
 ```
@@ -57,7 +58,7 @@ Makes `git log --all --grep='^\[checkpoint:'` a zero-UI terminal workflow from d
 
 **`src/core/git.ts:32-60`** (`commitCheckpoint`): extend the commit message to:
 
-```
+```text
 dex: <stage> completed [cycle:<N>] [feature:<slug>] [cost:$X.XX]
 [checkpoint:<stage>:<cycle>]
 ```
@@ -83,7 +84,8 @@ Every stage gets its own SHA. Graph shows every stage as its own node.
 Zero UI work; useful for every debug session once any new state is introduced.
 
 **`src/renderer/hooks/useDebugPayload.ts`** — add three lines to the clipboard payload:
-```
+
+```text
 CurrentAttemptBranch:  <git rev-parse --abbrev-ref HEAD>
 LastCheckpointTag:     <derivable from listTimeline or null before S1>
 CandidateSha:          <state.lastCommit.sha>
@@ -96,6 +98,7 @@ CandidateSha:          <state.lastCommit.sha>
 Dev phase. No migration path for branches that are intentionally force-moved.
 
 One-time script, not part of app code:
+
 ```bash
 cd /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
 git branch -D fixture/after-clarification fixture/after-tasks 2>/dev/null || true
@@ -357,6 +360,7 @@ node "$(dirname "$0")/promote.mjs" "$PROJECT" "$NAME" "$SHA"
 ```
 
 `dex/scripts/promote.mjs` (~15 lines):
+
 ```js
 import { promoteToCheckpoint } from "../dist/core/checkpoints.js";
 import { execFileSync } from "node:child_process";
@@ -450,6 +454,7 @@ if (recordMode) {
 ```
 
 On `loopTermination` with record mode:
+
 ```ts
 if (recordMode && activeProjectDir) {
   const finalSha = getHeadSha(activeProjectDir);
@@ -658,7 +663,7 @@ Git-flow visualization is the v1. Custom D3 + React-owned SVG adapter, **vertica
 
 **Files**:
 
-```
+```text
 src/renderer/components/checkpoints/
 ├── TimelinePanel.tsx         container — TimelineGraph + NodeDetailPanel + PastAttemptsList
 ├── TimelineGraph.tsx         React SVG + d3-zoom wrapper

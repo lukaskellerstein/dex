@@ -44,6 +44,7 @@ A three-cycle run should complete in well under 60 seconds. Every checkpoint tag
 ## 2. Pre-flight
 
 1. **Reset the example project** (destructive, authorized):
+
    ```bash
    ./scripts/reset-example-to.sh clean
    ```
@@ -51,6 +52,7 @@ A three-cycle run should complete in well under 60 seconds. Every checkpoint tag
 2. **Confirm dev-setup.sh is running** — `~/.dex/dev-logs/electron.log` exists and is being appended; `mcp__electron-chrome__list_pages` succeeds.
 
 3. **Confirm the fixtures exist** at repo root:
+
    ```bash
    ls fixtures/mock-run/
    # Expected: GOAL_clarified.md, CLAUDE.md, constitution.md, feature-manifest.json,

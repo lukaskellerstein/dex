@@ -284,7 +284,7 @@ git branch --list 'dex/*'            # → "dex/2026-05-04-rename"
 
 **UI side**: `alerts` contains exactly:
 
-```
+```text
 "This version has a kind of conflict AI can't resolve yet. The merge has been undone. Edit the files manually and try again."
 ```
 
@@ -384,6 +384,7 @@ Same — abort, friendly message, no AI.
    }
    EOF
    ```
+
 4. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions
@@ -440,6 +441,7 @@ The failure modal text contains the substring `(cost_cap)`.
    }
    EOF
    ```
+
 4. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions
@@ -483,6 +485,7 @@ Same as 3A — success toast.
    }
    EOF
    ```
+
 4. `node scripts/test-014-cdp.mjs open`.
 
 ### Actions

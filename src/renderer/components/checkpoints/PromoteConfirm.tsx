@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { CheckpointModal } from "./Modal";
+import type { PromoteSummary } from "../../../core/checkpoints.js";
 import {
-  PROMOTE_CONFIRM_TITLE,
   PROMOTE_CONFIRM_BODY,
-  PROMOTE_CONFIRM_VIEW_ALL,
-  PROMOTE_CONFIRM_CONFIRM,
   PROMOTE_CONFIRM_CANCEL,
+  PROMOTE_CONFIRM_CONFIRM,
+  PROMOTE_CONFIRM_TITLE,
+  PROMOTE_CONFIRM_VIEW_ALL,
   PROMOTE_SUMMARY_FILES,
   PROMOTE_SUMMARY_PLUS_MINUS,
 } from "./branchOps/copy";
-import type { PromoteSummary } from "../../../core/checkpoints.js";
+import { CheckpointModal } from "./Modal";
 
 interface Props {
   summary: PromoteSummary;
@@ -31,18 +31,10 @@ export function PromoteConfirm({ summary, onConfirm, onCancel }: Props) {
       onClose={onCancel}
       footer={
         <>
-          <button
-            className="btn-secondary"
-            onClick={onCancel}
-            data-testid="promote-cancel"
-          >
+          <button className="btn-secondary" onClick={onCancel} data-testid="promote-cancel">
             {PROMOTE_CONFIRM_CANCEL}
           </button>
-          <button
-            className="btn-primary"
-            onClick={onConfirm}
-            data-testid="promote-confirm"
-          >
+          <button className="btn-primary" onClick={onConfirm} data-testid="promote-confirm">
             {PROMOTE_CONFIRM_CONFIRM}
           </button>
         </>
@@ -60,12 +52,8 @@ export function PromoteConfirm({ summary, onConfirm, onCancel }: Props) {
         }}
       >
         {PROMOTE_SUMMARY_FILES(summary.fileCount)} ·{" "}
-        <span style={{ color: "var(--status-success, #a6e3a1)" }}>
-          +{summary.added}
-        </span>{" "}
-        <span style={{ color: "var(--status-error, #f38ba8)" }}>
-          -{summary.removed}
-        </span>
+        <span style={{ color: "var(--status-success, #a6e3a1)" }}>+{summary.added}</span>{" "}
+        <span style={{ color: "var(--status-error, #f38ba8)" }}>-{summary.removed}</span>
         <span style={{ marginLeft: 6, color: "var(--foreground-dim)" }}>
           ({PROMOTE_SUMMARY_PLUS_MINUS(summary.added, summary.removed)})
         </span>

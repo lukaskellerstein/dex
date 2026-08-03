@@ -3,12 +3,8 @@
  * Not: Does not own live-step data (useLiveTrace), user-question state (useUserQuestion), or run-session metadata (useRunSession). Does not call IPC; subscribes to events only.
  * Deps: orchestratorService.subscribeEvents, OrchestratorEvent / StepType / LoopTermination types.
  */
-import { useState, useEffect, useCallback, useRef } from "react";
-import type {
-  OrchestratorEvent,
-  StepType,
-  LoopTermination,
-} from "../../core/types.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { LoopTermination, OrchestratorEvent, StepType } from "../../core/types.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
 /**

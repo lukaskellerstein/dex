@@ -3,6 +3,7 @@
 Auto-generated from all feature plans. Last updated: 2026-05-04
 
 ## Active Technologies
+
 - `better-sqlite3` (audit trail, unchanged), `.dex/state.json` (new — primary state), filesystem artifacts with SHA-256 integrity hashing (002-filesystem-state-management)
 - TypeScript 5.6+ (strict mode) + `@anthropic-ai/claude-agent-sdk` ^0.1.45 (upgrade from ^0.1.0), `better-sqlite3` ^12.9.0, Electron ^41.2.1, React 18 (003-structured-outputs)
 - `.dex/state.json` (filesystem state), `.dex/feature-manifest.json` (new — feature manifest), SQLite (run/phase/step audit trail) (003-structured-outputs)
@@ -37,17 +38,35 @@ tests/
 
 ## Commands
 
-npm test && npm run lint
+`npm test` (core via `node --test` + renderer via `vitest` + `check:size`), `npm run typecheck` for types.
+
+`npm run typecheck` runs **three** scopes — a bare `npx tsc --noEmit` only covers
+`src/main/` + `src/core/` and silently skips the rest:
+
+| Config | Covers |
+|:--|:--|
+| `tsconfig.json` | `src/main/`, `src/core/` — drives the `dist/` build, so it excludes tests |
+| `tsconfig.test.json` | the above **plus** `src/core/**/*.test.ts` (type-check only) |
+| `tsconfig.renderer.json` | `src/renderer/` — excluded from the build config, so nothing else checks it |
+
+Core tests run through `scripts/ts-resolve-hook.mjs`, which maps relative `.js`
+specifiers to `.ts`. `NodeNext` requires sources to import each other as `.js`,
+and `--experimental-strip-types` does not remap that — without the hook any
+*value* import between core modules dies with `ERR_MODULE_NOT_FOUND` (type-only
+imports are erased before resolution, which is why only some suites broke).
+
+Linting and formatting are **not** repo scripts — biome and ruff run in the editor
+off `biome.jsonc` / `ruff.toml`. There is no `npm run lint`.
 
 ## Code Style
 
 TypeScript (strict mode), Node.js (Electron 30+): Follow standard conventions
 
 ## Recent Changes
+
 - 014-branch-management: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45 (used by `ClaudeAgentRunner.runOneShot`), `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` already present. **No new dependencies.** All git invocations reuse `safeExec`/`gitExec` from `src/core/checkpoints/_helpers.ts`.
 - 014-branch-management: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime). + Unchanged production stack — `@anthropic-ai/claude-agent-sdk` ^0.1.45 (used by `ClaudeAgentRunner.runOneShot`), `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` already present. **No new dependencies.** All git invocations reuse `safeExec`/`gitExec` from `src/core/checkpoints/_helpers.ts`.
 - 013-cleanup-2: Added TypeScript 5.6+ (strict mode), Node.js bundled with Electron 41 (Node 20 runtime) + Unchanged. `@anthropic-ai/claude-agent-sdk` ^0.1.45, `electron` ^41.2.1, `react` ^18.3.1, `gsap` ^3.12.5, `lucide-react` ^0.460.0, `d3-shape`, `d3-zoom`. Dev: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` (already present). **No dependencies added or removed by this spec.**
-
 
 <!-- MANUAL ADDITIONS START -->
 

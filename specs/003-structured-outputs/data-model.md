@@ -27,6 +27,7 @@ Single feature within the manifest. Tracks selection state and links to artifact
 | `specDir` | `string \| null` | Spec directory path, set after specify completes (e.g., `"specs/001-product-catalog"`) |
 
 **Status transitions**:
+
 ```
 pending ──(selected)──→ active ──(verify passes)──→ completed
                             │

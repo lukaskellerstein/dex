@@ -7,28 +7,23 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-import type { RunConfig } from "../types.js";
 import type { RunLogger } from "../log.js";
-import * as runs from "../runs.js";
-import { updateState } from "../state.js";
-import { parseTasksFile } from "../parser.js";
 import { appendLearnings, loadManifest, updateFeatureStatus } from "../manifest.js";
-import {
-  buildVerifyPrompt,
-  buildVerifyFixPrompt,
-  buildLearningsPrompt,
-  VERIFY_SCHEMA,
-  LEARNINGS_SCHEMA,
-} from "../prompts.js";
-import { finalizeStageCheckpoint } from "./finalize.js";
 // Circular: orchestrator.ts hosts runStage / runPhase / RunTaskState / AbortError;
 // both sides export only functions/classes so ESM init is safe.
+import { AbortError, RunTaskState, runPhase, runStage } from "../orchestrator.js";
+import { parseTasksFile } from "../parser.js";
 import {
-  runStage,
-  runPhase,
-  RunTaskState,
-  AbortError,
-} from "../orchestrator.js";
+  buildLearningsPrompt,
+  buildVerifyFixPrompt,
+  buildVerifyPrompt,
+  LEARNINGS_SCHEMA,
+  VERIFY_SCHEMA,
+} from "../prompts.js";
+import * as runs from "../runs.js";
+import { updateState } from "../state.js";
+import type { RunConfig } from "../types.js";
+import { finalizeStageCheckpoint } from "./finalize.js";
 
 export interface ImplementVerifyLearningsInput {
   ctx: OrchestrationContext;
@@ -64,9 +59,7 @@ export async function runImplementVerifyLearnings(
   let cycleCost = 0;
 
   // ── Implement stage ─────────────────────────────────────────────────────
-  const implSpecPath = specDir.startsWith("/")
-    ? specDir
-    : path.join(projectDir, specDir);
+  const implSpecPath = specDir.startsWith("/") ? specDir : path.join(projectDir, specDir);
 
   state.currentStep = "implement";
   state.specDir = specDir;
@@ -150,7 +143,15 @@ export async function runImplementVerifyLearnings(
 
       emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
 
-      const phaseResult = await runPhase(implConfig, phase, agentRunId, runId, emit, rlog, runTaskState);
+      const phaseResult = await runPhase(
+        implConfig,
+        phase,
+        agentRunId,
+        runId,
+        emit,
+        rlog,
+        runTaskState,
+      );
       runs.completeAgentRun(projectDir, runId, agentRunId, {
         status: "completed",
         costUsd: phaseResult.cost,
@@ -184,7 +185,9 @@ export async function runImplementVerifyLearnings(
           costUsd: 0,
           durationMs: Date.now() - implStageStart,
         });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
     throw implErr;
   } finally {
@@ -238,7 +241,14 @@ export async function runImplementVerifyLearnings(
 
   const verifyPrompt = buildVerifyPrompt(config, implSpecPath, fullPlanPath);
   const verifyResult = await runStage(
-    config, verifyPrompt, emit, rlog, runId, cycleNumber, "verify", specDir,
+    config,
+    verifyPrompt,
+    emit,
+    rlog,
+    runId,
+    cycleNumber,
+    "verify",
+    specDir,
     { type: "json_schema", schema: VERIFY_SCHEMA as unknown as Record<string, unknown> },
   );
   cycleCost += verifyResult.cost;
@@ -255,7 +265,13 @@ export async function runImplementVerifyLearnings(
     passed: false,
     buildSucceeded: false,
     testsSucceeded: false,
-    failures: [{ criterion: "structured_output", description: "Verify agent did not return structured output", severity: "blocking" }],
+    failures: [
+      {
+        criterion: "structured_output",
+        description: "Verify agent did not return structured output",
+        severity: "blocking",
+      },
+    ],
     summary: "Verification could not be evaluated — structured output was null",
   };
 
@@ -265,19 +281,44 @@ export async function runImplementVerifyLearnings(
       const maxRetries = config.maxVerifyRetries ?? 1;
       for (let retryNum = 1; retryNum <= maxRetries; retryNum++) {
         const currentBlocking = verification.failures.filter((f) => f.severity === "blocking");
-        rlog.run("WARN", `runLoop: verify found ${currentBlocking.length} blocking failure(s) — fix attempt ${retryNum}/${maxRetries}`);
-        emit({ type: "verify_failed", runId, cycleNumber, blockingCount: currentBlocking.length, summary: verification.summary });
+        rlog.run(
+          "WARN",
+          `runLoop: verify found ${currentBlocking.length} blocking failure(s) — fix attempt ${retryNum}/${maxRetries}`,
+        );
+        emit({
+          type: "verify_failed",
+          runId,
+          cycleNumber,
+          blockingCount: currentBlocking.length,
+          summary: verification.summary,
+        });
 
         if (abort.signal.aborted) throw new AbortError();
 
         const fixPrompt = buildVerifyFixPrompt(config, implSpecPath, currentBlocking);
-        const fixResult = await runStage(config, fixPrompt, emit, rlog, runId, cycleNumber, "implement_fix", specDir);
+        const fixResult = await runStage(
+          config,
+          fixPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "implement_fix",
+          specDir,
+        );
         cycleCost += fixResult.cost;
 
         if (abort.signal.aborted) throw new AbortError();
 
         const reVerifyResult = await runStage(
-          config, verifyPrompt, emit, rlog, runId, cycleNumber, "verify", specDir,
+          config,
+          verifyPrompt,
+          emit,
+          rlog,
+          runId,
+          cycleNumber,
+          "verify",
+          specDir,
           { type: "json_schema", schema: VERIFY_SCHEMA as unknown as Record<string, unknown> },
         );
         cycleCost += reVerifyResult.cost;
@@ -286,7 +327,13 @@ export async function runImplementVerifyLearnings(
           passed: false,
           buildSucceeded: false,
           testsSucceeded: false,
-          failures: [{ criterion: "structured_output", description: "Re-verify agent did not return structured output", severity: "blocking" }],
+          failures: [
+            {
+              criterion: "structured_output",
+              description: "Re-verify agent did not return structured output",
+              severity: "blocking",
+            },
+          ],
           summary: "Re-verification could not be evaluated — structured output was null",
         };
 
@@ -295,7 +342,10 @@ export async function runImplementVerifyLearnings(
           break;
         }
         if (retryNum === maxRetries) {
-          rlog.run("WARN", `runLoop: re-verify still failing after ${maxRetries} fix attempt(s) — proceeding to learnings`);
+          rlog.run(
+            "WARN",
+            `runLoop: re-verify still failing after ${maxRetries} fix attempt(s) — proceeding to learnings`,
+          );
         }
       }
     }
@@ -318,7 +368,14 @@ export async function runImplementVerifyLearnings(
   state.currentStep = "learnings";
   const learningsPrompt = buildLearningsPrompt(config, implSpecPath);
   const learningsResult = await runStage(
-    config, learningsPrompt, emit, rlog, runId, cycleNumber, "learnings", specDir,
+    config,
+    learningsPrompt,
+    emit,
+    rlog,
+    runId,
+    cycleNumber,
+    "learnings",
+    specDir,
     { type: "json_schema", schema: LEARNINGS_SCHEMA as unknown as Record<string, unknown> },
   );
   cycleCost += learningsResult.cost;
