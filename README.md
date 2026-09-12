@@ -1,7 +1,9 @@
-# Dex
-
 <p align="center">
-  <img src="docs/logo/logo-medium.png" alt="Dex Logo" width="128" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/logo-full-on-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/logo/logo-full.png" />
+    <img src="docs/logo/logo-full.png" alt="Dex" width="420" />
+  </picture>
 </p>
 
 <p align="center">
