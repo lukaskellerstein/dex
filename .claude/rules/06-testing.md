@@ -45,6 +45,29 @@ The tools are `@playwright/mcp`'s, all prefixed `mcp__electron-playwright__`:
 > the `ref` it returned — refs go stale after the page changes, so re-snapshot
 > after anything that re-renders.
 
+### Whose instance it is
+
+If a `browser_*` call is denied because the instance on the CDP port was
+started by the user: that instance is theirs. Do not touch it, and do not
+restart the dev environment over it — ask the user for permission, and only
+after an explicit yes run the `touch` command from the denial message.
+
+**The no-touch rule covers every attach path, not just MCP tools.** A
+`connectOverCDP` in your own script, a raw CDP request from `curl` — same
+rule. The MCP gate cannot see inside a script, so before any script attaches
+to a CDP port, run `python3 .claude/hooks/pw.py owns-port <port>` yourself:
+exit 0 means proceed, exit 1 means the instance is the user's — ask.
+
+The browser is placed on its own desktop space by the shared Playwright hooks
+(`.claude/hooks/`) — never switch to it, focus it, or move it. Session-end
+cleanup is a safety net, not a substitute for closing it yourself.
+
+**A headed browser your own script launches goes through the launch script
+too** — `.claude/hooks/playwright-launch.sh npx tsx <script>` — so its window
+is born on the scratch space like every other agent browser. Never launch a
+headed browser bare: macOS creates new windows on whatever space the user is
+looking at. A headless browser needs no placement — run that script directly.
+
 ## 4c. Example project for end-to-end testing
 
 For any test that exercises the full loop (welcome screen → loop start → autonomous run), drive the app against the **dex-ecommerce** example project.

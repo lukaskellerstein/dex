@@ -6,6 +6,9 @@ description: "Step 4: Implement — coding rules, Electron/React dev workflow"
 
 Write clean code from the start. Follow these rules during implementation:
 
+- Every edit stays in the checkout assigned to this session. Claude Code uses
+  `.worktrees/<name>`; Codex uses its active Local or managed Worktree checkout
+  and Handoff. Never edit another checkout — [`worktree.md`](worktree.md)
 - Do NOT commit via `git` unless explicitly instructed by the user
 - When creating diagrams or graphs, use `mermaid`
 - Write clean code from the start — don't plan to "clean it up later"

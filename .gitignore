@@ -44,3 +44,6 @@ keys.txt
 # gitignored is not protected. Listed so an accidental one cannot be staged.
 claude_tokens.md
 .agent-token
+
+# Claude Code worktree sessions: claude -w <name>
+.worktrees/
