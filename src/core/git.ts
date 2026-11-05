@@ -81,13 +81,6 @@ export function switchBranch(projectDir: string, name: string): void {
   gitArgs(["switch", "--quiet", name], projectDir);
 }
 
-/** `git status --porcelain=v1 --untracked-files=normal`, one line per changed path. */
-export function statusPorcelain(projectDir: string): string[] {
-  return gitArgs(["status", "--porcelain=v1", "--untracked-files=normal"], projectDir)
-    .split("\n")
-    .filter(Boolean);
-}
-
 /** True when `absPath` is a file committed at HEAD (the policy's frozen check). */
 export function isTrackedAtHead(projectDir: string, absPath: string): boolean {
   const rel = path.relative(projectDir, absPath);

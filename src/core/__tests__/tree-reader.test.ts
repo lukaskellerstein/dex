@@ -3,11 +3,11 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { branchExists, statusPorcelain, switchBranch } from "../git.ts";
+import { branchExists, switchBranch } from "../git.ts";
 import { gitRef, workingTree } from "../tree-reader.ts";
 import { commitFile, currentBranch, mkTmpRepo, rmTmp } from "./helpers/git.ts";
 
-test("git helpers: branchExists, switchBranch, statusPorcelain", () => {
+test("git helpers: branchExists, switchBranch", () => {
   const dir = mkTmpRepo();
   try {
     execSync("git branch feature", { cwd: dir });
@@ -16,12 +16,6 @@ test("git helpers: branchExists, switchBranch, statusPorcelain", () => {
 
     switchBranch(dir, "feature");
     assert.equal(currentBranch(dir), "feature");
-
-    assert.deepEqual(statusPorcelain(dir), []);
-    fs.writeFileSync(path.join(dir, "README.md"), "changed\n");
-    fs.writeFileSync(path.join(dir, "new.md"), "new\n");
-    // The leading space of " M" survives: callers parse the path from column 3.
-    assert.deepEqual(statusPorcelain(dir), [" M README.md", "?? new.md"]);
     assert.throws(() => switchBranch(dir, "nope"));
   } finally {
     rmTmp(dir);
