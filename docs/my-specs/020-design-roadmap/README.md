@@ -1,21 +1,21 @@
-# 019 — Design roadmap: from a finished design to merged steps, one branch and one PR each
+# 020 — Design roadmap: from a finished design to merged steps, one branch and one PR each
 
-> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `019-design-roadmap`.
+> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `020-design-roadmap`.
 >
 > **Builds on:**
 > - [`015-lean-core`](../015-lean-core/README.md): the queue, the picker, `generate` briefs, `branching.ts`, and `createBranch` / `createPullRequest` in `git.ts`;
 > - [`016-grounded-loop`](../016-grounded-loop/README.md): the `tests` stage and the done gate, which is what "testable at the end of a step" means;
-> - [`017-living-docs`](../017-living-docs/README.md): the handoff into the `brief` stage (D-017-7), which is how one step's lessons reach the next.
+> - [`018-living-docs`](../018-living-docs/README.md): the handoff into the `brief` stage (D-018-7), which is how one step's lessons reach the next.
 >
-> **Independent of** [`018`](../018-many-projects-any-agent/README.md). It works with whatever agent runs the stages.
+> **Independent of** [`019`](../019-many-projects-any-agent/README.md). It works with whatever agent runs the stages.
 >
 > **First real user:** `nex` (`~/Projects/Github/lukaskellerstein/nex`), with its design `nex-design.html` ([Appendix A](#appendix-a--first-real-user-nex)).
 >
-> **How to start:** commit this brief on `main`, start `claude -w 019-design-roadmap`, and run `/speckit-specify` with this file as the feature description.
+> **How to start:** commit this brief on `main`, start `claude -w 020-design-roadmap`, and run `/speckit-specify` with this file as the feature description.
 
 ## Why
 
-DEX can turn a goal into features only for a **new** project: `GOAL.md` → clarification → `GOAL_clarified.md` → a feature list (`stages/manifest-extraction.ts`). All the features then go on one run branch, with one optional PR at the end. 015 kept that path and added the queue with `generate` briefs, but in an existing project a human still writes the queue. `onion-demo-01`'s queue was written by hand from its monthly plan.
+DEX can turn a goal into features only for a **new** project: `GOAL.md` → clarification → `GOAL_clarified.md` → a feature list (`stages/manifest-extraction.ts`). All the features then go on one run branch, with one optional PR at the end. 015 kept that path and added the queue with `generate` briefs, but in an existing project a human still writes the queue. The queue of a `dex-ecommerce` scratch clone is still written by hand.
 
 What's missing:
 
@@ -52,7 +52,7 @@ flowchart TB
 
 ## Decisions
 
-### D-019-1 — The design is a file the project owns, and DEX reads it in sections
+### D-020-1 — The design is a file the project owns, and DEX reads it in sections
 
 - **Declaring it.** The queue names the design: `"roadmap": {"design": "nex-design.html", "dir": "docs/roadmap"}`.
 - **Formats:** HTML, Markdown and PDF.
@@ -60,25 +60,25 @@ flowchart TB
   - Headings become section ids (`3.4.1`), and diagrams contribute their text labels.
   - The result is `.dex/design/outline.json` (id, title, token count, hash for each section) plus one `.dex/design/sections/<id>.md` per section. Both are derived and untracked.
 - **No agent reads the whole design.** Agents read the outline, plus the sections they're working on.
-- **When the design changes,** DEX lists the changed sections and the steps that cite them, and proposes a re-plan (D-019-6). Nothing changes until you approve it.
+- **When the design changes,** DEX lists the changed sections and the steps that cite them, and proposes a re-plan (D-020-6). Nothing changes until you approve it.
 
-### D-019-2 — Analyze: what's already there
+### D-020-2 — Analyze: what's already there
 
 A new `analyze` stage. A fresh agent reads:
 
 - the design's outline;
 - the project's tree;
 - its existing specs and briefs (`specs/*`, `docs/my-specs/*`);
-- its docs (017);
+- its docs (018);
 - a summary of its git log.
 
 It returns one row per design section: `built`, `partly built`, `not built`, or `conflicts with the design`, with evidence (file paths, spec ids) and a note. DEX writes this as `docs/roadmap/current-state.md`.
 
-- **DEX checks the evidence:** every path the agent cites must exist. This is the same broken-reference check as 017's.
+- **DEX checks the evidence:** every path the agent cites must exist. This is the same broken-reference check as 018's.
 - **An empty project** gets a table where every section is `not built`, and the stage still runs, so the roadmap always starts from a table.
 - **A design that describes today's code itself** (NEX's §8.12) is read first.
 
-### D-019-3 — Roadmap: phases and steps, and checks DEX runs itself
+### D-020-3 — Roadmap: phases and steps, and checks DEX runs itself
 
 A new `roadmap` stage. A fresh agent proposes `docs/roadmap/roadmap.md`, with `roadmap.json` as its structured twin.
 
@@ -98,7 +98,7 @@ DEX checks the roadmap without an LLM:
 
 A failed check sends the stage back with the failures. After two failed attempts, the problem goes to you in the inbox.
 
-### D-019-4 — You approve the roadmap, and approving it writes the queue
+### D-020-4 — You approve the roadmap, and approving it writes the queue
 
 - **The roadmap goes up as its own PR,** on a `roadmap` branch: `current-state.md`, `roadmap.md`, `roadmap.json`, and the new queue entries. Edit, reorder or cut steps in the PR. **Merging it is the approval.**
 - **Each step becomes a queue entry:**
@@ -110,7 +110,7 @@ A failed check sends the stage back with the failures. After two failed attempts
 - **The loop still never writes the queue** (D-015-4). Entries arrive only inside a PR you merged.
 - **A project with no remote** (`git.pullRequest: false`) gets the same files committed on `main` once you approve in the inbox.
 
-### D-019-5 — Git, configured per project
+### D-020-5 — Git, configured per project
 
 The policy gains a `git` section:
 
@@ -146,41 +146,41 @@ A project without a `git` section keeps 015's behaviour exactly. A roadmap proje
 - **`merge: "human"`.** DEX files a "PR ready" item in the inbox and watches the PR with `gh pr view --json state,mergedAt`.
   - On merge it fetches, switches to `main`, fast-forwards, and moves on.
   - A PR closed without merging goes to the inbox: retry the step, or re-plan.
-  - Waiting holds no slot (018).
+  - Waiting holds no slot (019).
 - **`merge: "auto"`** merges with `gh pr merge` once the repository's required checks are green. It's opt-in.
 - **`mergeMethod: "merge"`** keeps the per-story commits on `main`. A squash would fold them into one.
 
-### D-019-6 — After each merge, DEX re-checks the rest of the plan
+### D-020-6 — After each merge, DEX re-checks the rest of the plan
 
 A short `replan` stage runs after every merged step. A fresh agent reads:
 
 - the roadmap and its remaining steps;
 - the merged step's digest;
-- the docs and decision log (017's handoff);
+- the docs and decision log (018's handoff);
 - the current-state rows for the sections the step touched.
 
 It returns either "no change" or a list of changes (split, merge, reorder, drop or add a step), each with its reason.
 
 - **"No change"** with DEX's checks still passing means the next step starts without you.
 - **A change** goes up as a roadmap PR (or to the inbox without a remote). It touches only steps that haven't started; a started step is never rewritten.
-- **A changed design file** (D-019-1) also starts a `replan`.
+- **A changed design file** (D-020-1) also starts a `replan`.
 
-### D-019-7 — Briefs come from the roadmap
+### D-020-7 — Briefs come from the roadmap
 
 015's `generate` is the mechanism. The brief stage gets:
 
 - the step's goal, acceptance and dependencies;
 - the text of its design sections;
 - its current-state rows;
-- the previous step's digest, and the docs (D-017-7).
+- the previous step's digest, and the docs (D-018-7).
 
 It writes the brief in the project's own style: NEX keeps flat `docs/my-specs/NN-name.md` files, and DEX keeps folders with a `README.md`. Then spec-kit takes over, as for any entry.
 
-### D-019-8 — One step at a time
+### D-020-8 — One step at a time
 
 Steps run in order on one checkout. Each next step branches from the `main` its predecessor was merged into. Running independent steps in parallel, in worktrees, is out of scope. The roadmap records dependencies so that it can come later.
 
-### D-019-9 — The picker, CLI and UI
+### D-020-9 — The picker, CLI and UI
 
 **Picker rows** come before 015's per-entry rows, in a project whose queue names a design:
 
@@ -202,7 +202,7 @@ Steps run in order on one checkout. Each next step branches from the `main` its 
 ## Configuration
 
 - **`.dex/queue.json`:** `roadmap: {design, dir}`, and `step` on each entry.
-- **`.dex/policy.json`:** the `git` section (D-019-5).
+- **`.dex/policy.json`:** the `git` section (D-020-5).
 - **Entries from a roadmap** carry 016's `acceptance`, taken from the step.
 
 ## Files
@@ -234,11 +234,11 @@ Steps run in order on one checkout. Each next step branches from the `main` its 
    - how spec-kit's `specify` uses a branch DEX already made;
    - what extraction gets from `nex-design.html` (sections, token counts, diagram labels);
    - which `gh pr view` fields tell merged from closed.
-1. **Git policy** (D-019-5) on a hand-written queue, with no roadmap yet. Branch per entry, commit per task phase, PR per entry, wait for the merge. Useful on its own.
-2. **Design extraction** (D-019-1).
-3. **Analyze, roadmap, checks and approval** (D-019-2, -3, -4).
-4. **Re-plan** (D-019-6) and briefs from the roadmap (D-019-7).
-5. **CLI and UI** (D-019-9).
+1. **Git policy** (D-020-5) on a hand-written queue, with no roadmap yet. Branch per entry, commit per task phase, PR per entry, wait for the merge. Useful on its own.
+2. **Design extraction** (D-020-1).
+3. **Analyze, roadmap, checks and approval** (D-020-2, -3, -4).
+4. **Re-plan** (D-020-6) and briefs from the roadmap (D-020-7).
+5. **CLI and UI** (D-020-9).
 6. **NEX** (Appendix A):
    - analyze and roadmap only: you review the roadmap PR;
    - then the first step, run to a merged PR.

@@ -7,9 +7,10 @@ import { mkTmpProject } from "../../__tests__/helpers/project.ts";
 import type { OrchestratorEvent } from "../../events.ts";
 import { questionModeFor, resolveRequest } from "../../humanInput.ts";
 import { DEFAULT_POLICY, type Policy, parsePolicy } from "../../policy.ts";
+import type { StageScope } from "../../scope.ts";
 import { createInitialState, loadState, saveState } from "../../state.ts";
 import type { RunConfig } from "../../types.ts";
-import { buildQueryOptions } from "../claudeSession.ts";
+import { buildQueryOptions, PLAYWRIGHT_MCP } from "../claudeSession.ts";
 import { makeCanUseTool, type PermissionDeps, preToolUseDecision } from "../permissions.ts";
 
 const config: RunConfig = {
@@ -103,6 +104,23 @@ test("buildQueryOptions: the policy's sources, mode and stage budget; never skip
   assert.equal(options(DEFAULT_POLICY).maxBudgetUsd, undefined);
 });
 
+test("buildQueryOptions: only verify with verify.browser gets the headless, isolated Playwright MCP", () => {
+  const on = policyIn("/tmp/project", { verify: { browser: true } });
+  const withStep = (policy: Policy, step: "verify" | "implement" | undefined) =>
+    buildQueryOptions({ config, abortController: null, policy, step }, {}, allow);
+  assert.deepEqual(withStep(on, "verify").mcpServers, {
+    browser: {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", PLAYWRIGHT_MCP, "--headless", "--isolated"],
+    },
+  });
+  assert.match(PLAYWRIGHT_MCP, /^@playwright\/mcp@\d+\.\d+\.\d+$/, "an exact version");
+  assert.equal(withStep(on, "implement").mcpServers, undefined);
+  assert.equal(withStep(on, undefined).mcpServers, undefined);
+  assert.equal(withStep(DEFAULT_POLICY, "verify").mcpServers, undefined);
+});
+
 // ── The PreToolUse decision and canUseTool ──
 
 const RULES = {
@@ -156,6 +174,34 @@ test("preToolUseDecision: deny (+ policy_denied), ask, or no opinion — never a
   };
   assert.equal(stopped.hookSpecificOutput?.permissionDecision, "deny");
   assert.equal(stopped.hookSpecificOutput?.permissionDecisionReason, "Run stopped by user");
+});
+
+test("preToolUseDecision and canUseTool: the stage scope denies with rule scope and a policy_denied", async () => {
+  const events: OrchestratorEvent[] = [];
+  const scope: StageScope = {
+    entryId: "004-product-recommendations",
+    stage: "implement",
+    writeOnly: null,
+    protect: ["tests/acceptance/recs.spec.ts"],
+  };
+  const d = { ...deps("/tmp/project", events), scope };
+  const input = { file_path: "tests/acceptance/recs.spec.ts", old_string: "a", new_string: "b" };
+  const hook = preToolUseDecision(d, "Edit", input) as {
+    hookSpecificOutput?: Record<string, unknown>;
+  };
+  assert.equal(hook.hookSpecificOutput?.permissionDecision, "deny");
+  assert.match(
+    String(hook.hookSpecificOutput?.permissionDecisionReason),
+    /frozen acceptance test of 004/,
+  );
+  assert.equal(events[0]?.type === "policy_denied" && events[0].rule, "scope");
+  const r = await makeCanUseTool(d)("Edit", input, SDK_OPTIONS);
+  assert.equal(r?.behavior, "deny");
+  assert.deepEqual(
+    preToolUseDecision({ ...d, scope: undefined }, "Edit", input),
+    {},
+    "no scope, no deny",
+  );
 });
 
 const SDK_OPTIONS = { signal: new AbortController().signal, toolUseID: "tu-1", requestId: "rq-1" };

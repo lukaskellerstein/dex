@@ -18,7 +18,7 @@
 > 2. **Every spec-kit stage also gets `SPECIFY_FEATURE=<branch>` and `SPECIFY_FEATURE_NO_PERSIST=1`**, next to the `SPECIFY_FEATURE_DIRECTORY` (and `GIT_BRANCH_NAME` for `specify`) the build already sets. This keeps spec-kit from persisting `.specify/feature.json` in a real run, not only under the mock.
 > 3. **The policy's default `env` is `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}`** (D-015-3), so loop agents neither read nor write the machine owner's personal auto memory. A project's own `env` is merged over it.
 >
-> Not for this branch: judging tool calls in a common vocabulary instead of Claude's tool names is 018's job (D-018-4).
+> Not for this branch: judging tool calls in a common vocabulary instead of Claude's tool names is 019's job (D-019-4).
 >
 > **How to start:** commit this brief on `main`, start `claude -w 015-lean-core` in this repo, run `/speckit-specify` with this file as the feature description, then the usual clarify → plan → tasks → implement.
 
@@ -114,7 +114,7 @@ The policy lives in `.dex/policy.json`, tracked in the project's git.
 |---|---|---|
 | `settingSources` | Which Claude Code settings load | `["user", "project", "local"]` |
 | `permissionMode` | SDK permission mode | `"default"`; `bypassPermissions` is refused for an existing project |
-| `env` | Extra environment for every agent | `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}`: loop agents neither read nor write the machine owner's personal auto memory. The project's lasting memory is its docs (017) |
+| `env` | Extra environment for every agent | `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}`: loop agents neither read nor write the machine owner's personal auto memory. The project's lasting memory is its docs (018) |
 | `deny` | `{tool, pattern, reason}` regexes, checked in the PreToolUse hook | `[]` |
 | `ask` | Same shape; a match holds the tool call for the human | `[]` |
 | `writeRoots` | The only paths Edit, Write and NotebookEdit may target | `["."]` plus the OS temp dir |
@@ -255,7 +255,7 @@ After every phase, `npm test` and `npm run typecheck` pass and a mock loop on `d
 
 - An Ink TUI. A status board can come later on top of the CLI.
 - Parallel features or parallel task phases.
-- Codex and Copilot runners. [018](../018-many-projects-any-agent/README.md) adds Codex and OpenCode, and runs several projects at once.
+- Codex and Copilot runners. [019](../019-many-projects-any-agent/README.md) adds Codex and OpenCode, and runs several projects at once.
 - Mirroring a feature branch into sibling repos. Projects that need it keep it in their own rules; Dex only checks that `repos` are clean.
 - Merging a finished entry into the default branch.
 

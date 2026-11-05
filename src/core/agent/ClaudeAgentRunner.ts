@@ -37,6 +37,7 @@ export class ClaudeAgentRunner implements AgentRunner {
       emit: ctx.emit,
       rlog: ctx.rlog,
       policy: ctx.policy,
+      scope: ctx.scope,
       entryId: ctx.entryId ?? null,
       step,
     });
@@ -75,11 +76,13 @@ export class ClaudeAgentRunner implements AgentRunner {
         completedText: `Phase ${taskPhase.number}: ${taskPhase.name} completed`,
       },
       specDir: config.specDir,
+      outputFormat: ctx.outputFormat,
       env: ctx.env,
       abortController: ctx.abortController,
       emit: ctx.emit,
       rlog: ctx.rlog,
       policy: ctx.policy,
+      scope: ctx.scope,
       entryId: ctx.entryId ?? null,
       step: "implement",
       leadSteps: [
@@ -96,6 +99,7 @@ export class ClaudeAgentRunner implements AgentRunner {
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
       limitHit: limitHitOf(r.subtype),
+      structuredOutput: r.structuredOutput,
     };
   }
 }

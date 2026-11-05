@@ -9,6 +9,7 @@ import path from "node:path";
 import type { LimitHit } from "../agent/AgentRunner.js";
 import { getActiveContext } from "../orchestrator.js";
 import * as runs from "../runs.js";
+import type { StageScope } from "../scope.js";
 import type { RunConfig, StepType } from "../types.js";
 
 export interface StageRequest {
@@ -23,9 +24,12 @@ export interface StageRequest {
   /** Extra agent environment (research R5). */
   env?: Record<string, string>;
   entryId?: string;
+  /** The stage's write scope (016 R9). */
+  scope?: StageScope | null;
 }
 
 export interface StageResult {
+  agentRunId: string;
   result: string;
   structuredOutput: unknown | null;
   cost: number;
@@ -84,6 +88,7 @@ export async function runStage(req: StageRequest): Promise<StageResult> {
     env: req.env,
     entryId: req.entryId,
     policy: ctx.policy,
+    scope: req.scope ?? undefined,
   });
 
   const stopped = abort.signal.aborted;
@@ -106,6 +111,7 @@ export async function runStage(req: StageRequest): Promise<StageResult> {
   });
 
   return {
+    agentRunId,
     result: r.result,
     structuredOutput: r.structuredOutput,
     cost: r.cost,

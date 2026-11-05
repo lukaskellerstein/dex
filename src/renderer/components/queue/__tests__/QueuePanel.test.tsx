@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunSnapshot } from "../../../../core/run-snapshot.js";
 import { QueuePanel } from "../QueuePanel.js";
 
@@ -48,7 +48,17 @@ const SNAPSHOT: RunSnapshot = {
     ],
   },
   errors: [],
+  digests: ["002-beta"],
 };
+
+vi.mock("../../../services/projectService.js", () => ({
+  projectService: {
+    getDigest: vi.fn(async (_dir: string, id: string) => ({
+      markdown: `# ${id} — paused at implement: stalled\n\n**Cost**: $0.25 this entry, this run\n`,
+      path: `/p/.dex/digests/${id}.md`,
+    })),
+  },
+}));
 
 afterEach(cleanup);
 
@@ -79,11 +89,32 @@ describe("QueuePanel", () => {
   it("shows a validation error with no queue, and nothing without a queue or an error", () => {
     const { rerender } = render(
       <QueuePanel
-        snapshot={{ state: null, queue: null, errors: ["queue.json: entries must not be empty"] }}
+        snapshot={{
+          state: null,
+          queue: null,
+          errors: ["queue.json: entries must not be empty"],
+          digests: [],
+        }}
       />,
     );
     expect(screen.getByTestId("queue-errors").textContent).toMatch(/entries must not be empty/);
-    rerender(<QueuePanel snapshot={{ state: null, queue: null, errors: [] }} />);
+    rerender(<QueuePanel snapshot={{ state: null, queue: null, errors: [], digests: [] }} />);
     expect(screen.queryByTestId("queue-panel")).toBeNull();
+  });
+
+  it("a Digest button only on an entry with a digest; it opens the digest view, which closes", async () => {
+    render(<QueuePanel snapshot={SNAPSHOT} projectDir="/p" />);
+    const buttons = screen.getAllByTestId("queue-row-digest");
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]);
+    expect(await screen.findByText("002-beta — paused at implement: stalled")).toBeTruthy();
+    expect(screen.getByText("/p/.dex/digests/002-beta.md")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("digest-close"));
+    expect(screen.queryByTestId("digest-view")).toBeNull();
+  });
+
+  it("no Digest button without a project dir", () => {
+    render(<QueuePanel snapshot={SNAPSHOT} />);
+    expect(screen.queryByTestId("queue-row-digest")).toBeNull();
   });
 });

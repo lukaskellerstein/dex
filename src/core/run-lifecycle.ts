@@ -6,6 +6,7 @@
 
 import crypto from "node:crypto";
 import path from "node:path";
+import { assertEntrySensors } from "./acceptance.js";
 import type { AgentRunner } from "./agent/AgentRunner.js";
 import { createAgentRunner } from "./agent/index.js";
 import { createContext, type OrchestrationContext, type RunState } from "./context.js";
@@ -14,7 +15,7 @@ import { createBranch, createPullRequest, getCurrentBranch } from "./git.js";
 import { clearStaleRequests, waitingFor } from "./humanInput.js";
 import { fallbackLog as log, RunLogger } from "./log.js";
 import { loadPolicy, type Policy, type QueueKind } from "./policy.js";
-import { loadQueue, type QueueV3 } from "./queue.js";
+import { loadQueue, type QueueV3, queuePath } from "./queue.js";
 import * as runs from "./runs.js";
 import {
   acquireStateLock,
@@ -69,7 +70,9 @@ function readProjectRules(config: RunConfig, emit: EmitFn): ProjectRules | null 
   try {
     const queue = loadQueue(config.projectDir);
     const kind = queue?.kind ?? (config.mode === "loop" ? "new" : "existing");
-    return { queue, kind, policy: loadPolicy(config.projectDir, kind) };
+    const policy = loadPolicy(config.projectDir, kind);
+    if (queue) assertEntrySensors(queue, policy, queuePath(config.projectDir));
+    return { queue, kind, policy };
   } catch (err) {
     emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
     return null;

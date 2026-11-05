@@ -1,11 +1,13 @@
 /**
- * What: The project's own policy, `.dex/policy.json` (contracts/policy-json.md) — types and defaults, `parsePolicy` (strict validation; a refusal for skipping permission checks in an existing project, FR-014), `loadPolicy`, and the pure `decideToolUse(policy, call, env)` the PreToolUse hook and canUseTool ask: deny rules → write roots and frozen files (write tools) → ask rules → no opinion.
+ * What: The project's own policy, `.dex/policy.json` (contracts/policy-json.md) — types and defaults, `parsePolicy` (strict validation; a refusal for skipping permission checks in an existing project, FR-014), `loadPolicy`, and the pure `decideToolUse(policy, call, env, scope?)` the PreToolUse hook and canUseTool ask: deny rules → the stage's scope (scope.ts, 016) → write roots and frozen files (write tools) → ask rules → no opinion.
  * Not: Does not talk to the SDK or hold anything for a human (agent/permissions.ts does). Does not run preflight commands or check frozen files after a stage (stages/post-stage.ts).
  * Deps: node:fs, node:path. `isTrackedAtHead` is injected so the decision stays pure.
  */
 
 import fs from "node:fs";
 import path from "node:path";
+import { type StageScope, scopeDecision } from "./scope.js";
+import { parseSensorSpecs, type SensorSpec } from "./sensors.js";
 
 // ── Types (data-model.md § Policy) ──
 
@@ -38,6 +40,46 @@ const PERMISSION_MODES = ["default", "acceptEdits", "plan", SKIP_CHECKS_MODE] as
 const QUESTION_MODES = ["recommended-then-review", "wait"] as const;
 export type QuestionMode = (typeof QUESTION_MODES)[number];
 
+/** The project's checks (016 contracts/policy-json.md): fast ones around every implement run, standing ones before verify. */
+export interface PolicyChecks {
+  fast: SensorSpec[];
+  standing: SensorSpec[];
+  /** Re-runs of a red check; a pass on a re-run is `flaky` (R12). */
+  rerunOnFail: number;
+}
+
+/** What counts as a test file (research R9). */
+export const DEFAULT_TEST_GLOBS: readonly string[] = [
+  "**/test/**",
+  "**/tests/**",
+  "**/__tests__/**",
+  "**/e2e/**",
+  "**/*.test.*",
+  "**/*.spec.*",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/*_test.go",
+];
+
+/** What else the tests stage may write to set up its runner (research R19). */
+export const DEFAULT_TEST_SUPPORT: readonly string[] = [
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "playwright.config.*",
+  "vitest.config.*",
+  "jest.config.*",
+  "pytest.ini",
+  "pyproject.toml",
+  "uv.lock",
+  "**/conftest.py",
+  "go.mod",
+  "go.sum",
+];
+
+const CHECK_TIMEOUT_SEC = 600;
+
 export interface Policy {
   settingSources: (typeof SETTING_SOURCES)[number][];
   permissionMode: (typeof PERMISSION_MODES)[number];
@@ -55,6 +97,12 @@ export interface Policy {
   questions: QuestionMode;
   openPullRequest: boolean;
   limits: PolicyLimits;
+  checks: PolicyChecks;
+  /** `path.matchesGlob` globs, like `frozen`. */
+  testGlobs: string[];
+  testSupport: string[];
+  /** `browser`: the verifier in review mode works the feature in a browser (Playwright MCP). */
+  verify: { browser: boolean };
 }
 
 export const DEFAULT_POLICY: Readonly<Policy> = Object.freeze({
@@ -72,6 +120,10 @@ export const DEFAULT_POLICY: Readonly<Policy> = Object.freeze({
   questions: "recommended-then-review",
   openPullRequest: false,
   limits: { maxImplementRunsWithoutProgress: 2, maxVerifyRounds: 3 },
+  checks: { fast: [], standing: [], rerunOnFail: 1 },
+  testGlobs: [...DEFAULT_TEST_GLOBS],
+  testSupport: [...DEFAULT_TEST_SUPPORT],
+  verify: { browser: false },
 } satisfies Policy);
 
 // ── Errors ──
@@ -183,6 +235,33 @@ function limits(v: unknown, fail: Fail): PolicyLimits {
   return out;
 }
 
+function checks(v: unknown, fail: Fail): PolicyChecks {
+  if (!isObject(v)) fail(`"checks" must be an object`);
+  const raw = v as Record<string, unknown>;
+  rejectUnknown(raw, ["fast", "standing", "rerunOnFail"], "checks.", fail);
+  const list = (key: "fast" | "standing") =>
+    raw[key] === undefined
+      ? []
+      : parseSensorSpecs(raw[key], `checks.${key}`, CHECK_TIMEOUT_SEC, fail);
+  const rerun = raw.rerunOnFail ?? DEFAULT_POLICY.checks.rerunOnFail;
+  if (!Number.isInteger(rerun) || (rerun as number) < 0 || (rerun as number) > 5)
+    fail(`"checks.rerunOnFail" must be an integer from 0 to 5`);
+  return { fast: list("fast"), standing: list("standing"), rerunOnFail: rerun as number };
+}
+
+function verifyOptions(v: unknown, fail: Fail): Policy["verify"] {
+  if (!isObject(v)) fail(`"verify" must be an object`);
+  const raw = v as Record<string, unknown>;
+  rejectUnknown(raw, ["browser"], "verify.", fail);
+  return { browser: raw.browser === undefined ? false : bool(raw.browser, "verify.browser", fail) };
+}
+
+function globList(v: unknown, field: string, fail: Fail): string[] {
+  const list = stringList(v, field, fail);
+  if (list.length === 0) fail(`"${field}" must not be empty`);
+  return list;
+}
+
 function env(v: unknown, fail: Fail): Record<string, string> {
   if (!isObject(v) || !Object.values(v).every((s) => typeof s === "string")) {
     fail(`"env" must be an object of strings`);
@@ -238,6 +317,14 @@ export function parsePolicy(
       ? bool(r.openPullRequest, "openPullRequest", fail)
       : false,
     limits: has("limits") ? limits(r.limits, fail) : { ...DEFAULT_POLICY.limits },
+    checks: has("checks") ? checks(r.checks, fail) : { fast: [], standing: [], rerunOnFail: 1 },
+    testGlobs: has("testGlobs")
+      ? globList(r.testGlobs, "testGlobs", fail)
+      : [...DEFAULT_TEST_GLOBS],
+    testSupport: has("testSupport")
+      ? stringList(r.testSupport, "testSupport", fail)
+      : [...DEFAULT_TEST_SUPPORT],
+    verify: has("verify") ? verifyOptions(r.verify, fail) : { browser: false },
   };
   if (policy.permissionMode === SKIP_CHECKS_MODE && kind === "existing") {
     throw new PolicyRefusedError(
@@ -289,7 +376,7 @@ export interface PolicyEnv {
 }
 
 export type PolicyDecision =
-  | { kind: "deny"; rule: "deny" | "writeRoots" | "frozen"; reason: string }
+  | { kind: "deny"; rule: "deny" | "scope" | "writeRoots" | "frozen"; reason: string }
   | { kind: "ask"; reason: string }
   | { kind: "none" };
 
@@ -342,11 +429,21 @@ function writeDecision(policy: Policy, target: string, env: PolicyEnv): PolicyDe
   return null;
 }
 
-/** Pure: what the policy says about one tool call. The first match wins. */
-export function decideToolUse(policy: Policy, call: ToolCall, env: PolicyEnv): PolicyDecision {
+/**
+ * Pure: what the policy says about one tool call. The first match wins: deny
+ * rules → the stage's scope (016 R9) → write roots and frozen files → ask rules.
+ */
+export function decideToolUse(
+  policy: Policy,
+  call: ToolCall,
+  env: PolicyEnv,
+  scope?: StageScope,
+): PolicyDecision {
   const subject = subjectOf(call, env.projectDir);
   const denied = firstMatch(policy.deny, call, subject);
   if (denied) return { kind: "deny", rule: "deny", reason: denied.reason };
+  const scoped = scopeDecision(scope, call, env);
+  if (scoped) return scoped;
   if (WRITE_TOOLS.includes(call.toolName)) {
     const target = targetPath(call, env.projectDir);
     const decision = target ? writeDecision(policy, target, env) : null;

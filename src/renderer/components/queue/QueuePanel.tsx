@@ -1,19 +1,22 @@
 /**
- * What: The queue as the files say it is (research R17, FR-043) — one row per entry with its title, derived status, next stage, task phase and cost; the queue or policy errors that make Dex refuse to start; and the answers Dex gave by default (recommended-then-review) for the human to review.
- * Not: Derives nothing: every value comes from the run snapshot (core picker.describeQueue + state.json). Does not start or answer anything.
- * Deps: RunSnapshot / ReviewItem types, lucide-react.
+ * What: The queue as the files say it is (research R17, FR-043) — one row per entry with its title, derived status, next stage, task phase and cost, and a Digest button when Dex wrote one (016, opens DigestView); the queue or policy errors that make Dex refuse to start; and the answers Dex gave by default (recommended-then-review) for the human to review.
+ * Not: Derives nothing: every value comes from the run snapshot (core picker.describeQueue + state.json + the digest list). Does not start or answer anything.
+ * Deps: RunSnapshot / ReviewItem types, DigestView, lucide-react.
  */
 import {
   Circle,
   CircleCheck,
   CircleDot,
+  FileText,
   ListChecks,
   SkipForward,
   TriangleAlert,
 } from "lucide-react";
+import { useState } from "react";
 import type { ReviewItem } from "../../../core/humanInput.js";
 import type { QueueViewEntry } from "../../../core/picker.js";
 import type { RunSnapshot } from "../../../core/run-snapshot.js";
+import { DigestView } from "./DigestView.js";
 
 const STATUS_ICON = {
   done: { Icon: CircleCheck, color: "var(--status-success)" },
@@ -41,7 +44,33 @@ function nextOf(e: QueueViewEntry): string {
   return e.taskPhase === null ? e.nextStage : `${e.nextStage} · phase ${e.taskPhase}`;
 }
 
-function EntryRow({ entry }: { entry: QueueViewEntry }) {
+function DigestButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      data-testid="queue-row-digest"
+      onClick={onOpen}
+      title="Open the digest"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "1px 6px",
+        fontSize: "0.72rem",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius)",
+        background: "var(--surface-elevated)",
+        color: "var(--foreground-muted)",
+        cursor: "pointer",
+      }}
+    >
+      <FileText size={12} />
+      Digest
+    </button>
+  );
+}
+
+function EntryRow({ entry, onDigest }: { entry: QueueViewEntry; onDigest: (() => void) | null }) {
   const { Icon, color } = STATUS_ICON[entry.status];
   return (
     <div
@@ -49,7 +78,7 @@ function EntryRow({ entry }: { entry: QueueViewEntry }) {
       title={entry.reason}
       style={{
         display: "grid",
-        gridTemplateColumns: "16px minmax(0, 1fr) 72px 150px 64px",
+        gridTemplateColumns: "16px minmax(0, 1fr) 72px 150px 64px 64px",
         alignItems: "center",
         gap: 10,
         padding: "5px 8px",
@@ -93,6 +122,7 @@ function EntryRow({ entry }: { entry: QueueViewEntry }) {
       >
         {usd(entry.costUsd)}
       </span>
+      <span>{onDigest && <DigestButton onOpen={onDigest} />}</span>
     </div>
   );
 }
@@ -135,10 +165,20 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
   );
 }
 
-export function QueuePanel({ snapshot }: { snapshot: RunSnapshot | null }) {
+export function QueuePanel({
+  snapshot,
+  projectDir = null,
+}: {
+  snapshot: RunSnapshot | null;
+  /** Needed to open a digest; without it no Digest button shows. */
+  projectDir?: string | null;
+}) {
+  const [digestOf, setDigestOf] = useState<string | null>(null);
   if (!snapshot || (!snapshot.queue && snapshot.errors.length === 0)) return null;
   const { queue, errors, state } = snapshot;
   const total = queue?.entries.reduce((sum, e) => sum + e.costUsd, 0) ?? 0;
+  const digests = new Set(snapshot.digests);
+  const onDigest = (id: string) => (projectDir && digests.has(id) ? () => setDigestOf(id) : null);
   return (
     <div
       data-testid="queue-panel"
@@ -154,9 +194,12 @@ export function QueuePanel({ snapshot }: { snapshot: RunSnapshot | null }) {
       </div>
       <Errors errors={errors} />
       {queue?.entries.map((e) => (
-        <EntryRow key={e.id} entry={e} />
+        <EntryRow key={e.id} entry={e} onDigest={onDigest(e.id)} />
       ))}
       <ReviewList items={state?.reviewList ?? []} />
+      {digestOf && projectDir && (
+        <DigestView projectDir={projectDir} entryId={digestOf} onClose={() => setDigestOf(null)} />
+      )}
     </div>
   );
 }

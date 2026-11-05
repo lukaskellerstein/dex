@@ -2,11 +2,12 @@ import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { VerifyVerdict } from "../evidence.js";
 import { deriveGoalPaths, type GoalPaths } from "../goal-paths.js";
 import { askQuestions, questionModeFor } from "../humanInput.js";
-import type { Policy } from "../policy.js";
+import type { RunLogger } from "../log.js";
+import { decideToolUse, type Policy, subjectOf } from "../policy.js";
 import { loadQueue, type StageName } from "../queue.js";
+import type { StageScope } from "../scope.js";
 import type { AgentStep, EmitFn, RunConfig, StepType, UserInputQuestion } from "../types.js";
 import type {
   AgentRunner,
@@ -16,6 +17,7 @@ import type {
   TaskPhaseResult,
 } from "./AgentRunner.js";
 import {
+  type ImplementDescriptor,
   loadMockConfig,
   type MockConfig,
   MockConfigInvalidPathError,
@@ -27,6 +29,7 @@ import {
   type VerifyDescriptor,
   type VerifyRound,
 } from "./MockConfig.js";
+import { policyEnvFor } from "./permissions.js";
 
 /** Inline step constructor, so the mock stays self-contained. */
 function mkStep(
@@ -69,20 +72,36 @@ interface TemplateCtx {
   runId: string;
 }
 
+/** What the mock's file actions are checked with: the decision a real tool call gets (016 R16). */
+interface WriteGuard {
+  policy: Policy;
+  scope?: StageScope;
+  emit: EmitFn;
+  runId: string;
+  agentRunId: string;
+  rlog: Pick<RunLogger, "agentRun">;
+}
+
 /** What the verify prompt tells the agent about a fix phase (contracts/evidence.md). */
 interface VerifyPromptFacts {
   round: number;
   phaseNumber: number;
   firstTaskId: string;
+  mode: "diagnose" | "review";
 }
 
 function parseVerifyPrompt(prompt: string): VerifyPromptFacts {
   const phase = /^## Phase (\d+): Verify fixes V(\d+)\s*$/m.exec(prompt);
   const task = /^- \[ \] (T\d+) /m.exec(prompt)?.[1];
-  if (!phase || !task) {
-    throw new Error("mock verify: the prompt lacks the fix-phase header or the first fix task id");
+  const mode = /— (diagnose|review) mode\./.exec(prompt)?.[1] as
+    | VerifyPromptFacts["mode"]
+    | undefined;
+  if (!phase || !task || !mode) {
+    throw new Error(
+      "mock verify: the prompt lacks the mode, the fix-phase header or the first fix task id",
+    );
   }
-  return { round: Number(phase[2]), phaseNumber: Number(phase[1]), firstTaskId: task };
+  return { round: Number(phase[2]), phaseNumber: Number(phase[1]), firstTaskId: task, mode };
 }
 
 /** The ids the implement prompt names as in scope; null when the whole phase is. */
@@ -101,9 +120,10 @@ function nthTaskId(first: string, offset: number): string {
  * `.dex/mock-config.json` instead of calling the Claude SDK. Each stage sleeps
  * for its delay, applies its writes and appends, and commits like an agent that
  * follows the project's rules (`mock(<stage>): <entryId>`). `implement` also
- * ticks the phase's in-scope tasks, and `verify` returns the scripted verdict
- * as structured output and appends the fix phase the prompt names on failure —
- * so the mock follows the same contracts the real agent does (research R15).
+ * ticks the phase's in-scope tasks, and `verify` returns the scripted review or
+ * diagnose output (by the prompt's mode) and appends the fix phase the prompt
+ * names — in diagnose mode, or with a blocking finding — so the mock follows the
+ * same contracts the real agent does (015 research R15, 016 R16).
  *
  * Failure modes are loud by design: missing script entries and unknown
  * substitution tokens throw typed errors that name the offending coordinates.
@@ -112,6 +132,8 @@ export class MockAgentRunner implements AgentRunner {
   private readonly config: MockConfig;
   private readonly projectDir: string;
   private readonly goalPaths: GoalPaths;
+  /** Task-phase runs so far, per entry, for `implement.runs` (in memory: one count per process). */
+  private readonly implementRuns = new Map<string | null, number>();
 
   constructor(runConfig: RunConfig, projectDir: string) {
     this.config = loadMockConfig(projectDir);
@@ -125,7 +147,9 @@ export class MockAgentRunner implements AgentRunner {
     const start = Date.now();
     const phase = PHASE_OF_STEP[step];
     const entryId = ctx.entryId ?? null;
-    const descriptor = this.lookup(phase, step, entryId);
+    // Implement reaches runStep only as a restore run (016 research R7).
+    const descriptor =
+      step === "implement" ? this.restoreScript(entryId) : this.lookup(phase, step, entryId);
 
     rlog.agentRun("INFO", `mock.runStep: phase=${phase} step=${step} entry=${entryId ?? "(none)"}`);
     const emitStep = this.stepEmitter(emit);
@@ -140,16 +164,15 @@ export class MockAgentRunner implements AgentRunner {
     await sleep(descriptor.delay);
     const aborted = () => ctx.abortController?.signal.aborted ?? false;
     if (descriptor.asks && !aborted()) {
-      await this.ask(descriptor.asks, {
-        ...ctx,
-        entryId,
-        step,
-        autoClarification: ctx.config.autoClarification ?? false,
-      });
+      await this.ask(
+        descriptor.asks,
+        { ...ctx, entryId, step, autoClarification: ctx.config.autoClarification ?? false },
+        emitStep,
+      );
     }
     // A stopped agent leaves nothing behind, like a real session aborted mid-stream.
     const stopped = aborted();
-    let verdict: VerifyVerdict | null = null;
+    let verifyOutput: Record<string, unknown> | null = null;
     if (!stopped) {
       // spec-kit writes where SPECIFY_FEATURE_DIRECTORY points (research R5).
       const tctx = {
@@ -161,15 +184,16 @@ export class MockAgentRunner implements AgentRunner {
       if (step === "specify" && ctx.env?.GIT_BRANCH_NAME)
         this.switchToFeatureBranch(ctx.env.GIT_BRANCH_NAME);
       if (step === "brief") this.writeBrief(entryId);
-      this.applySideEffects(descriptor, tctx);
-      if (step === "verify") verdict = this.verify(descriptor as VerifyDescriptor, tctx, prompt);
+      this.applySideEffects(descriptor, tctx, ctx);
+      if (step === "verify")
+        verifyOutput = this.verify(descriptor as VerifyDescriptor, tctx, prompt);
       this.commitAsAgent(step, entryId);
     }
 
     emitStep("completed", `Step ${step} ${stopped ? "stopped" : "completed"} (mock)`);
     return {
       result: "",
-      structuredOutput: stopped ? null : (verdict ?? descriptor.structured_output ?? null),
+      structuredOutput: stopped ? null : (verifyOutput ?? descriptor.structured_output ?? null),
       cost: 0,
       durationMs: Date.now() - start,
       inputTokens: 0,
@@ -183,7 +207,7 @@ export class MockAgentRunner implements AgentRunner {
     const start = Date.now();
     const entryId = ctx.entryId ?? null;
     const specDir = runConfig.specDir ?? null;
-    const descriptor = this.lookup("entries", "implement", entryId);
+    const descriptor = this.implementScript(entryId);
 
     rlog.agentRun(
       "INFO",
@@ -199,16 +223,19 @@ export class MockAgentRunner implements AgentRunner {
     await sleep(descriptor.delay);
     const aborted = () => ctx.abortController?.signal.aborted ?? false;
     if (descriptor.asks && !aborted()) {
-      await this.ask(descriptor.asks, {
-        ...ctx,
-        entryId,
-        step: "implement",
-        autoClarification: false,
-      });
+      await this.ask(
+        descriptor.asks,
+        { ...ctx, entryId, step: "implement", autoClarification: false },
+        emitStep,
+      );
     }
     const stopped = aborted();
     if (!stopped) {
-      this.applySideEffects(descriptor, { cycleNumber: 0, featureId: entryId, specDir, runId });
+      this.applySideEffects(
+        descriptor,
+        { cycleNumber: 0, featureId: entryId, specDir, runId },
+        { ...ctx, runId, agentRunId: ctx.agentRunId },
+      );
       if (specDir && descriptor.tick !== false) {
         this.tickPhase(
           specDir,
@@ -221,10 +248,20 @@ export class MockAgentRunner implements AgentRunner {
 
     const outcome = stopped ? "stopped" : "completed";
     emitStep("completed", `TaskPhase ${taskPhase.number}: ${taskPhase.name} ${outcome} (mock)`);
-    return { cost: 0, durationMs: Date.now() - start, inputTokens: 0, outputTokens: 0 };
+    return {
+      cost: 0,
+      durationMs: Date.now() - start,
+      inputTokens: 0,
+      outputTokens: 0,
+      structuredOutput: stopped ? null : (descriptor.structured_output ?? null),
+    };
   }
 
-  /** Asks the scripted questions the way canUseTool answers AskUserQuestion: the stage's mode decides. */
+  /**
+   * Asks the scripted questions the way canUseTool answers AskUserQuestion: the
+   * stage's mode decides. The answers the agent gets back go to the trace as a
+   * `text` step, so a test sees what a real agent would read.
+   */
   private async ask(
     asks: MockQuestion[],
     c: {
@@ -235,6 +272,7 @@ export class MockAgentRunner implements AgentRunner {
       autoClarification: boolean;
       policy: Policy;
     },
+    emitStep: ReturnType<MockAgentRunner["stepEmitter"]>,
   ): Promise<void> {
     const questions: UserInputQuestion[] = asks.map((q) => ({
       question: q.question,
@@ -242,7 +280,7 @@ export class MockAgentRunner implements AgentRunner {
       multiSelect: q.multiSelect ?? false,
       options: q.options.map((o) => ({ label: o.label, description: o.description ?? "" })),
     }));
-    await askQuestions(
+    const answers = await askQuestions(
       { projectDir: this.projectDir, runId: c.runId, emit: c.emit },
       c.entryId,
       questions,
@@ -251,6 +289,7 @@ export class MockAgentRunner implements AgentRunner {
         step: c.step,
       },
     );
+    emitStep("text", `answers: ${JSON.stringify(answers)}`, { mockAnswers: answers });
   }
 
   // ── Lookup ──
@@ -262,6 +301,28 @@ export class MockAgentRunner implements AgentRunner {
         : (this.config as unknown as Record<string, Record<string, StepDescriptor>>)[phase]?.[step];
     if (!found) throw new MockConfigMissingEntryError(phase, step, entryId);
     return found;
+  }
+
+  /** The k-th task-phase run of an entry: `implement.runs[k-1]`, else the last one, else `implement`. */
+  private implementScript(entryId: string | null): StepDescriptor {
+    const implement = this.lookup("entries", "implement", entryId) as ImplementDescriptor;
+    const k = (this.implementRuns.get(entryId) ?? 0) + 1;
+    this.implementRuns.set(entryId, k);
+    const runs = implement.runs;
+    return runs ? (runs[k - 1] ?? runs[runs.length - 1]) : implement;
+  }
+
+  private restoreScript(entryId: string | null): StepDescriptor {
+    const implement = this.lookup("entries", "implement", entryId) as ImplementDescriptor;
+    if (!implement.restore) {
+      throw new MockConfigMissingEntryError(
+        "entries",
+        "implement.restore",
+        entryId,
+        "a red baseline asked for a restore run",
+      );
+    }
+    return implement.restore;
   }
 
   /** Emits synthetic agent_steps; the mock persists none (spec 009). */
@@ -285,19 +346,59 @@ export class MockAgentRunner implements AgentRunner {
 
   // ── Side-effect helpers ──
 
-  private applySideEffects(descriptor: StepDescriptor, ctx: TemplateCtx): void {
+  /**
+   * The stage's writes, appends and deletes, each first checked like the real
+   * tool call it stands for (016 R16): a denied one is skipped, logged and
+   * emitted as `policy_denied`. `.dex/fake/` is the fake sensors' switch, not
+   * the agent's work, so it is never checked.
+   */
+  private applySideEffects(descriptor: StepDescriptor, ctx: TemplateCtx, guard: WriteGuard): void {
     for (const w of descriptor.writes ?? []) {
       const dest = this.resolveProjectPath(w.path, ctx);
+      const content = this.renderTemplate(w.content, ctx);
+      if (!this.allowed(guard, dest, "Write", { file_path: dest, content })) continue;
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, this.renderTemplate(w.content, ctx), "utf8");
+      fs.writeFileSync(dest, content, "utf8");
     }
     for (const a of descriptor.appends ?? []) {
       const dest = this.resolveProjectPath(a.path, ctx);
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
       let line = this.renderTemplate(a.line, ctx);
       if (!line.endsWith("\n")) line += "\n";
+      const edit = { file_path: dest, old_string: "", new_string: line };
+      if (!this.allowed(guard, dest, "Edit", edit)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.appendFileSync(dest, line, "utf8");
     }
+    for (const d of descriptor.deletes ?? []) {
+      const dest = this.resolveProjectPath(d, ctx);
+      const command = `rm ${path.relative(this.projectDir, dest)}`;
+      if (!this.allowed(guard, dest, "Bash", { command })) continue;
+      fs.rmSync(dest, { force: true });
+    }
+  }
+
+  private allowed(
+    guard: WriteGuard,
+    dest: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ): boolean {
+    if (dest.startsWith(path.join(this.projectDir, ".dex", "fake") + path.sep)) return true;
+    const call = { toolName, input };
+    const d = decideToolUse(guard.policy, call, policyEnvFor(this.projectDir), guard.scope);
+    if (d.kind !== "deny") return true;
+    const subject = subjectOf(call, this.projectDir);
+    guard.emit({
+      type: "policy_denied",
+      runId: guard.runId,
+      agentRunId: guard.agentRunId,
+      toolName,
+      subject,
+      reason: d.reason,
+      rule: d.rule,
+    });
+    guard.rlog.agentRun("WARN", `mock: denied ${toolName} (${d.rule}) — ${d.reason}`, { subject });
+    return false;
   }
 
   /** Checks every unchecked task of the phase that is in scope, as the prompt asks. */
@@ -314,24 +415,42 @@ export class MockAgentRunner implements AgentRunner {
   }
 
   /**
-   * The scripted verdict for this round, as the agent's structured output. On
-   * failure, also appends the fix phase the prompt names to tasks.md.
+   * The scripted output for this round in the prompt's mode (016 R13): review
+   * returns `findings`, diagnose returns `hypotheses`; both still carry the
+   * round's old `verdict`, which the done gate ignores. Appends the fix phase the
+   * prompt names in diagnose mode, or in review mode with a blocking finding.
    */
-  private verify(descriptor: VerifyDescriptor, ctx: TemplateCtx, prompt: string): VerifyVerdict {
+  private verify(
+    descriptor: VerifyDescriptor,
+    ctx: TemplateCtx,
+    prompt: string,
+  ): Record<string, unknown> {
     if (!ctx.specDir) throw new Error("mock verify: no specDir");
     const facts = parseVerifyPrompt(prompt);
     const rounds = descriptor.rounds ?? [];
     const round: VerifyRound = rounds[facts.round - 1] ?? rounds.at(-1) ?? { verdict: "passed" };
-    const command = `mock verify round ${facts.round}`;
-    const verdict: VerifyVerdict = {
-      verdict: round.verdict,
-      summary: `mock verify round ${facts.round}: ${round.verdict}`,
-      commands: [{ command, exitCode: round.verdict === "passed" ? 0 : 1 }],
-      criteria: [],
-    };
-    if (round.verdict === "passed") return verdict;
-    const dir = path.join(this.projectDir, ctx.specDir);
+    const summary = `mock verify round ${facts.round} (${facts.mode})`;
+    const findings = (round.findings ?? descriptor.findings ?? []).map((f) => ({
+      severity: f.severity,
+      summary: this.renderTemplate(f.summary, ctx),
+      criterion: f.criterion ?? null,
+      where: f.where ?? null,
+    }));
+    const output =
+      facts.mode === "review"
+        ? { verdict: round.verdict, summary, criteria: [], findings }
+        : {
+            verdict: round.verdict,
+            summary,
+            hypotheses: round.hypotheses ?? descriptor.hypotheses ?? [],
+          };
+    if (facts.mode === "review" && !findings.some((f) => f.severity === "blocking")) return output;
+    this.appendFixPhase(round, ctx, facts);
+    return output;
+  }
 
+  private appendFixPhase(round: VerifyRound, ctx: TemplateCtx, facts: VerifyPromptFacts): void {
+    const dir = path.join(this.projectDir, ctx.specDir ?? "");
     const fixes = round.fixTasks?.length
       ? round.fixTasks.map((f) => this.renderTemplate(f, ctx))
       : [`Fix what verify round ${facts.round} found`];
@@ -346,14 +465,8 @@ export class MockAgentRunner implements AgentRunner {
       "",
     ];
     fs.writeFileSync(tasksFile, `${current.replace(/\n*$/, "\n\n")}${phase.join("\n")}`, "utf8");
-    return verdict;
   }
 
-  /**
-   * What spec-kit's git extension does for `specify` when `GIT_BRANCH_NAME` is
-   * set: create the feature branch from the current one and switch to it, or
-   * switch to it when it already exists.
-   */
   /** The brief stage: a short brief with an acceptance section at the entry's `brief` path (queue.json). */
   private writeBrief(entryId: string | null): void {
     const entry = loadQueue(this.projectDir)?.entries.find((e) => e.id === entryId);
@@ -366,6 +479,11 @@ export class MockAgentRunner implements AgentRunner {
     fs.writeFileSync(dest, body, "utf8");
   }
 
+  /**
+   * What spec-kit's git extension does for `specify` when `GIT_BRANCH_NAME` is
+   * set: create the feature branch from the current one and switch to it, or
+   * switch to it when it already exists.
+   */
   private switchToFeatureBranch(name: string): void {
     const git = (args: string[]) =>
       execFileSync("git", args, { cwd: this.projectDir, stdio: "pipe" });

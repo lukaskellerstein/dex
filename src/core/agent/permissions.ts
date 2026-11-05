@@ -16,11 +16,14 @@ import {
 } from "../humanInput.js";
 import type { RunLogger } from "../log.js";
 import { decideToolUse, type Policy, type PolicyEnv, subjectOf, type ToolCall } from "../policy.js";
+import type { StageScope } from "../scope.js";
 import type { UserInputQuestion } from "../types.js";
 import { matchSettingsAsk, type SettingsAskRule } from "./settingsRules.js";
 
 export interface PermissionDeps {
   policy: Policy;
+  /** The stage's write scope (016 R9); every decision checks it right after the deny rules. */
+  scope?: StageScope;
   policyEnv: PolicyEnv;
   io: HumanIO;
   agentRunId: string;
@@ -62,7 +65,7 @@ export function preToolUseDecision(
 ): Record<string, unknown> {
   if (d.isAborted()) return hookDecision("deny", STOPPED);
   const call: ToolCall = { toolName, input: toolInput };
-  const decision = decideToolUse(d.policy, call, d.policyEnv);
+  const decision = decideToolUse(d.policy, call, d.policyEnv, d.scope);
   if (decision.kind === "deny") {
     const subject = subjectOf(call, d.policyEnv.projectDir);
     d.io.emit({
@@ -120,7 +123,7 @@ export function makeCanUseTool(d: PermissionDeps): CanUseTool {
   return async (toolName, input, options) => {
     if (toolName === "AskUserQuestion") return answerQuestions(d, input);
     const call: ToolCall = { toolName, input };
-    const decision = decideToolUse(d.policy, call, d.policyEnv);
+    const decision = decideToolUse(d.policy, call, d.policyEnv, d.scope);
     // The hook denies first; this keeps a deny a deny if the hook did not run.
     if (decision.kind === "deny") return { behavior: "deny", message: decision.reason };
     const settingsReason = settingsAskReason(options) ?? compoundAskReason(d, call);

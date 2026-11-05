@@ -1,0 +1,63 @@
+{
+  "entries": {
+    "*": {
+      "tests": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// fixture A: the greeter's acceptance test. The fake sensor stands in for it.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › greets by name\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "1\n" }
+        ]
+      },
+      "implement": {
+        "delay": 0,
+        "runs": [
+          {
+            "delay": 0,
+            "writes": [
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A.\nexport const greet = (name: string): string => \"Hello, \" + name;\n"
+              },
+              { "path": ".dex/fake/acceptance", "content": "0\n" }
+            ]
+          }
+        ]
+      },
+      "verify": {
+        "delay": 0,
+        "rounds": [
+          {
+            "verdict": "passed",
+            "findings": [
+              {
+                "severity": "blocking",
+                "summary": "An empty name greets \"Hello, \" instead of being rejected",
+                "criterion": "SC-002",
+                "where": "src/fixture-a/greet.ts:2"
+              }
+            ],
+            "fixTasks": ["Reject an empty name in src/fixture-a/greet.ts"]
+          },
+          {
+            "verdict": "failed",
+            "findings": [
+              {
+                "severity": "minor",
+                "summary": "The error text says \"empty\" where the spec says \"blank\"",
+                "criterion": "SC-002",
+                "where": "src/fixture-a/greet.ts:2"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

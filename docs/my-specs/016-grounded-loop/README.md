@@ -9,9 +9,9 @@
 > - amends D-015-5 (`verify`);
 > - replaces D-015-7 (the failure counter).
 >
-> **First real run:** the first real run on `onion-demo-01` happens at the end of this spec (Phase 8), not at the end of 015.
+> **First real run:** the first grounded real run, on a scratch clone of `dex-ecommerce`, happens at the end of this spec (Phase 8).
 >
-> **Followed by** [`017-living-docs`](../017-living-docs/README.md): the project's docs become the loop's lasting memory, and the digest gains a lessons review.
+> **Followed by** [`018-living-docs`](../018-living-docs/README.md): the project's docs become the loop's lasting memory, and the digest gains a lessons review.
 
 ## Why
 
@@ -131,7 +131,7 @@ A red check is re-run once (`checks.rerunOnFail`, default 1). If it's green on t
 
 ### D-016-9 — An attempt log the next session reads
 
-Dex keeps `.dex/evidence/<id>/progress.md` (gitignored), written from each stage's structured output: what was tried, what happened, the failing evidence and the open hypotheses. The latest entries, capped at about 2k tokens, are added to the next stage's prompt. This replaces the old `learnings` stage (dropped in 015) with something narrower: a memory of this entry's attempts, not general insights. The log is working memory, cleared when the entry is done (its archive stays in the evidence). Lasting knowledge goes into the project's docs, through human-approved edits ([017](../017-living-docs/README.md)).
+Dex keeps `.dex/evidence/<id>/progress.md` (gitignored), written from each stage's structured output: what was tried, what happened, the failing evidence and the open hypotheses. The latest entries, capped at about 2k tokens, are added to the next stage's prompt. This replaces the old `learnings` stage (dropped in 015) with something narrower: a memory of this entry's attempts, not general insights. The log is working memory, cleared when the entry is done (its archive stays in the evidence). Lasting knowledge goes into the project's docs, through human-approved edits ([018](../018-living-docs/README.md)).
 
 ### D-016-10 — A review digest, against comprehension debt
 
@@ -196,7 +196,7 @@ The mock needs fake sensors (`sh -c 'exit 1'` and similar, switchable per run) s
 - **Change:**
   - `picker.ts`: the `tests` row and the done-gate row;
   - `policy.ts`: per-stage write scopes and per-entry frozen sets;
-  - `stages/main-loop.ts` and `stages/cycle-stages.ts`: the gate calls;
+  - `stages/loop.ts` (015 renamed `stages/main-loop.ts`) and `stages/cycle-stages.ts`: the gate calls;
   - `agent/MockAgentRunner.ts` and `agent/MockConfig.ts`: scenarios and fake sensors;
   - the renderer: evidence per stage in the trace, and a digest view;
   - `cli.ts`: `dex digest <id>`.
@@ -213,10 +213,10 @@ After every phase, `npm test` and `npm run typecheck` pass.
 5. **Verify:** Dex's acceptance run, the verifier's two modes, the done gate; the picker's done row from evidence.
 6. **The attempt log and the digest,** in the UI and the CLI.
 7. **The unhappy-path mock scenarios** (D-016-11), all ending as documented.
-8. **First real run on `onion-demo-01`** (Appendix A):
+8. **First real run on a `dex-ecommerce` scratch clone** (Appendix A):
    - configure the checks and acceptance commands;
    - run `dex run --dry-run`, and the owner signs off;
-   - run the first real stage, 020's next `implement` phase, with the owner watching;
+   - run the first real stage, the next open entry's `tests` stage, with the owner watching;
    - then run the queue.
 
 ## Verification (DoD)
@@ -228,7 +228,7 @@ After every phase, `npm test` and `npm run typecheck` pass.
 - [ ] A real (non-mock) entry on `dex-ecommerce`: the `tests` stage writes boundary tests (HTTP or Playwright) that fail before the implementation and pass after it. The evidence records show both runs.
 - [ ] A commit after done makes the picker verify again; acceptance re-runs.
 - [ ] `grep` shows no code path where an agent's structured output alone marks a gate passed.
-- [ ] On `onion-demo-01`, the dry run lists each entry's fast checks and acceptance commands, and the owner signs off.
+- [ ] On the `dex-ecommerce` scratch clone, the dry run lists each entry's fast checks and acceptance commands, and the owner signs off.
 
 ## Out of scope
 
@@ -250,24 +250,18 @@ The proposed default is in bold.
 5. **Where evidence and digests live:** **gitignored under `.dex/`** | tracked in the spec folder.
 6. **What `implement` may change in `tasks.md`:** **checkbox flips only** | also appending discovered tasks under a fixed heading.
 
-## Appendix A — onion-demo-01
+## Appendix A — a dex-ecommerce scratch clone
 
-The project already works this way by hand, which makes it a good first real user:
+`dex-ecommerce` is Dex's playground. The real run uses a scratch clone of it: its `origin` points at a scratch bare repo, and its `.dex/dex-config.json` sets `{"agent": "claude"}`. Its features (catalog, cart, accounts, promo codes, checkout) have a boundary a test can reach: HTTP routes, and pages in a browser.
 
-- **Frozen bands:** thresholds are frozen before measurement code exists (`onion-poc-report/thresholds.md`, rule 04), and 021's Phase 0 freezes the H, K, N and T bands in `agent-entry-thresholds.md` before any build. That is the red-first oracle under another name, and 015's `frozen` policy already protects those files.
-- **Offline gates:** every user story in 020 ends in an "Offline gate" task, such as T132's enforcement-core `-k "raw_resource"`, the agent-core and api-core tests, and `ONION_VENV=.venv-onion workload/onion-platform/tools/final-check.sh`.
-- **Live evidence:** acceptance runs against the deployed estate, such as T133's `thin-layer-evidence/run.py labels-only --tenant severobanka` and 021's `tools/agent-entry-evidence/run.py` with one subcommand per falsifier.
+The proposed mapping, with exact commands set in Phase 8, once the clone's code exists:
 
-The proposed mapping, with exact commands set in Phase 8:
-
-| Sensor | Onion command |
+| Sensor | Proposed command |
 |---|---|
-| `checks.fast` | the pytest selections from the entry's offline-gate task, for the packages it touches; `./scripts/terminology-lint.sh`; `helm lint` + `helm template` for any chart it touches |
-| `checks.standing` | `ONION_VENV=.venv-onion workload/onion-platform/tools/final-check.sh` |
-| `acceptance`, 020 (US7 + T110) | `thin-layer-evidence/run.py labels-only --tenant severobanka`, after the release-and-deploy task |
-| `acceptance`, 021 | `tools/agent-entry-evidence/run.py` H, K, N and T against the frozen bands |
-| `verify.browser` | `true`, with the Bearer header set before `goto` (rule 06; never the login form) |
+| `checks.fast` | the unit tests of the folders the entry touches (for example `src/cart/`); the type check |
+| `checks.standing` | the full test suite |
+| `acceptance`, an API entry | HTTP tests against the local dev server, for example "add to cart" and "apply a promo code" |
+| `acceptance`, a page entry | Playwright tests against the local dev server, for example the checkout flow |
+| `verify.browser` | `true`, against the local dev server |
 
-021's `tests` stage is its Phase 0 plus the skeleton of the evidence tool. It writes the falsifier checks, which fail before Phases 1–7 exist.
-
-The 020 entry adds `tests` to its `skip` list and declares its `acceptance` directly, because its spec, tasks and evidence tool already exist. The entries from 021 on run the `tests` stage.
+An entry whose spec, tasks and tests already exist adds `tests` to its `skip` list and declares its `acceptance` directly. The next open entry, from `003-promo-codes` on, runs the `tests` stage.

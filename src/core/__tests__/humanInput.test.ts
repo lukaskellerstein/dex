@@ -9,11 +9,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import type { OrchestratorEvent } from "../events.ts";
+import { pendingAmendment } from "../evidence.ts";
 import {
+  APPROVE_AMENDMENT,
   askQuestions,
   cancelAll,
   isRecommended,
+  parseAmendment,
   questionKey,
+  REJECT_AMENDMENT,
   requestToolApproval,
   resolveRequest,
   toolKey,
@@ -154,6 +158,83 @@ test("wait mode: even an all-recommended question waits", async () => {
   const held = askQuestions(io(), null, [PROVIDER], { mode: "wait", step: "clarify" });
   assert.equal(await settled(held), false);
   assert.equal(readState(dir)?.pendingRequests.length, 1);
+});
+
+// ── Test amendments (016 R10) ──
+
+const ENTRY = "004-product-recommendations";
+const AMEND: UserInputQuestion = {
+  question:
+    "Amend tests/acceptance/recs.spec.ts: the plan's contract says 422, the test expects 410.",
+  header: "Test amendment",
+  multiSelect: true,
+  options: [{ label: "Change it (Recommended)", description: "" }],
+};
+
+async function amendWith(answer: string | null): Promise<Record<string, string>> {
+  const held = askQuestions(io(), ENTRY, [AMEND], {
+    mode: "recommended-then-review",
+    step: "implement",
+  });
+  assert.equal(await settled(held), false, "an amendment never takes a default");
+  const pending = readState(dir)?.pendingRequests ?? [];
+  assert.equal(pending.length, 1);
+  const asked = pending[0].kind === "question" ? pending[0].questions[0] : null;
+  assert.deepEqual(
+    asked?.options.map((o) => o.label),
+    [APPROVE_AMENDMENT, REJECT_AMENDMENT],
+  );
+  assert.equal(asked?.multiSelect, false);
+  if (answer === null) cancelAll();
+  else resolveRequest(pending[0].id, { kind: "question", answers: { [AMEND.question]: answer } });
+  return held;
+}
+
+test("amendment: waits in recommended-then-review with Dex's two options; approve is recorded and answered", async () => {
+  const answers = await amendWith(APPROVE_AMENDMENT);
+  assert.match(
+    answers[AMEND.question],
+    /^Approved: the test author will change tests\/acceptance\/recs\.spec\.ts\. Go on/,
+  );
+  assert.equal(readState(dir)?.reviewList.length, 0);
+  const pending = pendingAmendment(dir, ENTRY);
+  assert.equal(pending?.file, "tests/acceptance/recs.spec.ts");
+  assert.equal(pending?.reason, "the plan's contract says 422, the test expects 410.");
+  assert.equal(pending?.status, "approved");
+});
+
+test("amendment: reject is recorded, nothing is pending, and the implementer gets the rejection", async () => {
+  const answers = await amendWith(REJECT_AMENDMENT);
+  assert.equal(
+    answers[AMEND.question],
+    "Rejected: tests/acceptance/recs.spec.ts stays as it is. Make the code pass it as written.",
+  );
+  assert.equal(pendingAmendment(dir, ENTRY), null);
+  const file = JSON.parse(
+    fs.readFileSync(path.join(dir, ".dex/evidence", ENTRY, "amendments.json"), "utf-8"),
+  );
+  assert.deepEqual(
+    file.items.map((i: { status: string }) => i.status),
+    ["rejected"],
+  );
+});
+
+test("amendment: Stop records nothing; an unreadable file name is rejected at once, asking for the format", async () => {
+  assert.deepEqual(await amendWith(null), {});
+  assert.equal(fs.existsSync(path.join(dir, ".dex/evidence", ENTRY, "amendments.json")), false);
+  const vague = { ...AMEND, question: "Can I change the expired-code test?" };
+  const answers = await askQuestions(io(), ENTRY, [vague, OPEN], {
+    mode: "wait",
+    step: "implement",
+  });
+  assert.match(
+    answers[vague.question],
+    /^Rejected: Dex cannot read the test file\. Ask again with the question "Amend <path>: <reason>"/,
+  );
+  assert.match(answers[OPEN.question], /^Not answered: ask this again on its own/);
+  assert.deepEqual(readState(dir)?.pendingRequests, []);
+  assert.equal(parseAmendment("Amend `src/a.test.ts`: wrong status")?.file, "src/a.test.ts");
+  assert.equal(parseAmendment("Amend: no file"), null);
 });
 
 test("a waiting question is in state.json and .dex/questions.md, and reads back after a restart", async () => {

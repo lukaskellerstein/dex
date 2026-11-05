@@ -1,10 +1,11 @@
 /**
- * What: Owns live agent-trace state — liveSteps, subagents, currentPhase, currentPhaseTraceId — plus the latestAction memo and labelForStep helper.
+ * What: Owns live agent-trace state — liveSteps, subagents, currentPhase, currentPhaseTraceId — plus the latestAction memo and labelForStep helper. Dex's gate decisions (016 `sensor_run` / `gate_decided`) join liveSteps as `gate` steps through GateTracker: under the stage that ran, or, for a baseline, at the top of the stage it guards.
  * Not: Does not own loop-cycle progression (useLoopState), run-session metadata (useRunSession), or user-question state. Does not call IPC; subscribes to events and accepts setters via composer.
  * Deps: orchestratorService.subscribeEvents; AgentStep / SubagentInfo / TaskPhase types; viewingHistorical and mode refs from useRunSession.
  */
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentStep, OrchestratorEvent, SubagentInfo, TaskPhase } from "../../core/types.js";
+import { GateTracker } from "../components/agent-trace/GateCard.logic.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
 export interface LatestAction {
@@ -77,9 +78,20 @@ export function useLiveTrace({
   const [currentPhaseTraceId, setCurrentPhaseTraceId] = useState<string | null>(null);
   const livePhaseTraceIdRef = useRef<string | null>(null);
   const livePhaseRef = useRef<TaskPhase | null>(null);
+  const gatesRef = useRef(new GateTracker());
 
   useEffect(() => {
+    // A new stage's trace starts with the baseline gates that guarded it (016).
+    const openStage = () => {
+      const carried = gatesRef.current.takeCarried();
+      if (!viewingHistoricalRef.current) {
+        setLiveSteps(carried);
+        setSubagents([]);
+      }
+    };
     const unsub = orchestratorService.subscribeEvents((event: OrchestratorEvent) => {
+      const gate = gatesRef.current.push(event);
+      if (gate && !viewingHistoricalRef.current) setLiveSteps((prev) => [...prev, gate]);
       switch (event.type) {
         case "spec_completed":
           setCurrentPhase(null);
@@ -95,11 +107,17 @@ export function useLiveTrace({
           }
           setCurrentPhaseTraceId(event.agentRunId);
           livePhaseTraceIdRef.current = event.agentRunId;
-          if (!viewingHistoricalRef.current) {
-            setLiveSteps([]);
-            setSubagents([]);
-          }
+          openStage();
           break;
+
+        case "paused":
+        case "loop_terminated": {
+          // A baseline that paused the run guards no stage: show it where the run stopped.
+          const carried = gatesRef.current.takeCarried();
+          if (carried.length > 0 && !viewingHistoricalRef.current)
+            setLiveSteps((prev) => [...prev, ...carried]);
+          break;
+        }
 
         case "agent_step":
           if (!viewingHistoricalRef.current) {
@@ -150,11 +168,8 @@ export function useLiveTrace({
             status: "partial",
           };
           livePhaseRef.current = stageTaskPhase;
-          if (!viewingHistoricalRef.current) {
-            setCurrentPhase(stageTaskPhase);
-            setLiveSteps([]);
-            setSubagents([]);
-          }
+          if (!viewingHistoricalRef.current) setCurrentPhase(stageTaskPhase);
+          openStage();
           break;
         }
       }

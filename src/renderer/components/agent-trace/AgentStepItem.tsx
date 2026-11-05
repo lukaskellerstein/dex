@@ -7,6 +7,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { AgentStep } from "../../../core/types.js";
+import { GateCard } from "./GateCard.js";
+import { gateMeta } from "./GateCard.logic.js";
 import { CollapsibleText } from "./primitives/CollapsibleText.js";
 import { StepTimestamp } from "./primitives/StepTimestamp.js";
 import { DebugStep } from "./steps/DebugStep.js";
@@ -33,6 +35,10 @@ export function AgentStepItem({
   switch (step.type) {
     case "debug":
       return <DebugStep step={step} timestamp={timestamp} delta={delta} />;
+    case "gate": {
+      const meta = gateMeta(step);
+      return meta ? <GateCard meta={meta} /> : null;
+    }
     case "user_message": {
       const bright = "hsl(142, 69%, 55%)";
       const lines = content.split("\n");

@@ -86,6 +86,10 @@ test("runSnapshot: state, the queue view with per-entry cost from the run record
       ],
     );
     assert.equal(fs.readFileSync(path.join(dir, ".dex/runs/run-1.json"), "utf-8"), before);
+    assert.deepEqual(snap.digests, []);
+    writeFile(dir, ".dex/digests/900-fixture-a.md", "# 900-fixture-a — done\n");
+    writeFile(dir, ".dex/digests/.gitignore", "*\n");
+    assert.deepEqual(runSnapshot(dir).digests, ["900-fixture-a"], "016: the entries with a digest");
   } finally {
     rmTmp(dir);
   }
@@ -95,7 +99,7 @@ test("runSnapshot: no queue yet → queue null; a broken queue or policy → its
   const empty = mkTmpProject({});
   const dir = mkExistingProject();
   try {
-    assert.deepEqual(runSnapshot(empty), { state: null, queue: null, errors: [] });
+    assert.deepEqual(runSnapshot(empty), { state: null, queue: null, errors: [], digests: [] });
 
     writeFile(dir, ".dex/policy.json", '{ "permissionMode": "yolo" }\n');
     const badPolicy = runSnapshot(dir);

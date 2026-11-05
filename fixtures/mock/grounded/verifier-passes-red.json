@@ -1,0 +1,56 @@
+{
+  "entries": {
+    "*": {
+      "tests": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// fixture A: the greeter's acceptance test. The fake sensor stands in for it.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › greets by name\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "1\n" }
+        ]
+      },
+      "implement": {
+        "delay": 0,
+        "runs": [
+          {
+            "delay": 0,
+            "writes": [
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A: wrong text, the acceptance test stays red.\nexport const greet = (name: string): string => \"Hi \" + name;\n"
+              }
+            ]
+          },
+          { "delay": 0 },
+          {
+            "delay": 0,
+            "writes": [
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A: fixed by the verify fix phase.\nexport const greet = (name: string): string => \"Hello, \" + name;\n"
+              },
+              { "path": ".dex/fake/acceptance", "content": "0\n" }
+            ]
+          }
+        ]
+      },
+      "verify": {
+        "delay": 0,
+        "rounds": [
+          {
+            "verdict": "passed",
+            "hypotheses": ["greet() says \"Hi\" where the spec says \"Hello,\""],
+            "fixTasks": ["Make greet() return \"Hello, <name>\" in src/fixture-a/greet.ts"]
+          },
+          { "verdict": "passed" }
+        ]
+      }
+    }
+  }
+}

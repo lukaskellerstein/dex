@@ -1,21 +1,23 @@
 /**
- * What: The queue loop (replaces main-loop.ts). Preflight once before the run; then until Stop: the picker decides from files; `complete` ends the run with `queue_complete`; `pause` records a human request and pauses; a stage runs after its checks (preflight before implement and verify, the branch switch for an existing project, the policy's limits), is dispatched (runStage with its R11 prompt — `brief` included — or runImplement / runVerify), and post-stage records it and checks frozen files, leftovers, the limit it hit and the entry's gates. `--once` stops after one stage. `cycleNumber` is the entry's 1-based queue position, so the log tree and runs.ts stay unchanged.
- * Not: Does not repair or reconcile anything: Resume runs this loop again.
- * Deps: picker.pickNext, prompts (stage builders, stageEnv), runStage, cycle-stages.{runImplement, runVerify}, post-stage, branching.prepareBranch, preflight, humanInput.recordPause, git.getHeadSha, state.
+ * What: The queue loop (replaces main-loop.ts). Preflight once before the run; then until Stop: the picker decides from files; `complete` ends the run with `queue_complete`; `pause` records a human request and pauses; a stage runs after its checks (preflight before implement and verify, the branch switch for an existing project, the policy's limits), is dispatched (runStage with its R11 prompt — `brief` included — or, with Dex's own gates around them (016), implement and verify: stages/gate-runs.ts), and post-stage records it and checks frozen files, leftovers, the limit it hit, the gates' pauses and the entry's queue gates. Every pause of an entry writes its digest (016 FR-037) before the `paused` event. `--once` stops after one stage. `cycleNumber` is the entry's 1-based queue position, so the log tree and runs.ts stay unchanged.
+ * Not: Does not repair or reconcile anything: Resume runs this loop again. Runs no sensor itself.
+ * Deps: picker.pickNext, entry-prompts.buildStagePrompt, prompts.stageEnv, runStage, gate-runs.{implementStage, restoreBeforeVerify}, tests-stage.runTests, verify-stage.runVerify, post-stage, branching.prepareBranch, preflight, humanInput.recordPause, digest.publishDigest, state.
  */
 
-import type { LimitHit } from "../agent/AgentRunner.js";
+import { currentAcceptance, frozenTestSet } from "../acceptance.js";
 import { prepareBranch } from "../branching.js";
 import type { OrchestrationContext } from "../context.js";
-import { getHeadSha } from "../git.js";
+import { publishDigest } from "../digest.js";
+import { buildStagePrompt } from "../entry-prompts.js";
 import { recordPause } from "../humanInput.js";
 import { describeQueue, type PickerDecision, pickNext, verifyRoundsOf } from "../picker.js";
 import { checkRepos, runPreflight } from "../preflight.js";
-import { buildStagePrompt, stageEnv } from "../prompts.js";
-import type { QueueV3, ResolvedEntry } from "../queue.js";
+import { stageEnv } from "../prompts.js";
+import type { QueueV3, ResolvedEntry, StageName } from "../queue.js";
 import { loadState, mutateState } from "../state.js";
 import type { LoopTermination, TerminationReason } from "../types.js";
-import { type ImplementResult, runImplement, runVerify, type StageDeps } from "./cycle-stages.js";
+import { headOrNull, type StageDeps } from "./cycle-stages.js";
+import { type GatedRun, implementStage, restoreBeforeVerify } from "./gate-runs.js";
 import {
   frozenCheck,
   type Guard,
@@ -29,6 +31,8 @@ import {
   verifyRoundsCheck,
 } from "./post-stage.js";
 import { runStage } from "./run-stage.js";
+import { runTests } from "./tests-stage.js";
+import { runVerify } from "./verify-stage.js";
 
 export interface LoopDeps extends StageDeps {
   queue: QueueV3;
@@ -56,15 +60,15 @@ async function dispatch(
   deps: LoopDeps,
   d: StageDecision,
   cycleNumber: number,
-): Promise<{ cost: number; implement: ImplementResult | null; limitHit: LimitHit | null }> {
+): Promise<GatedRun> {
   const { entry, stage } = d;
-  if (stage === "implement") {
-    const r = await runImplement(deps, entry, d.taskPhase ?? 1, cycleNumber);
-    return { cost: r.cost, implement: r, limitHit: r.limitHit };
-  }
+  const plain = { ran: stage, progressPassed: null, guard: null };
+  if (stage === "implement") return implementStage(deps, entry, d.taskPhase ?? 1, cycleNumber);
+  if (stage === "tests") return runTests(deps, entry, cycleNumber);
   if (stage === "verify") {
-    const r = await runVerify(deps, entry, cycleNumber);
-    return { cost: r.cost, implement: null, limitHit: r.limitHit };
+    return (
+      (await restoreBeforeVerify(deps, entry, cycleNumber)) ?? runVerify(deps, entry, cycleNumber)
+    );
   }
   const r = await runStage({
     config: deps.config,
@@ -76,7 +80,7 @@ async function dispatch(
     env: stageEnv(entry, stage, deps.kind),
     entryId: entry.id,
   });
-  return { cost: r.cost, implement: null, limitHit: r.limitHit };
+  return { ...plain, cost: r.cost, limitHit: r.limitHit };
 }
 
 function emitDecision(ctx: OrchestrationContext, runId: string, d: PickerDecision): void {
@@ -135,15 +139,16 @@ function enterCycle(
   return next;
 }
 
-function pause(
-  ctx: OrchestrationContext,
-  runId: string,
-  entry: ResolvedEntry | null,
-  guard: Guard,
-): void {
+/** Where a pause happened: the entry, and the stage when one was picked or ran. */
+interface PauseAt {
+  entry: ResolvedEntry;
+  stage: StageName | null;
+}
+
+function pause(ctx: OrchestrationContext, runId: string, at: PauseAt | null, guard: Guard): void {
   recordPause(
     { projectDir: ctx.projectDir, runId, emit: ctx.emit },
-    entry?.id ?? null,
+    at?.entry.id ?? null,
     guard.reason,
     guard.detail,
   );
@@ -154,16 +159,30 @@ function pause(
     pauseDetail: guard.detail,
     pausedAt: new Date().toISOString(),
   }));
-  ctx.emit({ type: "paused", runId, reason: guard.reason, detail: guard.detail });
   ctx.rlog.run("WARN", `loop: paused (${guard.reason}) — ${guard.detail}`);
+  // FR-037: every pause of an entry leaves its one-page digest, written before the event.
+  if (at) writePauseDigest(ctx, runId, at, guard);
+  ctx.emit({ type: "paused", runId, reason: guard.reason, detail: guard.detail });
 }
 
-/** HEAD before a stage, for the frozen check; null in a repository with no commit yet. */
-function headOrNull(projectDir: string): string | null {
+function writePauseDigest(
+  ctx: OrchestrationContext,
+  runId: string,
+  at: PauseAt,
+  guard: Guard,
+): void {
+  const where = at.stage ? ` at ${at.stage}` : "";
   try {
-    return getHeadSha(projectDir);
-  } catch {
-    return null;
+    publishDigest({ ...ctx, runId }, at.entry, ctx.policy, {
+      status: `paused${where}: ${guard.reason}`,
+      why: guard.detail,
+    });
+  } catch (err) {
+    // The digest is for the owner; a failure to write it must not hide the pause.
+    ctx.rlog.run(
+      "ERROR",
+      `loop: digest for ${at.entry.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -185,7 +204,12 @@ async function decisionGuard(
   const limits = ctx.policy.limits;
   const stuck = progressCheck(last, d, counters, limits);
   if (stuck || (d.stage !== "implement" && d.stage !== "verify")) return stuck;
-  const input = { projectDir: ctx.projectDir, queue: deps.queue, runBranch: deps.runBranch };
+  const input = {
+    projectDir: ctx.projectDir,
+    queue: deps.queue,
+    runBranch: deps.runBranch,
+    policy: ctx.policy,
+  };
   return verifyRoundsCheck(d, verifyRoundsOf(input, d.entry), limits);
 }
 
@@ -221,8 +245,8 @@ async function beforeStage(
 }
 
 type StageOutcome =
-  /** The agent ran; `after` is a pause the frozen check found once it finished. */
-  | { kind: "ran"; cost: number; implement: ImplementResult | null; after: Guard | null }
+  /** The agent ran; `after` is a pause a check found once it finished. */
+  | ({ kind: "ran"; after: Guard | null } & Pick<GatedRun, "cost" | "ran" | "progressPassed">)
   /** A check before the stage paused the run; no agent started. */
   | { kind: "blocked"; guard: Guard }
   /** The stage threw because Stop aborted it. */
@@ -237,6 +261,13 @@ async function runOneStage(
   cycle: Cycle,
 ): Promise<StageOutcome> {
   const stageStartSha = headOrNull(ctx.projectDir);
+  // Implement and verify may not touch the entry's frozen tests (FR-014); the tests stage writes them.
+  const frozen = [
+    ...ctx.policy.frozen,
+    ...(d.stage === "implement" || d.stage === "verify"
+      ? frozenTestSet(d.entry, currentAcceptance(ctx.projectDir, d.entry, ctx.policy))
+      : []),
+  ];
   let r: Awaited<ReturnType<typeof dispatch>>;
   try {
     const blocked = await beforeStage(ctx, deps, d);
@@ -257,10 +288,10 @@ async function runOneStage(
   // A gate is for a stage that finished: not one that Stop or a limit cut short.
   const finished = !ctx.abort.signal.aborted && r.limitHit === null;
   const after =
-    frozenCheck(ctx.projectDir, ctx.policy.frozen, stageStartSha) ??
+    frozenCheck(ctx.projectDir, frozen, stageStartSha) ??
     limitCheck(r.limitHit, d, ctx.policy.limits, deps.config.maxTurns) ??
-    (finished ? gateCheck(d.entry, d.stage) : null);
-  return { kind: "ran", cost: r.cost, implement: r.implement, after };
+    (finished ? (r.guard ?? gateCheck(d.entry, r.ran)) : null);
+  return { kind: "ran", cost: r.cost, ran: r.ran, progressPassed: r.progressPassed, after };
 }
 
 function terminate(
@@ -274,6 +305,7 @@ function terminate(
     projectDir: ctx.projectDir,
     queue: deps.queue,
     runBranch: deps.runBranch,
+    policy: ctx.policy,
   });
   const titles = (status: string) =>
     view.entries.filter((e) => e.status === status).map((e) => e.title);
@@ -313,6 +345,7 @@ export async function runQueueLoop(ctx: OrchestrationContext, deps: LoopDeps): P
       projectDir: ctx.projectDir,
       queue: deps.queue,
       runBranch: deps.runBranch,
+      policy: ctx.policy,
     });
     emitDecision(ctx, runId, d);
     if (d.kind === "complete") {
@@ -321,7 +354,7 @@ export async function runQueueLoop(ctx: OrchestrationContext, deps: LoopDeps): P
     }
     const guard = await decisionGuard(ctx, deps, d, last);
     if (guard) {
-      pause(ctx, runId, d.entry, guard);
+      pause(ctx, runId, { entry: d.entry, stage: d.kind === "stage" ? d.stage : null }, guard);
       reason = "paused";
       break;
     }
@@ -334,23 +367,23 @@ export async function runQueueLoop(ctx: OrchestrationContext, deps: LoopDeps): P
       break;
     }
     if (outcome.kind === "blocked") {
-      pause(ctx, runId, d.entry, outcome.guard);
+      pause(ctx, runId, { entry: d.entry, stage: d.stage }, outcome.guard);
       reason = "paused";
       break;
     }
     cost += outcome.cost;
     cycle.cost += outcome.cost;
     stagesRun++;
-    last = { entryId: d.entry.id, stage: d.stage, taskPhase: d.taskPhase ?? null };
+    last = { entryId: d.entry.id, stage: outcome.ran, taskPhase: d.taskPhase ?? null };
     // A stopped stage still cost money, but it says nothing about progress.
     recordStage(
       ctx.projectDir,
       last,
       outcome.cost,
-      ctx.abort.signal.aborted ? null : outcome.implement,
+      ctx.abort.signal.aborted ? null : outcome.progressPassed,
     );
     if (outcome.after) {
-      pause(ctx, runId, d.entry, outcome.after);
+      pause(ctx, runId, { entry: d.entry, stage: outcome.ran }, outcome.after);
       reason = "paused";
       break;
     }

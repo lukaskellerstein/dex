@@ -34,6 +34,8 @@ export interface LoopDashboardProps {
   latestAction?: LatestAction | null;
   /** The queue view from the files; the queue panel shows it as it is. */
   snapshot?: RunSnapshot | null;
+  /** The open project; the queue panel opens its digests (016). */
+  projectDir?: string | null;
 }
 
 const CLARIFICATION_STAGE_TYPES = [
@@ -109,6 +111,7 @@ export function LoopDashboard({
   debugBadge,
   latestAction,
   snapshot = null,
+  projectDir = null,
 }: LoopDashboardProps) {
   // Orchestrator "current" pointers belong to the live run only.
   const liveStage = isRunning ? currentStage : null;
@@ -152,7 +155,7 @@ export function LoopDashboard({
         onSelect={handleSelect}
       />
 
-      <QueuePanel snapshot={snapshot} />
+      <QueuePanel snapshot={snapshot} projectDir={projectDir} />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         {selectedPhase === "prerequisites" && (

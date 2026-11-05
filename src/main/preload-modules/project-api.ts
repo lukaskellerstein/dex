@@ -24,6 +24,11 @@ export const projectApi = {
     ipcRenderer.invoke("project:path-exists", targetPath) as Promise<boolean>,
   getRunSnapshot: (projectDir: string) =>
     ipcRenderer.invoke("project:get-run-snapshot", projectDir) as Promise<RunSnapshot>,
+  getDigest: (projectDir: string, entryId: string) =>
+    ipcRenderer.invoke("project:get-digest", projectDir, entryId) as Promise<{
+      markdown: string;
+      path: string;
+    } | null>,
 
   // App config (global ~/.dex/app-config.json)
   getWelcomeDefaults: () =>

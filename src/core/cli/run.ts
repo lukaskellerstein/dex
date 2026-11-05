@@ -1,5 +1,5 @@
 /**
- * What: `dex run <projectDir>` (contracts/cli.md): resumes the run in `.dex/state.json`, or starts one, and drives the same `run()` the app does, with a compact event printer. Human input: with a TTY, the requests a parked run left behind are answered first, into the answer book, and every request the run holds is asked in the terminal; without one, a held request is parked and the run pauses (exit 3). `--once` stops after one stage; Ctrl-C is Stop.
+ * What: `dex run <projectDir>` (contracts/cli.md): resumes the run in `.dex/state.json`, or starts one, and drives the same `run()` the app does, with a compact event printer. Human input: with a TTY, the requests a parked run left behind are answered first, into the answer book, and every request the run holds is asked in the terminal; without one, a held request is parked and the run pauses (exit 3). `--once` stops after one stage; Ctrl-C is Stop. When the run wrote a digest (a gate pause, or an entry done), the last line is `digest: <path>` (016).
  * Not: No Electron. Does not parse arguments (cli/args.ts), validate the queue or policy (cli.ts), or render the dry run (cli/describe.ts).
  * Deps: orchestrator.{run, stopRun, pauseForHuman}, humanInput.{isWaiting, resolveRequest, bookAnswers}, state.readState, config.LOOP_DEFAULTS, cli/terminal.
  */
@@ -30,6 +30,8 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 class EventPrinter {
   started = false;
   errors = 0;
+  /** The last digest the run wrote (016 FR-038); printed as the last line. */
+  lastDigest: string | null = null;
   private readonly answers = new Map<string, Record<string, string>>();
   private readonly term: Terminal;
 
@@ -40,6 +42,7 @@ class EventPrinter {
   print(ev: OrchestratorEvent): void {
     if (ev.type === "run_started") this.started = true;
     if (ev.type === "user_input_response") this.answers.set(ev.requestId, ev.answers);
+    if (ev.type === "digest_written") this.lastDigest = ev.path;
     if (ev.type === "error") {
       this.errors++;
       this.term.err(`✗ ${ev.message}`);
@@ -206,6 +209,7 @@ export async function runCommand(
       printer.print(ev);
       chain = onHeldRequest(ev, term, chain);
     });
+    if (printer.lastDigest) term.out(`digest: ${printer.lastDigest}`);
   } catch (err) {
     term.err(`dex: the run failed — ${message(err)}`);
     return 1;

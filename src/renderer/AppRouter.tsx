@@ -229,6 +229,7 @@ export function AppRouter(props: AppRouterProps): ReactNode {
         debugBadge={debugBadge}
         latestAction={latestAction}
         snapshot={props.snapshot}
+        projectDir={projectDir}
       />
     );
   }

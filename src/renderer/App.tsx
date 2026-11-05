@@ -424,6 +424,7 @@ export default function App() {
         snapshot={project.snapshot}
         isRunning={orchestrator.isRunning}
         onResume={() => handleStartLoop({ resume: true })}
+        projectDir={project.projectDir}
       />
     </>
   );

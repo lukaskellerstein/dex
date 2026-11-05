@@ -21,10 +21,13 @@ export function ClarificationPanel({
   snapshot,
   isRunning,
   onResume,
+  projectDir = null,
 }: {
   snapshot: RunSnapshot | null;
   isRunning: boolean;
   onResume: () => void;
+  /** The open project; the pause card links its entry's digest (016). */
+  projectDir?: string | null;
 }) {
   const { pendingRequest, answerQuestion, answerToolApproval } = useUserQuestion();
   const [closed, setClosed] = useState<string | null>(null);
@@ -56,6 +59,7 @@ export function ClarificationPanel({
         request={pause}
         onContinue={onResume}
         onStop={() => setClosed(pause.id)}
+        digestDir={pause.entryId && snapshot?.digests.includes(pause.entryId) ? projectDir : null}
       />
     </PanelShell>
   );

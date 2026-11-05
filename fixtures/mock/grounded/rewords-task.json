@@ -1,0 +1,35 @@
+{
+  "entries": {
+    "*": {
+      "tests": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// fixture A: the greeter's acceptance test. The fake sensor stands in for it.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"failExitCodes\": [1],\n  \"timeoutSec\": 60,\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › greets by name\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "1\n" }
+        ],
+        "structured_output": { "summary": "one acceptance test for SC-001" }
+      },
+      "implement": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/tasks.md",
+            "content": "# Tasks: Fixture A\n\n## Phase 1: Setup\n\n**Purpose**: The module and its build.\n\n- [X] T001 Create src/fixture-a/greet.ts with an empty export\n- [ ] T002 Add the greeter to the build in package.json\n\n## Phase 2: Core\n\n**Purpose**: The greeting.\n\n- [X] T003 Write the failing test in src/fixture-a/greet.test.ts\n- [ ] T004 Implement a simpler `greet()` with no name in src/fixture-a/greet.ts\n- [ ] T005 Reject an empty name in src/fixture-a/greet.ts\n\n## Phase 3: Polish\n\n**Purpose**: Out of this run's scope — the queue entry lists T002 and T004–T005 only.\n\n- [ ] T006 Translate the greeting\n- [X] T007 Document the greeter in README.md\n"
+          },
+          {
+            "path": "src/fixture-a/greet.ts",
+            "content": "// fixture A: the build step.\nexport const greet = (): string => \"Hello\";\n"
+          }
+        ]
+      },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

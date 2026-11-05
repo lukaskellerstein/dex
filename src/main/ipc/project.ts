@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { dialog, ipcMain } from "electron";
+import { readDigest } from "../../core/digest.js";
 import { parseTasksFile } from "../../core/parser.js";
 import { runSnapshot } from "../../core/run-snapshot.js";
 
@@ -86,6 +87,11 @@ export function registerProjectHandlers(): void {
   // The queue and status views read this on every stage boundary (research R17).
   ipcMain.handle("project:get-run-snapshot", (_event, projectDir: string) =>
     runSnapshot(projectDir),
+  );
+
+  // 016 FR-038: the entry's one-page digest, or null before the first one.
+  ipcMain.handle("project:get-digest", (_event, projectDir: string, entryId: string) =>
+    readDigest(projectDir, entryId),
   );
 
   ipcMain.handle("project:path-exists", (_event, targetPath: string): boolean => {
