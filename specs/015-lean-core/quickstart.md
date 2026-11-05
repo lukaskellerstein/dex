@@ -4,6 +4,10 @@ Every phase in [`plan.md`](plan.md) ends with steps 1–3. Steps 4–8 prove the
 success criteria. All mock runs cost nothing; steps 9–10 spend real money and
 need the owner's go-ahead.
 
+Status on 2026-11-05 (research.md, "Final checks"): steps 1–8 were run end to end
+on scratch clones with `node dist/core/cli.js`. Step 9 (T067) and step 10 (T112,
+T113) are open. The UI check that tasks.md calls T106 is step 11.
+
 Paths: `$DEX` is this checkout, `$EX` is
 `$HOME/Projects/Github/lukaskellerstein/dex-ecommerce`, `$SCRATCH` is a fresh
 `mktemp -d`.
@@ -32,6 +36,13 @@ node "$DEX/dist/core/cli.js" run "$SCRATCH/new" --status          # every entry:
 git log --format=%s | grep -cE '^\[checkpoint:|^dex:' || true     # expect 0
 ```
 
+Observed: exit 0, 3 entries, every `verify.md` `passed`, 27 steps (6 project steps
++ 3 entries × 7 stages), 0 tags, a clean tree. `dist/core/cli.js` comes from the
+`tsc` build (`npm run build`). A `.dex/mock-config.json` in the old
+`dex_loop.cycles` shape is refused with a pointer to the fixture. The clone needs
+`GOAL.md` copied in if it is reset to the root commit of `dex-ecommerce`, and an
+`origin` that passes the GitHub prerequisite without a prompt.
+
 ## 3. Stop and Resume during `implement` (SC-002)
 
 ```bash
@@ -39,6 +50,8 @@ node "$DEX/dist/core/cli.js" run "$SCRATCH/new" --once   # repeat until --status
 node "$DEX/dist/core/cli.js" run "$SCRATCH/new" --status # note entry + task phase
 node "$DEX/dist/core/cli.js" run "$SCRATCH/new" --once   # same entry, same task phase
 ```
+
+`--once` exits 0 when it ends on its own `user_abort`; Ctrl-C in a stage exits 3.
 
 ## 4. Reset to a checkpoint, then Resume (SC-003)
 
@@ -77,8 +90,10 @@ git show 900-fixture-a:specs/900-fixture-a/tasks.md | grep T006   # still "- [ ]
 ```
 
 The clone has no remote, so a push by Dex would fail with an `error` event,
-which `dex run` prints as a `✗` line and turns into exit 1. Exit 0 proves no
-push was tried. `dex queue init`
+which `dex run` prints as a `✗` line and turns into exit 1 (any `error` event does,
+even when the loop carried on). Exit 0 proves no push was tried. Expected: 10
+stages, `queue_complete`, the only new branch is `901-fixture-b`, `.specify/feature.json`
+unchanged, T006 still open. `dex queue init`
 on this clone also queues `docs/my-specs/001-Initialization` as
 `001-initialization` (ids are lowercase branch names); the fixture queue then
 replaces that first draft.
@@ -92,7 +107,8 @@ node --import ./scripts/ts-resolve-hook.mjs --test --experimental-strip-types \
 
 Expect one passing test per D-015-1 row, plus task filter, `skip`, gates,
 migration, every policy rule kind, and the no-opinion case (73 tests on
-2026-11-05). The flag goes before the file glob: `npm run test:core -- …`
+2026-11-05). The full suites on the same day: core 201, renderer 58 (56 at the
+last phase gate, 58 after the cycle-count fix), `check:size` pass. The flag goes before the file glob: `npm run test:core -- …`
 puts it after the glob, where node does not read it, so all tests run.
 
 ## 7. Bypass is gone (SC-006)
@@ -107,13 +123,19 @@ grep -rn bypassPermissions src   # only policy.ts (the refusal) and its test
 bash scripts/loc-by-area.sh      # prints lines per area; compare with research.md § R14 baseline
 ```
 
+Result: 22,086 lines after the format pass (22,116 at the end of the branch)
+against the 21k target. **SC-007 is not met**; research.md § R14 has the table.
+
 ## 9. Live permission check (SC-005, real agent, small cost)
 
 On a scratch clone with `.claude/settings.json` containing
 `{"permissions":{"ask":["Bash(git push:*)"]}}` and an entry whose `implement`
 prompt leads to a `git push`, start the app (`dev-setup.sh`), open the clone,
 and Start. Expect the approval card in the questions panel, with the command
-held. Deny it; expect the agent to report the denial.
+held. Deny it; expect the agent to report the denial. **Not run yet** (T067: it needs a
+real agent and the owner's go-ahead). Until then the approval card is covered by
+`ToolApprovalCard.test.tsx`, the `permissions` / `runner-options` unit tests and the
+mock-driven UI check in step 11.
 
 ## 10. Dogfood on onion-demo-01 (SC-009, SC-010)
 
@@ -124,3 +146,22 @@ grep -c '^━━ ' /tmp/onion-dry-run.txt     # 5 — one block per entry
 
 The owner reads every prompt and signs off. Then, with the owner watching:
 `dex run … --once` for `021-agent-entry` `specify`.
+
+## 11. UI check against a mock run (SC-005 partly, FR-041–043)
+
+Done on 2026-11-05 with `dev-setup.sh` and electron-playwright, mock stages slowed
+to 2.5 s, two scratch clones:
+
+- New project (step 2 fixture, `questions: "wait"`, one mock question on the first
+  entry's `clarify`): the queue panel rows follow every stage; the question card
+  shows; a renderer reload keeps it; the answer resumes the stage; the run ends
+  with all three entries done.
+- Existing project (step 5 fixture, `gates: ["plan"]` on `901-fixture-b`): the app's
+  Start runs the queue loop; the run pauses at the gate with the pause card and
+  Resume in the top bar; Continue resumes and the run completes.
+- `browser_find` for Timeline, "Make this the new main", Delete and Profile finds
+  nothing. No console errors.
+- Not checked live: the tool-approval card (the mock makes no tool calls).
+- Seen, not changed: a renderer reload goes back to the welcome screen while the
+  run goes on (the open project lives in renderer state); the pending request
+  survives it.

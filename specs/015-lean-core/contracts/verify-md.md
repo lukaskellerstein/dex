@@ -43,14 +43,19 @@ Appended to `tasks.md` as `## Phase 7: Verify fixes V2`.
 - Hash ≠ `sha256(bytes of tasks.md now)` → treated as **missing**.
 - Verdict `passed` and hash matches → the entry is **done**.
 - Verdict `failed` and hash matches → impossible after a correct verify run
-  (the fix phase changed `tasks.md`); the picker treats it as missing, and the
-  no-progress guard (research R9) stops a loop.
+  (the fix phase changed `tasks.md`); the picker sends the loop to `verify` ("verify.md
+  failed for the current tasks.md"), and the no-progress guard (research R9)
+  stops a loop.
 
 ## Who computes the hash
 
 Dex. The verify prompt carries the exact value:
 `Tasks-SHA256: <hex>` — "copy this line verbatim". The agent never hashes.
-Dex computes it from `tasks.md` right before the stage starts.
+Dex computes it from `tasks.md` right before the stage starts (`verifyFacts` in
+`stages/cycle-stages.ts`). The same call gives the prompt the round `k`, the next
+phase number and the next task id, so the agent does not have to count. The mock
+agent parses the hash, the header and the first task id from the prompt, so it
+tests the contract the real agent follows.
 
 ## The fix phase
 
@@ -68,7 +73,8 @@ On failure the agent appends to `tasks.md`:
 - The header keeps a **numeric** phase number, because the task parser
   (`parser.ts` `PHASE_HEADER`) and `/speckit-implement --phase N` both need one.
   `V<k>` names the round (research R8).
-- Task ids continue the file's sequence, so they match `TASK_LINE`.
+- Task ids continue the file's sequence (`T<max+1>`, padded like the file's ids), so they match `TASK_LINE`; the parser reads both `[x]` and `[X]`.
+- A phase is a fix phase when its name starts with `Verify fixes V<k>` (`isFixPhase`).
 - `k` = the number of existing `Verify fixes V*` phases + 1. That count is the
   verify-round counter for `maxVerifyRounds`.
 - A fix phase is always in scope, even when the entry has a `tasks` filter.

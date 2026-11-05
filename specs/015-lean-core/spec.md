@@ -2,7 +2,7 @@
 
 **Feature Branch**: `015-lean-core`
 **Created**: 2026-11-05
-**Status**: Draft
+**Status**: Implemented on the branch (tasks.md: 109 of 114 done). Open: the live checks that spend money (T012, T067) and the owner's dogfood steps (T112, T113). SC-007 is not met; see [Outcomes](#outcomes-as-built).
 **Input**: User description: "docs/my-specs/015-lean-core/README.md" — the brief, draft v1.0 of 2026-11-04. The brief is the source of truth; this spec restates it as outcomes and requirements. It supersedes the never-numbered `01X-state-reconciliation` brief.
 
 ## Overview
@@ -53,9 +53,10 @@ A project owner writes a policy file for the project and commits it. Dex loads t
 2. **Given** a policy `ask` rule matches a tool call, **When** the agent makes the call, **Then** the call is held, the human sees the tool and its full input, and the agent continues only after the human approves; a denial is returned to the agent as a denial.
 3. **Given** the project's own settings mark a command as `ask`, **When** an agent runs it, **Then** the human is asked — Dex does not auto-approve it.
 4. **Given** a policy that sets write roots, **When** an agent tries to write a file outside them, **Then** the write is denied with a reason.
-5. **Given** a file listed as frozen and committed, **When** a stage finishes and that file differs from the commit the entry started from, **Then** the run pauses and tells the human which file changed.
+5. **Given** a file listed as frozen and committed, **When** a stage finishes and that file differs from the commit the stage started from, **Then** the run pauses and tells the human which file changed. *(As built, the baseline is the commit at the start of each stage, not of the entry: it catches every agent change, needs no stored state, and does not re-pause forever when the human resumes on purpose. Research R13.)*
 6. **Given** a policy that requests bypassed permissions for an existing project, **When** a run starts, **Then** Dex refuses to start and says why.
 7. **Given** no policy rule has an opinion on a tool call, **When** the agent makes it, **Then** Dex adds no decision of its own, and the project's own permission rules decide.
+8. **Given** a tool call that no policy rule and no project `ask` or `deny` rule matched, **When** the session's permission mode would otherwise need an answer, **Then** Dex allows it. *(Added in the plan, research R6 option A: in SDK sessions the project's `allow` rules apply only in a trusted folder, so sending every unmatched call to the human would make an unattended run impossible. The policy and the project's `deny`/`ask` rules have already run.)*
 
 ---
 
@@ -70,7 +71,7 @@ An operator has a project that already has specs, briefs, branch conventions and
 **Acceptance Scenarios**:
 
 1. **Given** an entry whose `skip` lists every stage up to `tasks` and whose task filter names `T110` and `T122-T134`, **When** the run starts, **Then** `implement` runs only on phases that hold those tasks, and tasks outside the filter never block `verify`.
-2. **Given** an entry about to run `specify`, **When** the project is not on the entry's base branch and the tree is clean, **Then** Dex switches to the base branch first, and spec-kit creates the entry's branch and spec folder with the exact names from the queue.
+2. **Given** an entry about to run `brief` or `specify` whose own branch does not exist yet, **When** the project is not on the entry's base branch and the tree is clean, **Then** Dex switches to the base branch first, and spec-kit creates the entry's branch and spec folder with the exact names from the queue. *(If the entry's branch already exists, the stage runs on that branch: the picker read it, and spec-kit's `git switch -c` would fail on an existing name. Research, Phase 5 gate.)*
 3. **Given** an entry whose next stage is after `specify`, **When** the project is not on the entry's branch and the tree is clean, **Then** Dex switches to that branch before the stage.
 4. **Given** a branch switch is needed, **When** the tree has uncommitted changes, **Then** the run pauses with a question instead of switching.
 5. **Given** a stage finishes and leaves uncommitted changes, **When** the next stage would start, **Then** the trace reports the dirty tree, and Dex does not commit it.
@@ -92,11 +93,12 @@ When an entry's in-scope tasks are all checked, a fresh agent that did not do th
 **Acceptance Scenarios**:
 
 1. **Given** all in-scope tasks are checked, **When** `verify` runs, **Then** it writes `specs/<id>/verify.md` with the verdict, a fingerprint of the `tasks.md` it checked, and each command it ran with its exit code.
-2. **Given** verification fails, **When** the verify stage ends, **Then** `tasks.md` ends with a new `## Phase Vn: verify fixes` section of concrete tasks, and the picker sends the loop back to `implement`.
+2. **Given** verification fails, **When** the verify stage ends, **Then** `tasks.md` ends with a new `## Phase <N>: Verify fixes V<k>` section of concrete tasks (`N` the next phase number, `k` the round), and the picker sends the loop back to `implement`. *(The brief's literal `## Phase Vn:` would not parse as a task phase, so the phase keeps a numeric number; research R8.)*
 3. **Given** `verify.md` records a pass for the current `tasks.md`, **When** the picker runs, **Then** the entry counts as `done` and the picker moves to the next entry.
 4. **Given** `tasks.md` changed after the last verification, **When** the picker runs, **Then** the old record no longer counts and `verify` runs again.
 5. **Given** two `implement` runs in a row checked no new task, **When** the next stage would start, **Then** the run pauses with a question.
-6. **Given** three verify rounds failed for one entry, **When** the next stage would start, **Then** the run pauses with a question.
+6. **Given** three verify rounds failed for one entry, **When** the next stage would start, **Then** the run pauses with a question. The rounds are counted from the `Verify fixes V*` phases in `tasks.md`, so the count survives a reset.
+7. **Given** any other stage ran and the picker then asks for the same stage of the same entry, **When** the next stage would start, **Then** the run pauses (`no_progress`) instead of running it again. *(Added, research R9: it covers a `clarify` that wrote no `## Clarifications` section and a `plan` that wrote no `plan.md`.)*
 
 ---
 
@@ -113,8 +115,9 @@ Agents ask questions. In the default mode, a question that comes with a recommen
 1. **Given** the default mode and a question with a recommended option, **When** an agent asks it, **Then** the recommended option is the answer, the run continues, and the question appears in the review list.
 2. **Given** the default mode and a question with no recommended option, **When** an agent asks it, **Then** the run waits for the human.
 3. **Given** `wait` mode, **When** an agent asks any question, **Then** the run waits for the human.
-4. **Given** a pending question, **When** Dex is restarted, **Then** the question is still pending, and it is also readable as plain text in `.dex/questions.md`.
-5. **Given** the autonomous `clarify` stage, **When** a question can be answered from the brief, the repo or its docs, **Then** the agent answers it and records the question and the answer in the spec; it asks the human only when nothing in the repo answers it and a wrong guess would cost more than a day.
+4. **Given** a pending question, **When** Dex is restarted, **Then** the question is still pending, and it is also readable as plain text in `.dex/questions.md`. *(The app restores a held question or approval only while a run is live; a request left by a crashed process is not offered. A resumed run drops every pending request and asks again.)*
+5. **Given** a new project, **When** a clarification step (clarification, constitution, manifest extraction) asks a question, **Then** the Automatic Clarification switch decides (on: recommended-then-review; off: wait). Every other stage follows the policy's `questions` mode.
+6. **Given** the autonomous `clarify` stage, **When** a question can be answered from the brief, the repo or its docs, **Then** the agent answers it and records the question and the answer in the spec; it asks the human only when nothing in the repo answers it and a wrong guess would cost more than a day.
 
 ---
 
@@ -131,7 +134,9 @@ An operator runs Dex from a terminal without the desktop app. Before the first r
 1. **Given** a project with a queue, **When** the operator runs `dex run <projectDir> --dry-run`, **Then** Dex prints, for each remaining entry, the next-stage decision and the full prompt, and starts no agent.
 2. **Given** a project, **When** the operator runs `dex run <projectDir> --status`, **Then** Dex prints the queue, each entry's status and stage, and the pending questions, and starts no agent.
 3. **Given** a headless run with a terminal, **When** a question or a tool approval comes up, **Then** it is asked on the terminal and the answer goes back to the agent.
-4. **Given** a headless run with no terminal, **When** a question or a tool approval comes up, **Then** the run pauses and writes the question to `.dex/questions.md`.
+4. **Given** a headless run with no terminal, **When** a question or a tool approval comes up, **Then** the run pauses and writes the question to `.dex/questions.md`; the process exits with code 3.
+5. **Given** a state file exists, **When** the operator runs `dex run <projectDir>` again, **Then** it resumes, also after a completed run (a new project has one run branch, and Resume follows the checkout). A resume at a terminal first asks the requests the last run left and books the answers; the stage that asks again gets them from the book.
+6. **Given** any `error` event during a run, **When** the run ends, **Then** `dex run` exits 1, even if the loop carried on.
 
 ---
 
@@ -147,7 +152,7 @@ Some queue entries have no brief yet, only a list of source documents. Dex write
 
 1. **Given** an entry whose brief file is missing and which lists `generate` sources, **When** the picker runs, **Then** the next stage is `brief`.
 2. **Given** the `brief` stage finishes, **When** `brief` is in the entry's gates (the default for generated briefs), **Then** the run pauses for the owner's approval before `specify`.
-3. **Given** an entry lists any stage in its gates, **When** that stage finishes, **Then** the run pauses for approval.
+3. **Given** an entry lists any stage in its gates, **When** that stage finishes, **Then** the run pauses for approval. A gate applies only to a stage that finished, not to one that Stop or a limit cut short; Resume is the approval and nothing is stored.
 
 ---
 
@@ -165,6 +170,10 @@ The desktop app keeps the project picker, the run controls with a new queue pane
 2. **Given** a tool call is held for approval, **When** the operator opens the questions panel, **Then** they see the tool and its input and can approve or deny it.
 3. **Given** the app after this feature, **When** the operator looks at any screen, **Then** there is no timeline, no jump-to-version, no promote-to-main, no branch delete and no agent-profile control.
 4. **Given** the app was closed during a run, **When** it opens again, **Then** it shows the same queue and stage the files say, with no reconcile step.
+5. **Given** a snapshot of the project, **When** the operator presses Start, **Then** the action follows the snapshot: an invalid queue or policy disables it; a paused run, or an open entry with a run state, resumes; an open entry without one starts the queue loop; a project with no queue runs its unfinished spec folders in build mode.
+6. **Given** a run paused on a gate, a limit, a dirty tree, a frozen file, a failed preflight, no progress or bad input, **When** the operator opens the questions panel, **Then** a pause card shows the reason and detail. Continue is Resume; Stop closes the card and leaves the run paused.
+7. **Given** questions answered by default, **When** the operator looks at the queue panel, **Then** the review list is there (nothing waits on them, so they are not in the questions panel).
+8. **Given** a queue, **When** the app shows the cycle count and the timeline placeholders, **Then** they come from the queue view (done of the entries that will run; one placeholder per entry not started, at most three).
 
 ---
 
@@ -174,18 +183,24 @@ The desktop app keeps the project picker, the run controls with a new queue pane
 - **Every queue entry is `done` or `skipped`**: the run ends and reports that the queue is complete.
 - **All in-scope tasks are checked, but tasks outside the filter are not**: the entry goes to `verify`; out-of-scope tasks never block it.
 - **The task filter names a task id that `tasks.md` does not contain**: Dex reports the unknown ids and pauses before that entry's `implement`; it does not guess.
-- **A brief path is set, the file is missing, and the entry has no `generate`**: the run pauses with a question naming the missing file.
+- **A brief path is set, the file is missing, and the entry has no `generate`**: the run pauses (`invalid_input`) naming the missing file.
+- **An entry has `generate` but no `brief`**: the queue is invalid, because `brief` is the path `generate` writes. Dex refuses to start and names the entry.
+- **An existing-project entry has neither its own branch nor its base branch**, or its branch is missing but its base already holds the spec folder: the run pauses (`invalid_input`) with the reason; Dex creates no branch.
 - **A new-project entry has no brief** (it came from the goal file through manifest extraction): `specify` uses the entry's description and `verify` uses the spec's success criteria.
 - **Both the old manifest and the new queue exist**: the queue wins; the manifest is not migrated over it.
 - **The policy file is missing**: the defaults in FR-020 apply.
-- **The policy file does not parse or has an unknown field value**: Dex refuses to start and names the problem; it never runs on a half-read policy.
+- **The policy file does not parse or has an unknown field value**: Dex refuses to start and names the problem; it never runs on a half-read policy. The CLI exits 2 for an invalid or refused queue or policy.
+- **A stage finishes but the picker still asks for it**: the run pauses (`no_progress`) rather than running it again (FR-036).
+- **A tool call is held and no human can answer** (`dex run` with no terminal): the held request is parked, the stage is aborted, and the run pauses with `question` or `tool_approval` and exit code 3. The next `dex run` asks the parked requests first.
 - **A `deny` rule hides inside a chained or wrapped command** (`a && b`, `bash -c "…"`): the rule matches the whole command string, so it still applies. This is a guardrail against an agent's mistakes, not a sandbox against a hostile agent.
 - **The human is away while a tool call waits for approval**: the agent keeps waiting; Stop denies the held call and pauses the run.
-- **A stage hits its budget or turn limit**: the stage stops and the run pauses with a question that names the limit.
-- **The run hits its total budget limit**: the run stops before the next stage and says why.
+- **A stage hits its budget or turn limit**: the stage stops and the run pauses (`limit_reached`) naming the limit.
+- **The run hits its total budget limit**: the run stops before the next stage; the state is `paused` with `limit_reached`.
+- **A stage is stopped by Stop**: it leaves nothing behind (the mock writes, ticks and commits nothing) and does not count toward the implement-without-progress counter; Resume runs the same task phase.
+- **A `tasks.md` task line uses `[X]`** (spec-kit writes it) **or `[x]`**: both mean done.
 - **A preflight command exits non-zero**: the run (or the next `implement` / `verify`) does not start, and the operator sees the command and its exit code.
 - **An extra checkout listed in `repos` has uncommitted changes**: preflight fails and the status panel shows which checkout is dirty.
-- **Dex's own runtime files change during a run** (run state, run records, the questions list): they never count as a dirty tree for the branch-switch check. Dex writes no tracked file during a run.
+- **Dex's own runtime files change during a run** (run state, run records, the questions list): they never count as a dirty tree for the branch-switch check. Dex writes no tracked file during a run. Untracked files do count as dirty, listed one by one, because an agent's leftovers would ride onto another branch.
 
 ## Requirements *(mandatory)*
 
@@ -206,7 +221,7 @@ The desktop app keeps the project picker, the run controls with a new queue pane
   | `verify.md` is missing, or records a different `tasks.md` fingerprint | `verify` |
   | `verify.md` records a pass for the current `tasks.md` fingerprint | the entry counts as `done`; go to the next entry |
 
-  An entry's files are read from the entry's own branch when it exists, without switching to it, so the decision never depends on which branch happens to be checked out.
+  An entry's files are read from the entry's own branch when it exists, without switching to it, so the decision never depends on which branch happens to be checked out. The branch the current checkout is on is read from the working tree, so uncommitted progress counts. A `verify.md` that says `failed` for the current `tasks.md` also sends the loop to `verify`; the no-progress guard (FR-036) stops that from looping. A gate (FR-002 and the entry's `gates`) applies only to a stage that finished.
 
 - **FR-002**: Stages listed in an entry's `skip` MUST be treated as done.
 - **FR-003**: Resume MUST mean "run the picker again". There MUST be no reconcile, repair or state-sync step before it.
@@ -217,24 +232,24 @@ The desktop app keeps the project picker, the run controls with a new queue pane
 
 - **FR-006**: Dex MUST NOT make stage checkpoint commits in any project. Agents commit as the project's rules say.
 - **FR-007**: In an existing project, Dex MUST NOT create a run branch, commit, push or open a pull request on its own.
-- **FR-008**: Before `specify`, Dex MUST make sure the project is on the entry's base branch, and switch to it if the tree is clean. Before any later stage, it MUST switch to the entry's branch if the tree is clean.
+- **FR-008**: Before a stage, Dex MUST make sure the project is on the branch the picker read for it, and switch to it if the tree is clean. That is the entry's own branch once it exists, else its base branch (only `brief` and `specify` can run on the base; the picker pauses any later stage of an entry whose branch is missing). *(Amended from "before `specify`, the base branch": spec-kit's branch creation fails on a name that already exists. Research, Phase 5 gate.)*
 - **FR-009**: If a branch switch is needed and the tree is dirty, the run MUST pause with a question. Changes to Dex's own runtime files MUST NOT count as dirty.
-- **FR-010**: After each stage, Dex MUST report a dirty tree in the trace and MUST NOT commit it.
-- **FR-011**: A new project MUST keep its single Dex run branch. Opening a pull request at the end of a run MUST be opt-in for both kinds of project, and off by default.
+- **FR-010**: After each stage, Dex MUST report a dirty tree in the trace (`tree_dirty`) and MUST NOT commit it. The only commit Dex still makes anywhere is the GitHub-repo setup in a new project's prerequisites, after the human picks "create a new repo".
+- **FR-011**: A new project MUST keep its single Dex run branch. Opening a pull request at the end of a run MUST be opt-in for both kinds of project, and off by default; it opens only when the queue ended complete (or a build-mode run finished) and the run has a base branch to compare against.
 
 #### Policy and permissions (D-015-3)
 
 - **FR-012**: The policy MUST live in `.dex/policy.json`, tracked in the project's git, with the fields and defaults in FR-020.
-- **FR-013**: Agents MUST load the Claude Code settings the policy names (default: user, project and local), so the project's own hooks and `ask`/`deny` rules apply.
+- **FR-013**: Agents MUST load the Claude Code settings the policy names (default: user, project and local), so the project's own hooks and `ask`/`deny` rules apply. Every agent MUST run with Claude Code's preset system prompt (plus the policy's append file), and with the process environment merged under the policy's and the stage's `env`, because the SDK replaces the child's environment.
 - **FR-014**: Dex MUST refuse to run an existing project with permission checks bypassed.
 - **FR-015**: Before every tool call, Dex MUST check the policy:
   - a `deny` match MUST be denied with its reason and shown in the trace;
   - an `ask` match MUST be held for the human (FR-017);
-  - a file write (Edit, Write, NotebookEdit) outside the write roots, or to a frozen file, MUST be denied with a reason;
+  - a file write (Edit, Write, MultiEdit, NotebookEdit) outside the write roots, or to a frozen file that is committed at HEAD, MUST be denied with a reason;
   - with no match, Dex MUST add no decision, so the project's own rules decide.
 - **FR-016**: `deny` and `ask` patterns MUST match against the whole shell command string, so chained and wrapped commands are covered.
 - **FR-017**: When the project's settings or a policy `ask` rule need a human decision on a tool call, the agent MUST wait while the app or the terminal shows the tool call; the human approves or denies it. Dex MUST NOT auto-approve these calls. The existing interception of agent questions MUST keep working.
-- **FR-018**: After each stage, every frozen file MUST be compared with the commit the entry started from; any change MUST pause the run.
+- **FR-018**: After each stage, every frozen file MUST be compared with the commit the stage started from (committed or not); a modified, deleted or renamed frozen file MUST pause the run. A frozen file created during the stage does not pause it ("frozen" means once committed). *(Amended from "the commit the entry started from", research R13: a per-stage baseline catches every agent change, needs no stored state and does not re-pause forever when the human resumes on purpose.)*
 - **FR-019**: The policy decisions MUST be computable without starting an agent, so they can be tested from tables of cases.
 - **FR-020**: The policy fields and their defaults MUST be:
 
@@ -249,61 +264,63 @@ The desktop app keeps the project picker, the run controls with a new queue pane
   | `frozen` | Files no agent may change once committed | none |
   | `preflight` | Commands that must exit 0 before a run and before each `implement` and `verify` | none |
   | `repos` | Extra checkouts (globs) that must be clean; shown in the status panel | none |
-  | `systemPromptAppend` | A Markdown file appended to every agent's system prompt | none |
+  | `systemPromptAppend` | A Markdown file (project-relative) appended to every agent's system prompt; `null` means none | none |
   | `questions` | `recommended-then-review` or `wait` | `recommended-then-review` |
   | `openPullRequest` | Push and open a PR at the end of the run | off |
   | `limits` | Budget per stage, budget per run, turns per stage, implement runs without progress (2), verify rounds (3) | as shown |
+
+  Unknown fields are rejected. Limits come from the policy only: the run configuration carries no budget, retry or cycle-count field of its own.
 
 #### Queue (D-015-4)
 
 - **FR-021**: The feature list MUST be one queue, `.dex/queue.json`, for both kinds of project. Dex MUST read the old feature-manifest format and migrate it.
 - **FR-022**: A new project MUST still fill the queue through manifest extraction. An existing project MUST be able to write it by hand.
-- **FR-023**: `dex queue init` MUST list the project's spec folders and brief folders and propose one entry for each, for the human to edit. It MUST NOT start a run.
-- **FR-024**: A queue entry MUST support: `id` (also the default spec folder and branch name), `title`, `description`, `status` (optional and human-owned: `done` or `skipped` overrides; every other status — `pending`, `active`, `done` — is derived from files, and Dex MUST NOT write the queue file during a run), `brief`, `generate` (`{sources, instructions}`), `specDir` and `branch` (defaults `specs/<id>` and `<id>`), `baseBranch` (default: the previous entry's branch, else the current branch), `tasks` (scope filter with single ids and ranges such as `T122-T134`), `skip` and `gates`.
+- **FR-023**: `dex queue init` MUST list the project's spec folders and brief folders and propose one entry for each, for the human to edit. It MUST NOT start a run, run git or overwrite an existing queue. It also writes `.dex/policy.json` (every default spelled out) and `.dex/.gitignore`, each only when absent, and refuses a project with no feature folder.
+- **FR-024**: A queue entry MUST support: `id` (also the default spec folder and branch name), `title`, `description`, `status` (optional and human-owned: `done` or `skipped` overrides; every other status — `pending`, `active`, `done` — is derived from files, and Dex MUST NOT write the queue file during a run), `brief`, `generate` (`{sources, instructions}`), `specDir` and `branch` (defaults `specs/<id>` and `<id>`), `baseBranch` (default: the previous entry's branch, else the current branch), `tasks` (scope filter with single ids and ranges such as `T122-T134`), `skip` and `gates`. Unknown fields are rejected, and `generate` requires `brief`. In a `new` queue every entry's branch is the run branch. `dex queue init` makes a lowercase id from a folder name that is not a valid id, and keeps the real folder name in `brief` and `specDir`.
 
 #### Stages (D-015-5)
 
-- **FR-025**: `brief` MUST write the entry's brief from its `generate` sources, using the previous entry's brief as the format example. It MUST be gated by default.
+- **FR-025**: `brief` MUST write the entry's brief from its `generate` sources, using the previous entry's brief as the format example. The brief MUST have an acceptance section the verify stage can check. It MUST be gated by default. It runs through the same generic file-stage path as `specify`; it has no module of its own.
 - **FR-026**: `specify` MUST run spec-kit's specify command with the entry's exact branch name and spec folder, and the prompt MUST say that the brief is the source of truth.
 - **FR-027**: `clarify` MUST run autonomously: it answers each question from the brief, the repo and its docs, records each question and answer in the spec, always writes the `## Clarifications` section, and asks the human only when nothing in the repo answers the question and a wrong guess would cost more than a day.
-- **FR-028**: Before `plan` and `tasks`, Dex MUST point spec-kit at the entry's spec folder.
+- **FR-028**: Before every per-entry stage except `brief`, Dex MUST point spec-kit at the entry's spec folder through the agent's environment (`SPECIFY_FEATURE_DIRECTORY`), not by writing a tracked file; for `specify` in an existing project it also sets `GIT_BRANCH_NAME` to the entry's exact branch (research R5).
 - **FR-029**: `implement` MUST run one task phase per agent, pass the in-scope task ids when the entry has a filter, and tell the agent to commit as the project's rules say instead of Dex's own commit instruction.
-- **FR-030**: `verify` MUST run in a fresh agent that did not implement the work. It MUST read the brief's acceptance criteria and the spec's success criteria, run the acceptance commands, never edit code, and write `specs/<id>/verify.md` with the verdict, the `tasks.md` fingerprint it checked, and each command with its exit code. On failure it MUST append `## Phase Vn: verify fixes` to `tasks.md` with concrete tasks.
+- **FR-030**: `verify` MUST run in a fresh agent that did not implement the work. It MUST read the brief's acceptance criteria and the spec's success criteria, run the acceptance commands, never edit code, and write `specs/<id>/verify.md` with the verdict, the `tasks.md` fingerprint it checked, and each command with its exit code. On failure it MUST append `## Phase <N>: Verify fixes V<k>` to `tasks.md` with concrete tasks (a numeric phase number, because the task parser needs one; fix phases are always in scope). Dex computes the `tasks.md` fingerprint and hands it to the agent, which copies it verbatim.
 - **FR-031**: The `learnings` stage MUST be removed. The implement prompt keeps asking the agent to record what it learned in the project's own agent instructions.
 - **FR-032**: In an existing project, the prerequisites stage MUST only check; it MUST NOT initialize git, re-initialize spec-kit, or create a repository.
-- **FR-033**: Every stage MUST run under the mock agent, so a whole queue runs at zero cost.
+- **FR-033**: Every stage MUST run under the mock agent, so a whole queue runs at zero cost. The mock is entry-keyed (`entries`, with a `"*"` fallback), ticks the tasks of the phase it is given, may ask questions, writes `verify.md` from the fingerprint in the prompt, and commits `mock(<stage>): <entry>` as an agent following the project's rules would.
 
 #### Questions (D-015-6)
 
-- **FR-034**: In `recommended-then-review` mode, a question with a recommended option MUST be answered with it and listed for review; a question without one MUST wait for the human. In `wait` mode, every question MUST wait.
-- **FR-035**: Pending questions MUST persist across a restart in the run state and in `.dex/questions.md`. The automatic-clarification setting of the new-project entry MUST keep working as it does today.
+- **FR-034**: In `recommended-then-review` mode, a question with a recommended option MUST be answered with it and listed for review; a question without one MUST wait for the human. In `wait` mode, every question MUST wait. An option is recommended when its label ends in `(Recommended)` (the question tool has no `recommended` field); the old fallback "pick the first option" is gone.
+- **FR-035**: Pending questions MUST persist across a restart in the run state and in `.dex/questions.md`. The question mode is per stage: a new project's clarification steps (clarification, constitution, manifest extraction) follow the Automatic Clarification setting; every other stage follows `policy.questions`. `.dex/questions.md` MUST exist while anything waits or the review list is not empty, and MUST be removed otherwise. Answers given while no agent waits (a terminal `dex run` after a parked run) go to an answer book that the re-run stage reads.
 
 #### Failure policy (D-015-7)
 
-- **FR-036**: Dex MUST count, per entry, the `implement` runs that checked no new task and the verify rounds. When either reaches its limit, the run MUST pause with a question. This MUST replace the AI-based feature evaluation and the replan decision.
-- **FR-037**: When a stage reaches its budget or turn limit, the stage MUST stop and the run MUST pause with a question that names the limit. When the run reaches its budget limit, the run MUST stop before the next stage.
+- **FR-036**: Dex MUST count, per entry, the `implement` runs that checked no new task and the verify rounds. When either reaches its limit, the run MUST pause with a question. This MUST replace the AI-based feature evaluation and the replan decision. The verify-round count MUST come from the `Verify fixes V*` phases in `tasks.md`; only the implement counter lives in the run state. A stage stopped by Stop MUST NOT count toward the implement counter. When the picker asks for the same stage of the same entry right after it ran (any stage but `implement`), the run MUST pause (`no_progress`) instead of running it again.
+- **FR-037**: When a stage reaches its budget or turn limit, the stage MUST stop and the run MUST pause with a question that names the limit. When the run reaches its budget limit, the run MUST stop before the next stage (state `paused`, reason `limit_reached`).
 
 #### Headless runner (D-015-8)
 
-- **FR-038**: `dex run <projectDir>` MUST run the same loop as the app, with `--once` (one stage, then stop), `--dry-run` and `--status`.
-- **FR-039**: `--dry-run` MUST print the picker's decision and the full prompt for every remaining entry, and MUST NOT start an agent.
-- **FR-040**: With a terminal, questions and tool approvals MUST be asked on the terminal. Without one, the run MUST pause and write `.dex/questions.md`.
+- **FR-038**: `dex run <projectDir>` MUST run the same loop as the app, with `--once` (one stage, then stop; it applies to queue stages, not to a new project's prerequisites and clarification steps), `--dry-run`, `--status` and `--agent`. It MUST resume whenever `.dex/state.json` exists, use the app's run settings (model `claude-opus-4-6`, 75 turns, 50 iterations), and start a new run with Automatic Clarification off.
+- **FR-039**: `--dry-run` MUST print the picker's decision and the full prompt for every remaining entry, and MUST NOT start an agent or write any file (a v2 manifest migrates in memory only, and git is read with `--no-optional-locks`). `--status` prints the same snapshot the app reads.
+- **FR-040**: With a terminal, questions and tool approvals MUST be asked on the terminal. Without one, the run MUST pause and write `.dex/questions.md`. Exit codes: 0 done (or a finished `--once`, `--dry-run`, `--status`); 1 failed, including any `error` event; 2 a usage error or an invalid or refused queue or policy; 3 the run paused and needs a human (also Ctrl-C).
 
 #### App (D-015-9)
 
 - **FR-041**: The app MUST keep the project picker, the run controls with a queue panel (entry, stage, task phase, cost), the task board, the agent trace, and the questions panel, which MUST also handle tool approvals.
 - **FR-042**: The app MUST lose the timeline, jump-to-version, branch operations, promote-to-main, conflict-resolver progress, the "try N ways" leftovers and agent profiles.
-- **FR-043**: After each stage event, the app MUST re-read the run state and the queue from disk instead of building its own state from events.
+- **FR-043**: After each stage-boundary event (`run_started`, `step_started`, `step_completed`, `paused`, `run_completed`, `loop_terminated`), the app MUST re-read the run state and the queue from disk (`project:get-run-snapshot`) instead of building its own state from events. It MUST NOT guess the next stage: `currentStage` moves only on `step_started`. The live trace stays event-driven, and a failed read keeps the last snapshot.
 
 #### Removed capabilities
 
-- **FR-044**: Dex MUST remove: stage checkpoint commits, the timeline, jump-to-version and its temporary fork branches, promote-to-main with the AI conflict resolver, branch delete, variant agent profiles (including the Codex and Copilot runner kinds and worktree overlays), the AI gap analysis, and the code that keeps the run state in step with git.
+- **FR-044**: Dex MUST remove: stage checkpoint commits, the timeline, jump-to-version and its temporary fork branches, promote-to-main with the AI conflict resolver, branch delete, variant agent profiles (including the Codex and Copilot runner kinds and worktree overlays), the AI gap analysis, the `learnings` stage, and the code that keeps the run state in step with git. The docs for removed features (the branch-management test plans, the 01X brief, the Timeline sections of the README, SOLUTION and FINAL_PLAN) and the `d3-*` packages that only the timeline used go with them.
 - **FR-045**: Every event, app-to-engine interface and test that only served a removed capability MUST be removed with it. An event MUST be checked for other consumers before it is removed.
 - **FR-046**: The example-project fixture scripts (reset, promote-checkpoint, prune-branches) MUST be kept and trimmed to the branch families that still exist.
 
 #### Delivery constraints
 
-- **FR-047**: The agent toolkit Dex builds on MUST be upgraded to its current release, and the loop MUST work on it, before any capability is removed, so toolkit changes do not mix into the removal changes.
+- **FR-047**: The agent toolkit Dex builds on MUST be upgraded to its current release, and the loop MUST work on it, before any capability is removed, so toolkit changes do not mix into the removal changes. As built, the SDK is `0.3.318` (from `0.1.77`), the two `query()` call sites share one options builder, and the dead TodoWrite progress path is replaced by a re-parse of `tasks.md` after a write to it (research R1).
 - **FR-048**: After every implementation phase, the test suite, the type check and the size check MUST pass, and a mock loop on the example project MUST finish.
 
 ### Key Entities
@@ -315,7 +332,10 @@ The desktop app keeps the project picker, the run controls with a new queue pane
 - **Policy rule**: a `{tool, pattern, reason}` triple in `deny` or `ask`.
 - **Verification record** (`verify.md`): the verdict for one entry, the `tasks.md` fingerprint it applies to, and each command with its exit code.
 - **Run state**: what the files cannot say — run id and status, cost, attempt counters per entry, pending questions, the configuration snapshot. Not tracked in git.
-- **Pending question / tool approval**: something the human must answer before the agent continues; persisted across restarts and mirrored to `.dex/questions.md`.
+- **Pending question / tool approval**: something the human must answer before the agent continues; persisted across restarts and mirrored to `.dex/questions.md`. A **pause** is a third kind of request: the run has already ended, and Resume answers it.
+- **Review list**: the questions answered by default in `recommended-then-review`, kept in the run state and in `.dex/questions.md` until the human has looked at them.
+- **Answer book**: answers given while no agent waited (a terminal run after a parked run); the re-run stage reads them.
+- **Run snapshot**: the one read the app and `dex run --status` share: the run state, the queue view with each entry's derived status and cost, and every queue or policy error.
 
 ## Success Criteria *(mandatory)*
 
@@ -331,6 +351,23 @@ The desktop app keeps the project picker, the run controls with a new queue pane
 - **SC-008**: A stuck entry (2 `implement` runs with no new task checked, or 3 failed verify rounds) pauses for the human in 100% of cases, with no further agent spend on that entry.
 - **SC-009**: A dry run over the `onion-demo-01` queue prints exactly one decision and one prompt for each of its 5 entries, starts no agent, and the owner signs it off before any real stage runs.
 - **SC-010**: Dex runs the first real stage on `onion-demo-01` (`specify` for `021-agent-entry`) with the owner watching, with no policy breach and no Dex-made commit, branch or push.
+
+### Outcomes (as built)
+
+Recorded at the end of the implementation, from the evidence in [research.md](research.md) (the phase gates and "Final checks"). Nothing here changes a target above.
+
+| Criterion | Outcome |
+|---|---|
+| SC-001 | Met. One passing case per row of the next-stage table, plus task filter, `skip`, gates and the manifest migration (`picker`, `queue` and `loop` tests). |
+| SC-002 | Met. The mock run of a new project takes all three entries to `done`: 27 steps, 0 Dex commits, a clean tree. Stop in `implement` and Resume runs the same task phase. |
+| SC-003 | Met on a scratch clone: a reset to the `mock(tasks)` commit resumes on `implement` phase 1 with no repair step. |
+| SC-004 | Met. The existing-project fixture ends `queue_complete`; the only new branch is the one the mock `specify` made; every new commit is `mock(...)`; exit 0 proves no push was tried. |
+| SC-005 | Policy table cases met. The live check (a project `ask` rule reaching the approval card) is **open** (T067, needs the owner's approval). The approval card has component tests, and the live UI check (T106) covered everything but that card, because the mock makes no tool calls. |
+| SC-006 | Met. `bypassPermissions` appears in `policy.ts` and its test only. |
+| SC-007 | **Not met.** 22,086 lines after the format pass (22,116 at the end of the branch), which is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. |
+| SC-008 | Met by tests (`failure-policy`, `loop`): two implement runs with no new task, or three failed verify rounds, pause with no further agent run. |
+| SC-009 | **Open** (T112, owner step: the owner writes the onion-demo-01 queue and policy first). |
+| SC-010 | **Open** (T113, owner step, real spend). |
 
 ## Assumptions
 

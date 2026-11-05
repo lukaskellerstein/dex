@@ -8,11 +8,14 @@ machine.
 |---|---|---|---|
 | `.dex/queue.json` | yes | human, `dex queue init`, manifest extraction, v2 migration | picker, queue panel, CLI |
 | `.dex/policy.json` | yes | human | runner, preflight, post-stage |
-| `.dex/.gitignore` | yes | setup (new project) or `dex queue init` | git |
+| `.dex/.gitignore` | yes | setup (new project) or `dex queue init`, only when absent | git |
 | `specs/<id>/verify.md` | yes | the `verify` agent | picker |
 | `specs/<id>/tasks.md` | yes | spec-kit `tasks`, `implement` agents, `verify` agent (fix phase) | picker, parser, task board |
 | `.dex/state.json` | no (runtime) | Dex | Dex, renderer, CLI |
-| `.dex/questions.md` | no (runtime) | Dex | the human, CLI |
+| `.dex/questions.md` | no (runtime) | Dex (`renderQuestionsFile`; removed when nothing waits and the review list is empty) | the human, CLI |
+| `.dex/mock-config.json` | project's choice | human | the mock agent (`entries` map, see [R15](research.md)) |
+
+The runtime files are listed once, in `RUNTIME_IGNORE_ENTRIES` (`state.json`, `state.json.tmp`, `state.lock`, `runs/`, `questions.md`, `ui.json`). That list writes `.dex/.gitignore` and also defines which paths never make a tree "dirty".
 | `.dex/runs/<runId>.json` | no (runtime) | Dex (`runs.ts`, unchanged) | renderer |
 
 ## Queue — `.dex/queue.json` (v3)
@@ -48,14 +51,23 @@ type StageName = "brief" | "specify" | "clarify" | "plan" | "tasks" | "implement
 
 - `version === 3`; `kind` is one of the two values; `entries` is a non-empty array.
 - `id` unique and matches the pattern; `title` non-empty.
-- `generate.sources` non-empty when `generate` is present.
+- `generate.sources` non-empty when `generate` is present, and `generate` needs `brief` (the path it writes).
+- optional strings (`description`, `brief`, `specDir`, `branch`, `baseBranch`) are non-empty when present; `status` is `done` or `skipped`.
 - every `skip` / `gates` value is a `StageName`.
 - every `tasks` item matches `^T\d+$` or `^T\d+-T\d+$` with start ≤ end.
 - unknown top-level or entry fields are rejected (a typo must not be silently ignored).
 
-**Resolved entry.** `resolveEntries(queue, currentBranch)` fills the defaults in
-order, so `baseBranch` can refer to the previous entry's resolved `branch`. The
-resolved form is what the picker, prompts and UI use.
+**Resolved entry.** `resolveEntries(queue, currentBranch, runBranch)` fills the defaults in
+order, so `baseBranch` can refer to the previous entry's resolved `branch`. In a
+`new` queue every entry's `branch` is the run branch (the current branch before it
+exists). `tasks` is expanded to individual ids (`parseTaskScope`). The resolved
+form is what the picker, prompts and UI use.
+
+**Task scope.** A task is in scope when the entry has no `tasks` filter, lists the
+id, or sits in a fix phase (a phase whose name starts `Verify fixes V<n>`,
+`isFixPhase`). The one rule is `isInScope` / `hasOpenScopedTask` in `queue.ts`; the
+picker, the implement counter, the implement prompt and build mode all use it. The
+parser reads `[x]` and `[X]` alike (spec-kit writes `[X]`).
 
 **Derived status** (not stored): `skipped` (human) → `done` (human) →
 `done` (verify.md passes for the current `tasks.md` hash) → `active` (the first
@@ -64,7 +76,9 @@ entry that is neither) → `pending` (every later entry).
 ### Migration: `.dex/feature-manifest.json` v2 → queue v3
 
 Runs in `loadQueue` only when `queue.json` is missing and the manifest exists.
-It writes `queue.json` once and leaves the manifest file in place.
+It writes `queue.json` once and leaves the manifest file in place. With
+`loadQueue(projectDir, { persistMigration: false })` it migrates in memory and
+writes nothing (`--dry-run`, `--status`, the app's snapshot).
 
 | v2 field | v3 field |
 |---|---|
@@ -91,7 +105,7 @@ interface Policy {
   frozen: string[];                                        // git pathspec globs, default []
   preflight: string[];                                     // shell commands, default []
   repos: string[];                                         // globs of extra checkouts, default []
-  systemPromptAppend?: string;                             // path to a Markdown file
+  systemPromptAppend: string | null;                       // project-relative path to a Markdown file; null = none (default)
   questions: "recommended-then-review" | "wait";           // default "recommended-then-review"
   openPullRequest: boolean;                                // default false
   limits: {
@@ -120,12 +134,17 @@ throws `PolicyRefusedError` (FR-014). A missing file means all defaults.
 | Tool | Subject |
 |---|---|
 | `Bash` | `input.command` — the whole string, so `a && b` and `bash -c "…"` are covered |
-| `Edit`, `Write`, `Read`, `NotebookEdit` | `input.file_path` (or `notebook_path`), resolved to an absolute path |
+| `Edit`, `Write`, `MultiEdit`, `Read`, `NotebookEdit` | `input.file_path` (or `notebook_path`), resolved to an absolute path |
 | `WebFetch` | `input.url` |
 | any other | `JSON.stringify(input)` |
 
 **Decision order** (`decideToolUse`, pure): `deny` rules → write roots and frozen
-files (write tools only) → `ask` rules → no opinion. The first match wins.
+files (write tools only: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) → `ask` rules
+→ no opinion. The first match wins. A frozen file denies a write only when it is
+tracked at HEAD (`git cat-file -e HEAD:./<rel>`); a file that is only staged is not
+frozen yet. `frozen` globs are project-relative and tested with `path.matchesGlob`
+(`*` stays inside one folder). `limits` values must be positive; the budget fields
+are numbers, the others integers.
 
 ## Run state — `.dex/state.json` (v2, runtime)
 
@@ -142,13 +161,13 @@ interface DexStateV2 {
   pauseDetail?: string;              // human-readable: which limit, which file, which command
   kind: "new" | "existing";
   runBranch: string | null;          // new projects only: the single dex/<date>-<id> branch
-  current: { entryId: string; stage: StageName; taskPhase: number | null } | null;
+  current: { entryId: string; stage: StageName; taskPhase: number | null } | null; // the stage that ran last; informational, the picker decides what is next
   cumulativeCostUsd: number;
   counters: Record<string, { implementRunsWithoutProgress: number }>; // keyed by entry id
   pendingRequests: PendingRequest[];
   reviewList: ReviewItem[];          // questions auto-answered in recommended-then-review
   answerBook: AnswerBookItem[];      // answers given while no agent was waiting (headless resume)
-  config: ConfigSnapshot;            // model, limits, autoClarification, descriptionFile
+  config: ConfigSnapshot;            // model, maxTurns, maxIterations, autoClarification, descriptionFile (limits live in the policy, not here)
   startedAt: string;
   pausedAt: string | null;
 }
@@ -162,6 +181,16 @@ type PauseReason =
 **State transitions:** `running → paused` (any `PauseReason`), `running →
 completed` (queue complete), `running → failed` (unhandled error), `paused →
 running` (Resume: the picker runs again). There is no reconcile transition.
+On Resume every pending request is dropped (`clearStaleRequests`): a pause is
+answered by Resume itself, and a parked question or approval is asked again by the
+stage that re-runs. `budget_exceeded` ends the loop with `paused` / `limit_reached`;
+Stop ends it `paused` / `user_abort`; a run that pauses because no human can answer
+(`dex run` without a TTY) is `paused` with `question` or `tool_approval`, not a Stop.
+A paused or failed loop writes `paused` / `failed` to `runs/<runId>.json`.
+
+Only one counter is stored: `counters[entryId].implementRunsWithoutProgress`. It
+resets to 0 when an `implement` run increases the number of checked in-scope tasks
+(fix phases count), and a stopped `implement` leaves it alone.
 
 Verify rounds are **not** a counter: they are the number of
 `## Phase N: Verify fixes V<k>` sections in `tasks.md`, so they survive a reset
@@ -180,13 +209,22 @@ type PendingRequest = {
   | { kind: "pause"; reason: PauseReason; detail: string; options: string[] } // gate, limit, dirty tree, …
 );
 
-interface ReviewItem { question: string; answer: string; entryId: string | null; stage: StageName; at: string }
-interface AnswerBookItem { key: string; answer: string | "approve" | "deny"; at: string }
+interface ReviewItem { question: string; answer: string; entryId: string | null; stage: StepType; at: string } // StepType: a new project's clarification steps are not queue stages
+interface AnswerBookItem { key: string; answer: string; at: string } // a label or typed text; for an approval "approve", "deny" or the denial message
 ```
 
 `key` is `q:<normalized question text>` for a question and
 `t:<toolName>:<subject>` for a tool approval. When a re-run agent asks a request
 whose key is in the book, Dex answers from the book and removes the item.
+
+**Who answers a question** (`askQuestions`, one place): the answer book, then (in
+`recommended-then-review`) the recommended options, then a human. An option is
+recommended when its label ends in `(Recommended)`, case-insensitive. The mode per
+session is `questionModeFor(step, autoClarification, policy)`: the new-project
+clarification steps follow `autoClarification`, every other stage follows
+`policy.questions`. A pause request is recorded with `recordPause`; the run has
+already ended, so nothing waits on it and the IPC answer path does not carry it.
+`.dex/questions.md` is regenerated from `pendingRequests` and `reviewList`.
 
 ## Verification record — `specs/<id>/verify.md`
 
@@ -206,9 +244,32 @@ Valid for picking only when the hash equals `sha256(tasks.md)` now.
 ```ts
 type PickerDecision =
   | { kind: "stage"; entry: ResolvedEntry; stage: StageName; taskPhase?: number; reason: string }
-  | { kind: "pause"; entry: ResolvedEntry; reason: PauseReason; detail: string }
+  | { kind: "pause"; entry: ResolvedEntry; reason: "invalid_input"; detail: string } // missing brief without `generate`, unknown task ids, no branch
   | { kind: "complete" };            // every entry is done or skipped
 ```
 
 `reason` is the matched row of the D-015-1 table, in words (for the trace,
-`--dry-run` and the queue panel).
+`--dry-run` and the queue panel). The picker only ever pauses with
+`invalid_input`; every other pause reason comes from a guard around the stage
+(`stages/post-stage.ts`, `branching.ts`, `preflight.ts`). A `verify.md` with a
+matching hash and verdict `failed` also yields `verify`.
+
+`describeEntries` / `describeQueue` give the queue panel's view: `skipped` and
+`done` from the human override or `verify.md`, the first other entry `active`, every
+later one `pending`. Each entry is judged on its own tree, so a later entry shows
+its own first stage.
+
+## Run snapshot (`project:get-run-snapshot`, `dex run --status`)
+
+```ts
+interface RunSnapshot {
+  state: DexStateV2 | null;   // read fresh
+  queue: QueueView | null;    // null: no queue yet (new project before manifest), or an invalid one
+  errors: string[];           // queue / policy validation errors, verbatim
+}
+```
+
+Per-entry cost is the sum of the run record's agent runs by `featureSlug`, which
+`run-stage.ts` sets to the entry id (the entry's 1-based queue position is the
+`cycleNumber`, so the log tree and `runs.ts` keep their paths). The run record
+keeps `maxBudgetUsd`, read from `limits.maxBudgetUsdPerRun`.

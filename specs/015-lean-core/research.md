@@ -254,7 +254,10 @@ readline), the answer book, or Stop (which denies every held request).
   clarification stages.
 - On reload the renderer reads `pendingRequests` from the run snapshot. Today
   the pending question is persisted but never read back, so it is lost on
-  reload.
+  reload. *(As built: `useUserQuestion` reads `state.pendingRequests` through
+  `getRunState()` + `getProjectState()`, not through the snapshot, and only while
+  a live run exists — Phase 4 gate. The snapshot carries the same state for the
+  queue panel's review list.)*
 
 **Rationale.** Questions, tool approvals, gates, limits, a dirty tree and a
 frozen file all reduce to "show something, wait for one of N answers". One
@@ -424,6 +427,12 @@ candidate the owner can weigh: the renderer's event-built stage history
 (`useLoopState` + `buildLoopStateFromRun`, ~400 lines) could read the run
 record through the snapshot instead.
 
+**At the end of the branch** (after the cycle-count fix, `b0f5082`, and the
+removal of the test-only `statusPorcelain` helper; `bash scripts/loc-by-area.sh`):
+core 9,771 (−7), main 524, renderer 11,821 (+37, `queueProgress` and the
+snapshot-driven cycle count); **grand total 22,116**. The table above is the
+T110 measurement; SC-007 stays unmet by 1,116 lines.
+
 ### Phase 0 measurements (2026-11-05, tree at `7ec23aa`)
 
 **Tests before any change.** `npm test`: core 187 pass / 0 fail, renderer 40
@@ -490,9 +499,11 @@ Note for the quickstart: the root commit of `dex-ecommerce` holds
   folder, `blob` returns the bytes untouched (the Tasks-SHA256 check needs
   them), and `./` keeps paths relative to the project, not the repo root.
 - **`git.ts`:** `headSha` was not added — `getHeadSha` already exists. The new
-  `branchExists` / `switchBranch` / `statusPorcelain` use `execFileSync` with an
-  argument list: branch names come from the tracked `queue.json`, so they never
-  pass through a shell.
+  `branchExists` / `switchBranch` use `execFileSync` with an argument list:
+  branch names come from the tracked `queue.json`, so they never pass through
+  a shell. *(A `statusPorcelain` helper was added here too, but only a test
+  called it — `branching.dirtyFiles` reads the status itself with
+  `-z --untracked-files=all` — so it was removed after the spec sync.)*
 
 ### Phase 3 gate (2026-11-05, the loop runs from files, T056)
 

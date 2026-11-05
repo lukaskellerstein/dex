@@ -49,7 +49,7 @@ type PolicyDecision =
 Order, first match wins:
 
 1. `deny` rules whose `tool` is the call's tool or `"*"`, `pattern` tested on the subject.
-2. Write tools (`Edit`, `Write`, `NotebookEdit`) only:
+2. Write tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`) only:
    - the resolved target outside every `writeRoots` entry and outside `tmpDir`
      → `deny` (`writeRoots`);
    - the target matching a `frozen` glob and tracked at HEAD → `deny` (`frozen`).
@@ -57,7 +57,9 @@ Order, first match wins:
 4. `none`.
 
 `isTrackedAtHead` is injected, so the function stays pure and table-testable.
-The runner passes a `git ls-files --error-unmatch` probe.
+The runner passes a `git cat-file -e HEAD:./<rel>` probe: a frozen file counts
+once it is committed, and a file that is only staged does not. `systemPromptAppend`
+is `null` when absent.
 
 ## The chain at runtime
 
@@ -80,12 +82,31 @@ flowchart TD
   A -->|"deny / Stop"| D3[denied + message]
 ```
 
+## Where it runs
+
+`agent/permissions.ts` holds the chain, so it is tested without the SDK:
+`preToolUseDecision` (the PreToolUse hook: a policy `deny` returns `deny` and emits
+`policy_denied`; an `ask` returns `ask`; otherwise `{}`; after Stop it denies with
+"Run stopped by user"; it never returns `allow`) and `makeCanUseTool`
+(`AskUserQuestion` goes to `humanInput`; a policy `ask` or the SDK's
+`matchedAskRule` holds the call as a `tool_approval` with source `policy` or
+`settings`; anything else is allowed; a policy `deny` stays a deny even if the hook
+did not run). `agent/claudeSession.ts` `buildQueryOptions(policy)` turns the policy
+into SDK options: `settingSources`, `permissionMode`, `env: { ...process.env,
+...policy.env, ...stageEnv }`, the `claude_code` preset system prompt with the
+append file, `maxTurns = min(config.maxTurns, limits.maxTurnsPerStage)` and
+`maxBudgetUsd = limits.maxBudgetUsdPerStage`. The SDK's
+`allowDangerouslySkipPermissions` is set only when a new project's policy asks for
+`bypassPermissions`. A stage that ends on `error_max_turns` or
+`error_max_budget_usd` reports `limitHit` (`turns` / `budget`) and the run pauses
+`limit_reached`.
+
 ## What the refusal looks like
 
 `permissionMode: "bypassPermissions"` in an `existing` project → `run()` emits
 `error` with:
 
-> `.dex/policy.json: permissionMode "bypassPermissions" is refused for an existing project — the project's own permission rules would be skipped.`
+> `<projectDir>/.dex/policy.json: permissionMode "bypassPermissions" is refused for an existing project — the project's own permission rules would be skipped.`
 
 and the CLI exits 2. This check, in `policy.ts`, is the only place the string
 `bypassPermissions` appears in `src/` (SC-006).

@@ -303,7 +303,7 @@ description: "Task list for 015 Lean Core"
 - [X] T111 Final checks: `nvim-tools --json --all` adds no findings against the T003 baseline; `npm test`; `npm run typecheck`; quickstart § 1–8 end to end
 - [ ] T112 **Owner step.** The owner writes `.dex/queue.json`, `.dex/policy.json` and `.dex/loop-rules.md` in `~/Projects/Github/onion-ai-eu/onion-demo-01` (brief Appendix A); then run `dex run <onion-demo-01> --dry-run`, confirm 5 blocks and 0 validation errors, and hand the output to the owner for sign-off (SC-009)
 - [ ] T113 **Owner step, real spend.** With the owner watching, `dex run <onion-demo-01> --once` for `021-agent-entry` `specify`; confirm no policy breach in the trace and no Dex-made commit, branch or push (SC-010)
-- [ ] T114 Run `/sync-spec-kit` and `/update-feature-docs` for the branch
+- [X] T114 Run `/sync-spec-kit` and `/update-feature-docs` for the branch
 
 ---
 
@@ -405,4 +405,16 @@ Task: "T034 src/core/queue.ts"  +  "T035 src/core/tree-reader.ts"
 
 - Never commit unless the owner asks (repo rule). The mock agent's `mock(<stage>)` commits happen only inside scratch clones and temp repos.
 - T012, T067 and T113 spend real money. Each one needs the owner's go-ahead first.
+- **Status at the sync (2026-11-05):** 109 of 114 done. Open: T012 and T067 (real agent runs, waiting for the owner's approval), T112 and T113 (owner steps on `onion-demo-01`), T114 (this sync and the feature docs). T106's live UI check passed except the tool-approval card (the mock makes no tool calls); see research.md § Phase 10 gate.
+- **Where the build differs from a task's wording** (the task lines stay as written; research.md has the reasons):
+  - T035: the tree reader uses `git cat-file -t` / `cat-file blob` on `<ref>:./<rel>`, not `cat-file -e` / `git show`; `headSha` was not added (`getHeadSha` exists); a test-only `statusPorcelain` helper was removed.
+  - T042: `humanInput.ts` is a new file (`userInput.ts` is deleted) and exports `askQuestions` and `recordPause`, not `requestHuman()`; T048's loop entry is `runQueueLoop`.
+  - T051: `src/core/manifest.ts` was deleted outright; extraction writes the queue from `stages/manifest-extraction.ts`.
+  - T060–T061: the permission chain is in `agent/permissions.ts` and the options builder in `agent/claudeSession.ts`; write tools include `MultiEdit`; "tracked at HEAD" is `git cat-file -e`.
+  - T071: `prepareBranch(projectDir, entry, kind)` targets the entry's branch once it exists, else its base; the clean-tree check is `dirtyFiles` with `--untracked-files=all` and `--no-optional-locks`.
+  - T077: `initQueue` lives in `src/core/queue-init.ts`.
+  - T085: `RunConfig` lost its budget and retry fields; `limitHit` replaces the SDK `subtype`.
+  - T091: the dry run judges each entry on its own tree (it does not pretend earlier entries are done) and lists only `active` and `pending` entries.
+  - T097: there is no `src/core/stages/brief.ts`; `brief` runs through `buildStagePrompt` and `runStage`.
+  - The fix-phase header is `## Phase <N>: Verify fixes V<k>` throughout (R8), not `## Phase Vn:`.
 - `reset-example-to.sh initial` force-pushes `dex-ecommerce`'s `origin`. These tasks use scratch clones instead, and `pristine` / `<checkpoint>` where `$EX` itself is needed.
