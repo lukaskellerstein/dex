@@ -1,10 +1,10 @@
 /**
  * What: The next-stage picker (D-015-1). Decides from files alone what runs next: `pickNext` returns one decision, `describeQueue` the derived status of every entry. Each entry's files are read from its own tree — working tree or a git ref — never through a checkout (research R3).
  * Not: Never writes and never switches branches. Does not run stages and does not count attempts (post-stage does). Does not validate the queue (queue.ts does).
- * Deps: queue.{resolveEntries, ResolvedEntry, StageName}, tree-reader, parser.parseTasksMd, git.{getCurrentBranch, branchExists}, node:crypto.
+ * Deps: queue.{resolveEntries, ResolvedEntry, StageName}, tree-reader, evidence.{evidenceKey, readVerifyRecord, tasksHash}, parser.parseTasksMd, git.{getCurrentBranch, branchExists}.
  */
 
-import crypto from "node:crypto";
+import { type Evidence, evidenceKey, readVerifyRecord, tasksHash } from "./evidence.js";
 import { branchExists, getCurrentBranch } from "./git.js";
 import { parseTasksMd } from "./parser.js";
 import {
@@ -47,38 +47,13 @@ export interface QueueView {
   entries: QueueViewEntry[];
 }
 
-export interface VerifyRecord {
-  verdict: "passed" | "failed";
-  tasksHash: string;
-  checked: string | null;
-}
-
 /** What the files say about one entry. */
 type Outcome =
   | { kind: "stage"; stage: StageName; taskPhase?: number; reason: string }
   | { kind: "done" | "skipped"; reason: string }
   | { kind: "pause"; detail: string };
 
-// ── verify.md and the tasks.md fingerprint (contracts/verify-md.md) ──
-
-const VERDICT_RE = /^\*\*Verdict\*\*: (passed|failed)\s*$/m;
-const HASH_RE = /^\*\*Tasks-SHA256\*\*: ([0-9a-f]{64})\s*$/m;
-const CHECKED_RE = /^\*\*Checked\*\*: (\S+)\s*$/m;
 const CLARIFICATIONS_RE = /^## Clarifications\s*$/m;
-
-/** The verify.md header, or null when the file, its verdict or its hash line is missing. */
-export function readVerifyRecord(content: string | null): VerifyRecord | null {
-  if (content === null) return null;
-  const verdict = VERDICT_RE.exec(content)?.[1] as VerifyRecord["verdict"] | undefined;
-  const hash = HASH_RE.exec(content)?.[1];
-  if (!verdict || !hash) return null;
-  return { verdict, tasksHash: hash, checked: CHECKED_RE.exec(content)?.[1] ?? null };
-}
-
-/** sha256 of tasks.md. Dex computes it; the verify agent only copies it. */
-export function tasksHash(content: string): string {
-  return crypto.createHash("sha256").update(content, "utf-8").digest("hex");
-}
 
 // ── One entry ──
 
@@ -133,19 +108,31 @@ function implementStage(entry: ResolvedEntry, phases: TaskPhase[]): Outcome | nu
     : null;
 }
 
-function verifyStage(entry: ResolvedEntry, tree: TreeReader, tasks: string): Outcome {
-  const record = readVerifyRecord(tree.read(`${entry.specDir}/verify.md`));
-  if (!record) return stage("verify", `${entry.specDir}/verify.md is missing`);
-  if (record.tasksHash !== tasksHash(tasks)) {
-    return stage("verify", "verify.md checked a different tasks.md");
+/** The verify row of D-015-1: a passing record that matches the entry now (contracts/evidence.md). */
+function verifyStage(entry: ResolvedEntry, tasks: string, evidence: Evidence): Outcome {
+  const { record, key } = evidence;
+  if (!record) return stage("verify", `no verify record in .dex/evidence/${entry.id}/`);
+  if (key === null || record.key !== key) {
+    return stage(
+      "verify",
+      record.key.startsWith("spec:")
+        ? `${entry.specDir} changed since the last verify`
+        : `branch "${entry.branch}" has commits since the last verify`,
+    );
   }
-  if (record.verdict !== "passed")
-    return stage("verify", "verify.md failed for the current tasks.md");
-  return { kind: "done", reason: "verify.md passed for the current tasks.md" };
+  if (record.tasksHash !== tasksHash(tasks)) {
+    return stage("verify", "the last verify checked a different tasks.md");
+  }
+  if (record.verdict !== "passed") return stage("verify", "the last verify failed");
+  return { kind: "done", reason: "verify passed for the current commit and tasks.md" };
 }
 
-/** D-015-1 for one entry over one tree. Pure. */
-export function stageFor(entry: ResolvedEntry, tree: TreeReader): Outcome {
+/** D-015-1 for one entry over one tree. `evidence` is read only when the entry reaches verify. */
+export function stageFor(
+  entry: ResolvedEntry,
+  tree: TreeReader,
+  evidence: () => Evidence,
+): Outcome {
   const before = artefactStage(entry, tree);
   if (before) return before;
   const tasks = tree.read(`${entry.specDir}/tasks.md`) ?? "";
@@ -155,7 +142,7 @@ export function stageFor(entry: ResolvedEntry, tree: TreeReader): Outcome {
   }
   if (entry.skip.includes("verify"))
     return { kind: "done", reason: "every stage is done or skipped" };
-  return verifyStage(entry, tree, tasks);
+  return verifyStage(entry, tasks, evidence());
 }
 
 /** Verify rounds so far: the `Verify fixes V<k>` phases in tasks.md (research R8). */
@@ -193,7 +180,10 @@ function evaluate(input: PickerInput, entry: ResolvedEntry, current: string): Ou
   if (entry.status === "done") return { kind: "done", reason: "marked done in queue.json" };
   const t = entryTree(input, entry, current);
   if ("error" in t) return { kind: "pause", detail: t.error };
-  const outcome = stageFor(entry, t.tree);
+  const outcome = stageFor(entry, t.tree, () => ({
+    record: readVerifyRecord(input.projectDir, entry.id),
+    key: evidenceKey(input.projectDir, input.queue.kind, entry),
+  }));
   // Without its own branch, an entry can only start (brief, specify) or be done.
   if (
     t.fromBase &&

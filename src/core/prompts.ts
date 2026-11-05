@@ -371,8 +371,6 @@ export function buildImplementPrompt(
 }
 
 export interface VerifyExtras {
-  /** sha256 of tasks.md, computed by Dex right before the stage. */
-  tasksHash: string;
   /** The round number k of the fix phase this run would append. */
   round: number;
   nextPhaseNumber: number;
@@ -388,7 +386,7 @@ export function buildVerifyPrompt(
   const brief = entry.brief
     ? `- the brief ${absPath(projectDir, entry.brief)}: its acceptance criteria\n`
     : "";
-  const { tasksHash, round, nextPhaseNumber, nextTaskId } = extras;
+  const { round, nextPhaseNumber, nextTaskId } = extras;
   return `You are the verification agent for ${entry.id} ("${entry.title}"). You did not implement this work. Check it; do not change it.
 
 ## Read
@@ -400,23 +398,16 @@ ${brief}- ${specPath}/spec.md: its success criteria
 
 1. Run the project's acceptance commands: build, typecheck, tests, and every command the brief or the spec names. Record each command and its exit code.
 2. Check every criterion against the code and the command results.
-3. Never edit code, tests or configuration. Write only ${specPath}/verify.md and, on failure, append to ${specPath}/tasks.md.
+3. Never edit code, tests or configuration. On a pass, change no file and make no commit.
 
-## Write ${specPath}/verify.md
+## Return the verdict
 
-Start it with exactly these lines:
+Your structured output is the verdict, and Dex records it. Write no verdict file.
 
-\`\`\`markdown
-# Verification: ${entry.id}
-
-**Verdict**: passed
-**Tasks-SHA256**: ${tasksHash}
-**Checked**: <the time now, ISO-8601>
-\`\`\`
-
-- Write \`failed\` instead of \`passed\` when any criterion or command fails.
-- Copy the Tasks-SHA256 line verbatim. Dex computed it from tasks.md before you started. Do not hash any file yourself.
-- Then add \`## Commands\` (a table: command, exit code) and \`## Criteria\` (one checkbox per criterion, with the reason when it fails).
+- \`verdict\`: \`passed\` only when every criterion is met and every command succeeds, else \`failed\`.
+- \`commands\`: each command you ran, with its exit code.
+- \`criteria\`: each criterion, whether it is met, and a short note (the reason when it is not met).
+- \`summary\`: one or two sentences.
 
 ## On failure
 
@@ -430,7 +421,7 @@ Append this phase to the end of ${specPath}/tasks.md:
 - [ ] ${nextTaskId} <a concrete fix, with the file and the criterion it fixes>
 \`\`\`
 
-Number further tasks on from ${nextTaskId}. Keep the Tasks-SHA256 line as given: it names the tasks.md you checked.
+Number further tasks on from ${nextTaskId}. Change nothing else in tasks.md.
 
 ${rules([commitRule(entry)])}`;
 }
@@ -467,7 +458,13 @@ export function stageEnv(
   kind: "new" | "existing",
 ): Record<string, string> {
   if (stage === "brief") return {};
-  const env: Record<string, string> = { SPECIFY_FEATURE_DIRECTORY: entry.specDir };
+  // spec-kit reads these before .specify/feature.json. NO_PERSIST asks it not to rewrite that
+  // tracked file; spec-kit 1.2.5 does not read it yet (research R5).
+  const env: Record<string, string> = {
+    SPECIFY_FEATURE: entry.branch,
+    SPECIFY_FEATURE_DIRECTORY: entry.specDir,
+    SPECIFY_FEATURE_NO_PERSIST: "1",
+  };
   if (stage === "specify" && kind === "existing") env.GIT_BRANCH_NAME = entry.branch;
   return env;
 }

@@ -143,7 +143,10 @@ test("dex run --dry-run: one block per remaining entry, every prompt shown, noth
     const [, blockA, blockB] = out.split(/^━━ /m);
     assert.match(blockA, /^decision : implement phase 1 — phase 1 \(.+\) has unchecked tasks$/m);
     assert.match(blockA, /^branch {3}: stay on 900-fixture-a$/m);
-    assert.match(blockA, /^env {6}: SPECIFY_FEATURE_DIRECTORY=specs\/900-fixture-a/m);
+    assert.match(
+      blockA,
+      /^env {6}: CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 SPECIFY_FEATURE=900-fixture-a SPECIFY_FEATURE_DIRECTORY=specs\/900-fixture-a SPECIFY_FEATURE_NO_PERSIST=1$/m,
+    );
     assert.match(
       blockA,
       /^options {2}: settingSources=user,project,local permissionMode=default maxTurns=75 budget\/stage=none$/m,

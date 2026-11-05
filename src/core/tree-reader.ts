@@ -1,6 +1,6 @@
 /**
  * What: Read-only file access over a *tree* — the working tree, or one git ref's committed tree — so the picker can judge an entry on its own branch without a checkout (research R3).
- * Not: Never switches branches or writes. Content is returned byte-exact (no trimming): verify.md's Tasks-SHA256 is checked against it.
+ * Not: Never switches branches or writes. Content is returned byte-exact (no trimming): the tasks.md hash in a verify record is checked against it.
  * Deps: node:child_process (execFileSync, no shell), node:fs, node:path.
  */
 

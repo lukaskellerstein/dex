@@ -39,18 +39,18 @@ test("gitRef: reads another branch's committed content only", () => {
   const dir = mkTmpRepo();
   try {
     execSync("git switch -q -c feature", { cwd: dir });
-    commitFile(dir, "specs/001-a/verify.md", "**Verdict**: passed\n", "verify");
+    commitFile(dir, "specs/001-a/plan.md", "# Plan\n", "plan");
     execSync("git switch -q main", { cwd: dir });
     // Uncommitted work on main is not part of `feature`.
     fs.writeFileSync(path.join(dir, "draft.md"), "draft\n");
 
     const feature = gitRef(dir, "feature");
-    assert.equal(feature.exists("specs/001-a/verify.md"), true);
-    assert.equal(feature.read("specs/001-a/verify.md"), "**Verdict**: passed\n");
+    assert.equal(feature.exists("specs/001-a/plan.md"), true);
+    assert.equal(feature.read("specs/001-a/plan.md"), "# Plan\n");
     assert.equal(feature.exists("draft.md"), false);
 
     const main = gitRef(dir, "main");
-    assert.equal(main.exists("specs/001-a/verify.md"), false);
+    assert.equal(main.exists("specs/001-a/plan.md"), false);
     assert.equal(main.exists("README.md"), true);
   } finally {
     rmTmp(dir);

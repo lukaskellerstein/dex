@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { VerifyVerdict } from "../evidence.js";
 import { deriveGoalPaths, type GoalPaths } from "../goal-paths.js";
 import { askQuestions, questionModeFor } from "../humanInput.js";
 import type { Policy } from "../policy.js";
@@ -68,24 +69,20 @@ interface TemplateCtx {
   runId: string;
 }
 
-/** What the verify prompt tells the agent (contracts/verify-md.md). */
+/** What the verify prompt tells the agent about a fix phase (contracts/evidence.md). */
 interface VerifyPromptFacts {
-  hash: string;
   round: number;
   phaseNumber: number;
   firstTaskId: string;
 }
 
 function parseVerifyPrompt(prompt: string): VerifyPromptFacts {
-  const hash = /^\*\*Tasks-SHA256\*\*: ([0-9a-f]{64})\s*$/m.exec(prompt)?.[1];
   const phase = /^## Phase (\d+): Verify fixes V(\d+)\s*$/m.exec(prompt);
   const task = /^- \[ \] (T\d+) /m.exec(prompt)?.[1];
-  if (!hash || !phase || !task) {
-    throw new Error(
-      "mock verify: the prompt lacks the Tasks-SHA256 line, the fix-phase header or the first fix task id",
-    );
+  if (!phase || !task) {
+    throw new Error("mock verify: the prompt lacks the fix-phase header or the first fix task id");
   }
-  return { hash, round: Number(phase[2]), phaseNumber: Number(phase[1]), firstTaskId: task };
+  return { round: Number(phase[2]), phaseNumber: Number(phase[1]), firstTaskId: task };
 }
 
 /** The ids the implement prompt names as in scope; null when the whole phase is. */
@@ -104,9 +101,9 @@ function nthTaskId(first: string, offset: number): string {
  * `.dex/mock-config.json` instead of calling the Claude SDK. Each stage sleeps
  * for its delay, applies its writes and appends, and commits like an agent that
  * follows the project's rules (`mock(<stage>): <entryId>`). `implement` also
- * ticks the phase's in-scope tasks, and `verify` writes verify.md with the
- * fingerprint it reads from the prompt — so the mock follows the same file
- * contracts the real agent does (research R15).
+ * ticks the phase's in-scope tasks, and `verify` returns the scripted verdict
+ * as structured output and appends the fix phase the prompt names on failure —
+ * so the mock follows the same contracts the real agent does (research R15).
  *
  * Failure modes are loud by design: missing script entries and unknown
  * substitution tokens throw typed errors that name the offending coordinates.
@@ -152,6 +149,7 @@ export class MockAgentRunner implements AgentRunner {
     }
     // A stopped agent leaves nothing behind, like a real session aborted mid-stream.
     const stopped = aborted();
+    let verdict: VerifyVerdict | null = null;
     if (!stopped) {
       // spec-kit writes where SPECIFY_FEATURE_DIRECTORY points (research R5).
       const tctx = {
@@ -164,14 +162,14 @@ export class MockAgentRunner implements AgentRunner {
         this.switchToFeatureBranch(ctx.env.GIT_BRANCH_NAME);
       if (step === "brief") this.writeBrief(entryId);
       this.applySideEffects(descriptor, tctx);
-      if (step === "verify") this.writeVerify(descriptor as VerifyDescriptor, tctx, prompt);
+      if (step === "verify") verdict = this.verify(descriptor as VerifyDescriptor, tctx, prompt);
       this.commitAsAgent(step, entryId);
     }
 
     emitStep("completed", `Step ${step} ${stopped ? "stopped" : "completed"} (mock)`);
     return {
       result: "",
-      structuredOutput: stopped ? null : (descriptor.structured_output ?? null),
+      structuredOutput: stopped ? null : (verdict ?? descriptor.structured_output ?? null),
       cost: 0,
       durationMs: Date.now() - start,
       inputTokens: 0,
@@ -316,31 +314,23 @@ export class MockAgentRunner implements AgentRunner {
   }
 
   /**
-   * Writes verify.md with the fingerprint from the prompt and the verdict for
-   * this round. On failure, appends the fix phase the prompt names to tasks.md.
+   * The scripted verdict for this round, as the agent's structured output. On
+   * failure, also appends the fix phase the prompt names to tasks.md.
    */
-  private writeVerify(descriptor: VerifyDescriptor, ctx: TemplateCtx, prompt: string): void {
+  private verify(descriptor: VerifyDescriptor, ctx: TemplateCtx, prompt: string): VerifyVerdict {
     if (!ctx.specDir) throw new Error("mock verify: no specDir");
     const facts = parseVerifyPrompt(prompt);
     const rounds = descriptor.rounds ?? [];
     const round: VerifyRound = rounds[facts.round - 1] ?? rounds.at(-1) ?? { verdict: "passed" };
+    const command = `mock verify round ${facts.round}`;
+    const verdict: VerifyVerdict = {
+      verdict: round.verdict,
+      summary: `mock verify round ${facts.round}: ${round.verdict}`,
+      commands: [{ command, exitCode: round.verdict === "passed" ? 0 : 1 }],
+      criteria: [],
+    };
+    if (round.verdict === "passed") return verdict;
     const dir = path.join(this.projectDir, ctx.specDir);
-    const verify = [
-      `# Verification: ${ctx.featureId ?? path.basename(ctx.specDir)}`,
-      "",
-      `**Verdict**: ${round.verdict}`,
-      `**Tasks-SHA256**: ${facts.hash}`,
-      `**Checked**: ${new Date().toISOString()}`,
-      "",
-      "## Commands",
-      "",
-      "| Command | Exit code |",
-      "|---|---|",
-      `| \`mock verify round ${facts.round}\` | ${round.verdict === "passed" ? 0 : 1} |`,
-      "",
-    ];
-    fs.writeFileSync(path.join(dir, "verify.md"), verify.join("\n"), "utf8");
-    if (round.verdict === "passed") return;
 
     const fixes = round.fixTasks?.length
       ? round.fixTasks.map((f) => this.renderTemplate(f, ctx))
@@ -356,6 +346,7 @@ export class MockAgentRunner implements AgentRunner {
       "",
     ];
     fs.writeFileSync(tasksFile, `${current.replace(/\n*$/, "\n\n")}${phase.join("\n")}`, "utf8");
+    return verdict;
   }
 
   /**

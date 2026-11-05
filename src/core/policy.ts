@@ -60,7 +60,8 @@ export interface Policy {
 export const DEFAULT_POLICY: Readonly<Policy> = Object.freeze({
   settingSources: ["user", "project", "local"],
   permissionMode: "default",
-  env: {},
+  // Loop agents neither read nor write the machine owner's personal auto memory (D-015-3).
+  env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
   deny: [],
   ask: [],
   writeRoots: ["."],
@@ -218,7 +219,7 @@ export function parsePolicy(
     permissionMode: has("permissionMode")
       ? oneOf(r.permissionMode, PERMISSION_MODES, "permissionMode", fail)
       : DEFAULT_POLICY.permissionMode,
-    env: has("env") ? env(r.env, fail) : {},
+    env: { ...DEFAULT_POLICY.env, ...(has("env") ? env(r.env, fail) : {}) },
     deny: has("deny") ? rules(r.deny, "deny", fail) : [],
     ask: has("ask") ? rules(r.ask, "ask", fail) : [],
     writeRoots: has("writeRoots") ? stringList(r.writeRoots, "writeRoots", fail) : ["."],

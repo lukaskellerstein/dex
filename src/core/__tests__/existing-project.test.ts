@@ -89,9 +89,9 @@ test("existing project: both entries run to done; Dex makes no branch, no commit
     );
     assert.equal(currentBranch(dir), "901-fixture-b");
 
-    // Commits: every new one is an agent's.
+    // Commits: every new one is an agent's. A passing verify changes no file, so it commits nothing.
     const subjects = logSubjects(dir, `--all ^${before}`);
-    assert.ok(subjects.length >= 8, `expected agent commits, got ${subjects.length}`);
+    assert.equal(subjects.length, 7, `expected 7 agent commits, got ${subjects.length}`);
     assert.deepEqual(
       subjects.filter((s) => !s.startsWith("mock(")),
       [],

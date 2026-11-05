@@ -1,16 +1,23 @@
 /**
- * What: The two stages that need more than one prompt — `runImplement` (one task phase per call, through the runner's runTaskPhase) and `runVerify` (Dex computes the tasks.md fingerprint right before the stage and hands it to the agent, which writes verify.md). Both return what post-stage needs.
- * Not: Does not decide which phase or whether verify runs — the picker does. Writes no run state and parses no verify.md (post-stage and the picker do).
- * Deps: runStage, getActiveContext, parser.parseTasksMd, picker.tasksHash, queue.{isFixPhase, isInScope}, prompts.{buildImplementPrompt, buildVerifyPrompt, stageEnv}, runs.*.
+ * What: The two stages that need more than one prompt — `runImplement` (one task phase per call, through the runner's runTaskPhase) and `runVerify` (Dex keys the entry right before the stage, the agent returns its verdict as structured output, and Dex writes the evidence record). Both return what post-stage needs.
+ * Not: Does not decide which phase or whether verify runs — the picker does. Writes no run state (post-stage does).
+ * Deps: runStage, getActiveContext, parser.parseTasksMd, evidence.*, queue.{isFixPhase, isInScope}, prompts.{buildImplementPrompt, buildVerifyPrompt, stageEnv}, runs.*.
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { LimitHit } from "../agent/AgentRunner.js";
+import {
+  evidenceKey,
+  parseVerdict,
+  tasksHash,
+  VERIFY_SCHEMA,
+  type VerifyVerdict,
+  writeVerifyRecord,
+} from "../evidence.js";
 import { getActiveContext } from "../orchestrator.js";
 import { parseTasksMd } from "../parser.js";
-import { tasksHash } from "../picker.js";
 import {
   buildImplementPrompt,
   buildVerifyPrompt,
@@ -158,28 +165,40 @@ function nextTaskId(phases: TaskPhase[]): string {
   return `T${String(max + 1).padStart(width, "0")}`;
 }
 
-/** What the verify prompt states about tasks.md: its fingerprint, the round, and where a fix phase goes. */
+/** What the verify prompt states about tasks.md: the round, and where a fix phase goes. */
 export function verifyFacts(tasksMd: string): VerifyExtras {
   const phases = parseTasksMd(tasksMd);
   return {
-    tasksHash: tasksHash(tasksMd),
     round: phases.filter(isFixPhase).length + 1,
     nextPhaseNumber: Math.max(0, ...phases.map((p) => p.number)) + 1,
     nextTaskId: nextTaskId(phases),
   };
 }
 
-/** The verify agent: fresh context, the fingerprint Dex computed, writes verify.md. */
+/**
+ * The verify agent: fresh context, returns its verdict as structured output. Dex
+ * keys the record with what the agent checked — the entry as it was when the
+ * stage started — so a commit during the stage sends the entry back to verify.
+ */
 export async function runVerify(
   deps: StageDeps,
   entry: ResolvedEntry,
   cycleNumber: number,
-): Promise<{ cost: number; tasksHash: string; limitHit: LimitHit | null }> {
+): Promise<{ cost: number; verdict: VerifyVerdict | null; limitHit: LimitHit | null }> {
   const ctx = ctxOrThrow();
-  const facts = verifyFacts(readTasks(ctx.projectDir, entry));
-  const hash = facts.tasksHash;
-  const prompt = buildVerifyPrompt(entry, ctx.projectDir, facts);
+  const key = evidenceKey(ctx.projectDir, deps.kind, entry);
+  if (key === null) {
+    throw new Error(
+      `verify ${entry.id}: cannot key the record (no branch "${entry.branch}" or no ${entry.specDir})`,
+    );
+  }
+  const tasksMd = readTasks(ctx.projectDir, entry);
+  const prompt = buildVerifyPrompt(entry, ctx.projectDir, verifyFacts(tasksMd));
   const r = await runStage({
+    outputFormat: {
+      type: "json_schema",
+      schema: VERIFY_SCHEMA as unknown as Record<string, unknown>,
+    },
     config: deps.config,
     prompt,
     runId: deps.runId,
@@ -189,5 +208,16 @@ export async function runVerify(
     env: stageEnv(entry, "verify", deps.kind),
     entryId: entry.id,
   });
-  return { cost: r.cost, tasksHash: hash, limitHit: r.limitHit };
+  const verdict = parseVerdict(r.structuredOutput);
+  if (verdict) {
+    writeVerifyRecord(ctx.projectDir, {
+      version: 1,
+      entryId: entry.id,
+      key,
+      tasksHash: tasksHash(tasksMd),
+      checked: new Date().toISOString(),
+      ...verdict,
+    });
+  }
+  return { cost: r.cost, verdict, limitHit: r.limitHit };
 }

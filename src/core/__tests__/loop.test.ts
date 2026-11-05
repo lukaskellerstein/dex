@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import type { OrchestratorEvent } from "../events.ts";
+import { readVerifyRecord } from "../evidence.ts";
 import type * as HumanInput from "../humanInput.ts";
 import type * as Orchestrator from "../orchestrator.ts";
 import type * as State from "../state.ts";
@@ -127,9 +128,11 @@ test("loop: a two-entry queue runs every stage from files and ends queue_complet
       ...ENTRY_STAGES("002-beta"),
     ]);
     for (const id of ["001-alpha", "002-beta"]) {
-      const verify = fs.readFileSync(path.join(dir, "specs", id, "verify.md"), "utf8");
-      assert.match(verify, /^\*\*Verdict\*\*: passed$/m);
+      assert.equal(readVerifyRecord(dir, id)?.verdict, "passed");
+      assert.equal(fs.existsSync(path.join(dir, "specs", id, "verify.md")), false);
     }
+    // Dex writes no tracked file: the records are ignored, the tree is clean.
+    assert.equal(execSync("git status --porcelain", { cwd: dir, encoding: "utf8" }), "");
     // Dex commits nothing: every commit after setup is the agent's.
     const subjects = logSubjects(dir, "main..HEAD");
     assert.ok(subjects.length > 0);
@@ -194,8 +197,7 @@ test("loop: verify fails once → fix phase V1 appended → implement runs it �
     const tasks = fs.readFileSync(path.join(dir, "specs/001-alpha/tasks.md"), "utf8");
     assert.match(tasks, /^## Phase 3: Verify fixes V1$/m);
     assert.match(tasks, /^- \[X\] T005 Handle an empty list in src\/001-alpha\/index\.ts$/m);
-    const verify = fs.readFileSync(path.join(dir, "specs/001-alpha/verify.md"), "utf8");
-    assert.match(verify, /^\*\*Verdict\*\*: passed$/m);
+    assert.equal(readVerifyRecord(dir, "001-alpha")?.verdict, "passed");
   } finally {
     rmTmp(dir);
   }

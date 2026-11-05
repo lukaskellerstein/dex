@@ -194,6 +194,7 @@ export const RUNTIME_IGNORE_ENTRIES = [
   "state.json.tmp",
   "state.lock",
   "runs/",
+  "evidence/",
   "questions.md",
   "ui.json",
 ] as const;

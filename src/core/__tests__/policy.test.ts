@@ -91,12 +91,23 @@ const write = (file_path: string) =>
 
 // ── parsePolicy ──
 
+test("parsePolicy: the project's env merges over the default env, and can turn it off", () => {
+  assert.deepEqual(parse({ env: { NODE_ENV: "test" } }).env, {
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+    NODE_ENV: "test",
+  });
+  assert.deepEqual(parse({ env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "0" } }).env, {
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "0",
+  });
+});
+
 test("parsePolicy: an empty object is the defaults", () => {
   const p = parse({});
   assert.deepEqual(p, DEFAULT_POLICY);
   assert.deepEqual(p.settingSources, ["user", "project", "local"]);
   assert.equal(p.permissionMode, "default");
   assert.deepEqual(p.writeRoots, ["."]);
+  assert.deepEqual(p.env, { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" });
   assert.equal(p.questions, "recommended-then-review");
   assert.equal(p.openPullRequest, false);
   assert.deepEqual(p.limits, { maxImplementRunsWithoutProgress: 2, maxVerifyRounds: 3 });

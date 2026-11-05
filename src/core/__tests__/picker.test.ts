@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
-import { describeQueue, type PickerDecision, pickNext, tasksHash } from "../picker.ts";
+import { evidenceKey, tasksHash, writeVerifyRecord } from "../evidence.ts";
+import { describeQueue, type PickerDecision, pickNext } from "../picker.ts";
 import type { QueueEntry, QueueV3 } from "../queue.ts";
 import { commitFile, mkTmpRepo, rmTmp } from "./helpers/git.ts";
 import { mkTmpProject, writeFiles } from "./helpers/project.ts";
@@ -20,10 +23,6 @@ function tasksMd(phases: Array<[name: string, rows: TaskRow[]]>): string {
     .join("\n");
 }
 
-function verifyMd(verdict: "passed" | "failed", hash: string): string {
-  return `# Verification\n\n**Verdict**: ${verdict}\n**Tasks-SHA256**: ${hash}\n**Checked**: 2026-11-05T10:00:00Z\n`;
-}
-
 const ALL_DONE = tasksMd([
   [
     "Setup",
@@ -34,23 +33,48 @@ const ALL_DONE = tasksMd([
   ],
 ]);
 
-/** Every artefact for `id`, verified against its own tasks.md. */
+/** Every artefact for `id`, every task checked. Verify needs a record too (`recordVerify`). */
 function doneEntryFiles(id: string): Record<string, string> {
   return {
     [`specs/${id}/spec.md`]: SPEC_CLARIFIED,
     [`specs/${id}/plan.md`]: "# Plan\n",
     [`specs/${id}/tasks.md`]: ALL_DONE,
-    [`specs/${id}/verify.md`]: verifyMd("passed", tasksHash(ALL_DONE)),
   };
+}
+
+type RecordOpts = { verdict?: "passed" | "failed"; tasks?: string };
+
+/** Writes the record a verify stage would leave for `id`, keyed by the entry as it is now. */
+function recordVerify(dir: string, id: string, kind: QueueV3["kind"], o: RecordOpts = {}): void {
+  const specDir = `specs/${id}`;
+  const key = evidenceKey(dir, kind, { branch: id, specDir });
+  assert.ok(key, `no evidence key for ${id}`);
+  const tasks = o.tasks ?? fs.readFileSync(path.join(dir, specDir, "tasks.md"), "utf8");
+  writeVerifyRecord(dir, {
+    version: 1,
+    entryId: id,
+    key,
+    tasksHash: tasksHash(tasks),
+    checked: "2026-11-05T10:00:00Z",
+    verdict: o.verdict ?? "passed",
+    summary: "",
+    commands: [],
+    criteria: [],
+  });
 }
 
 function newQueue(entries: QueueEntry[]): QueueV3 {
   return { version: 3, kind: "new", entries };
 }
 
-function pickIn(files: Record<string, string>, queue: QueueV3): PickerDecision {
+function pickIn(
+  files: Record<string, string>,
+  queue: QueueV3,
+  verified: Record<string, RecordOpts> = {},
+): PickerDecision {
   const dir = mkTmpProject(files);
   try {
+    for (const [id, o] of Object.entries(verified)) recordVerify(dir, id, queue.kind, o);
     return pickNext({ projectDir: dir, queue, runBranch: null });
   } finally {
     rmTmp(dir);
@@ -132,45 +156,64 @@ test("picker: an unchecked task → implement on the first phase that has one", 
   assertStage(pickIn(files, newQueue([A])), "001-a", "implement", 2);
 });
 
-test("picker: every task checked and no verify.md → verify", () => {
-  const files = { ...doneEntryFiles("001-a") };
-  delete files["specs/001-a/verify.md"];
-  assertStage(pickIn(files, newQueue([A])), "001-a", "verify");
+test("picker: every task checked and no verify record → verify", () => {
+  assertStage(pickIn(doneEntryFiles("001-a"), newQueue([A])), "001-a", "verify");
 });
 
-test("picker: verify.md for a different tasks.md → verify", () => {
-  const files = {
-    ...doneEntryFiles("001-a"),
-    "specs/001-a/verify.md": verifyMd("passed", "0".repeat(64)),
-  };
-  assertStage(pickIn(files, newQueue([A])), "001-a", "verify");
+test("picker: a verify record for a different tasks.md → verify", () => {
+  const d = pickIn(doneEntryFiles("001-a"), newQueue([A]), { "001-a": { tasks: "other\n" } });
+  assertStage(d, "001-a", "verify");
 });
 
-test("picker: verify.md that failed for the current tasks.md → verify again", () => {
-  const files = {
-    ...doneEntryFiles("001-a"),
-    "specs/001-a/verify.md": verifyMd("failed", tasksHash(ALL_DONE)),
-  };
-  assertStage(pickIn(files, newQueue([A])), "001-a", "verify");
+test("picker: a verify record that failed for the entry as it is → verify again", () => {
+  const d = pickIn(doneEntryFiles("001-a"), newQueue([A]), { "001-a": { verdict: "failed" } });
+  assertStage(d, "001-a", "verify");
 });
 
-test("picker: verify passed for the current tasks.md → done, the next entry is picked", () => {
-  assertStage(pickIn(doneEntryFiles("001-a"), newQueue([A, B])), "002-b", "specify");
+test("picker: verify passed for the entry as it is → done, the next entry is picked", () => {
+  const d = pickIn(doneEntryFiles("001-a"), newQueue([A, B]), { "001-a": {} });
+  assertStage(d, "002-b", "specify");
 });
 
 test("picker: every entry done or skipped → complete", () => {
-  const d = pickIn(doneEntryFiles("001-a"), newQueue([A, { ...B, status: "skipped" }]));
-  assert.deepEqual(d, { kind: "complete" });
+  const queue = newQueue([A, { ...B, status: "skipped" }]);
+  assert.deepEqual(pickIn(doneEntryFiles("001-a"), queue, { "001-a": {} }), { kind: "complete" });
 });
 
 test("picker: [X] and [x] both count as checked", () => {
   const lower = ALL_DONE.replaceAll("[X]", "[x]");
-  const files = {
-    ...doneEntryFiles("001-a"),
-    "specs/001-a/tasks.md": lower,
-    "specs/001-a/verify.md": verifyMd("passed", tasksHash(lower)),
-  };
-  assert.deepEqual(pickIn(files, newQueue([A])), { kind: "complete" });
+  const files = { ...doneEntryFiles("001-a"), "specs/001-a/tasks.md": lower };
+  assert.deepEqual(pickIn(files, newQueue([A]), { "001-a": {} }), { kind: "complete" });
+});
+
+test("picker: new project — a change in the spec folder after verify → verify again", () => {
+  const dir = mkTmpProject(doneEntryFiles("001-a"));
+  try {
+    recordVerify(dir, "001-a", "new");
+    writeFiles(dir, { "specs/001-a/plan.md": "# Plan\n\nchanged\n" });
+    assertStage(
+      pickNext({ projectDir: dir, queue: newQueue([A]), runBranch: null }),
+      "001-a",
+      "verify",
+    );
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("picker: new project — later work outside the spec folder keeps the entry done", () => {
+  const dir = mkTmpProject(doneEntryFiles("001-a"));
+  try {
+    recordVerify(dir, "001-a", "new");
+    writeFiles(dir, { "src/002-b/index.ts": "export {};\n", "specs/002-b/spec.md": "# Spec\n" });
+    assertStage(
+      pickNext({ projectDir: dir, queue: newQueue([A, B]), runBranch: null }),
+      "002-b",
+      "clarify",
+    );
+  } finally {
+    rmTmp(dir);
+  }
 });
 
 // ── T038: skip, human status, task scope, bad input, existing projects ──
@@ -179,9 +222,7 @@ test("picker: skip treats the listed stages as done", () => {
   const e = { ...A, skip: ["specify", "clarify", "plan"] as QueueEntry["skip"] };
   assertStage(pickIn({}, newQueue([e])), "001-a", "tasks");
   const noVerify = { ...A, skip: ["verify"] as QueueEntry["skip"] };
-  const files = { ...doneEntryFiles("001-a") };
-  delete files["specs/001-a/verify.md"];
-  assert.deepEqual(pickIn(files, newQueue([noVerify])), { kind: "complete" });
+  assert.deepEqual(pickIn(doneEntryFiles("001-a"), newQueue([noVerify])), { kind: "complete" });
 });
 
 test("picker: human status done or skipped passes over the entry without reading files", () => {
@@ -264,6 +305,7 @@ test("picker: existing project reads an entry's own branch while another is chec
       commitFile(dir, rel, content, `add ${rel}`);
     }
     execSync("git switch -q main", { cwd: dir });
+    recordVerify(dir, "020-catalog", "existing", { tasks: ALL_DONE });
     commitFile(dir, "docs/021.md", "# Brief\n", "brief 021");
 
     const queue: QueueV3 = {
@@ -335,10 +377,32 @@ test("picker: the working tree counts for the current branch (uncommitted ticks)
   }
 });
 
+test("picker: existing project — a commit on the entry branch after done → verify again", () => {
+  const dir = mkTmpRepo();
+  try {
+    execSync("git switch -q -c 001-a", { cwd: dir });
+    for (const [rel, content] of Object.entries(doneEntryFiles("001-a"))) {
+      commitFile(dir, rel, content, `add ${rel}`);
+    }
+    const queue: QueueV3 = { version: 3, kind: "existing", entries: [{ id: "001-a", title: "A" }] };
+    recordVerify(dir, "001-a", "existing");
+    assert.deepEqual(pickNext({ projectDir: dir, queue, runBranch: null }), { kind: "complete" });
+    assert.equal(execSync("git status --porcelain", { cwd: dir, encoding: "utf8" }), "");
+
+    commitFile(dir, "src/index.ts", "export const late = 1;\n", "a late change");
+    const d = pickNext({ projectDir: dir, queue, runBranch: null });
+    assertStage(d, "001-a", "verify");
+    assert.match(d.kind === "stage" ? d.reason : "", /commits since the last verify/);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
 test("describeQueue: statuses and next stages for every entry, read-only", () => {
   const files = { ...doneEntryFiles("001-a"), "specs/002-b/spec.md": "# Spec\n" };
   const dir = mkTmpProject(files);
   try {
+    recordVerify(dir, "001-a", "new");
     const queue = newQueue([
       A,
       B,
