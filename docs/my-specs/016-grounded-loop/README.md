@@ -11,7 +11,7 @@
 >
 > **First real run:** the first grounded real run, on a scratch clone of `dex-ecommerce`, happens at the end of this spec (Phase 8).
 >
-> **Followed by** [`018-living-docs`](../018-living-docs/README.md): the project's docs become the loop's lasting memory, and the digest gains a lessons review.
+> **Followed by** [`017-dex-runs-on-spex`](../017-dex-runs-on-spex/README.md): Dex moves from spec-kit to spex, so 016 is the last feature built with spec-kit. Then [`018-living-docs`](../018-living-docs/README.md): the project's docs become the loop's lasting memory, and the digest gains a lessons review.
 
 ## Why
 

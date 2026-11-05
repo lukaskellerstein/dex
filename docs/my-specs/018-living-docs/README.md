@@ -1,8 +1,8 @@
 # 018 — Living docs: the project's documentation is the loop's lasting memory
 
-> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `018-living-docs`.
+> **Status:** draft v1.0 · 2026-11-05 · a brief for spex, written before 017: where the body names a spec-kit file or command, 017 replaces it with its spex form. Feature, branch and spec folder: `018-living-docs`.
 >
-> **Builds on** [`015-lean-core`](../015-lean-core/README.md) (queue, picker, policy) and [`016-grounded-loop`](../016-grounded-loop/README.md) (sensors, gates, evidence, digest).
+> **Builds on** [`015-lean-core`](../015-lean-core/README.md) (queue, picker, policy), [`016-grounded-loop`](../016-grounded-loop/README.md) (sensors, gates, evidence, digest) and [`017-dex-runs-on-spex`](../017-dex-runs-on-spex/README.md) (the spex files and stages).
 >
 > **Followed by** [`019-many-projects-any-agent`](../019-many-projects-any-agent/README.md): several projects at once, and Codex and OpenCode next to Claude. Its agents get the project's instructions from this spec's `docs` list (D-019-6).
 >

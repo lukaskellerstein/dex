@@ -1,6 +1,6 @@
 # 020 — Design roadmap: from a finished design to merged steps, one branch and one PR each
 
-> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `020-design-roadmap`.
+> **Status:** draft v1.0 · 2026-11-05 · a brief for spex, written before 017: where the body names a spec-kit file or command, 017 replaces it with its spex form. Feature, branch and spec folder: `020-design-roadmap`.
 >
 > **Builds on:**
 > - [`015-lean-core`](../015-lean-core/README.md): the queue, the picker, `generate` briefs, `branching.ts`, and `createBranch` / `createPullRequest` in `git.ts`;
@@ -11,7 +11,7 @@
 >
 > **First real user:** `nex` (`~/Projects/Github/lukaskellerstein/nex`), with its design `nex-design.html` ([Appendix A](#appendix-a--first-real-user-nex)).
 >
-> **How to start:** commit this brief on `main`, start `claude -w 020-design-roadmap`, and run `/speckit-specify` with this file as the feature description.
+> **How to start:** commit this brief on `main`, start `claude -w 020-design-roadmap`, and run `/spex:specify docs/my-specs/020-design-roadmap/README.md`.
 
 ## Why
 

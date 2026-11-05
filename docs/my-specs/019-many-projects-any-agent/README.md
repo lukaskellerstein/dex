@@ -1,6 +1,6 @@
 # 019 — Many projects, any agent: several projects at once, on Claude Code, Codex or OpenCode, through a gateway you choose
 
-> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `019-many-projects-any-agent`.
+> **Status:** draft v1.0 · 2026-11-05 · a brief for spex, written before 017: where the body names a spec-kit file or command, 017 replaces it with its spex form. Feature, branch and spec folder: `019-many-projects-any-agent`.
 >
 > **Builds on** [`015-lean-core`](../015-lean-core/README.md) (queue, picker, policy, headless `dex run`), [`016-grounded-loop`](../016-grounded-loop/README.md) (stages, write scopes, gates DEX runs itself) and [`018-living-docs`](../018-living-docs/README.md) (the project's docs as the loop's memory).
 >
@@ -8,7 +8,7 @@
 >
 > **Timing:** after 018. It doesn't block the first real `dex-ecommerce` queue, which runs on Claude through 015–018. 015 built `policy.ts` over Claude's tool names; this spec converts it (D-019-4).
 >
-> **How to start:** milestone 0 comes first, in the REX repo: the measurements in [Implementation order](#implementation-order) and the library changes in Appendix B, released as a REX tag. Then commit this brief on DEX `main`, start `claude -w 019-many-projects-any-agent`, and run `/speckit-specify` with this file as the feature description.
+> **How to start:** milestone 0 comes first, in the REX repo: the measurements in [Implementation order](#implementation-order) and the library changes in Appendix B, released as a REX tag. Then commit this brief on DEX `main`, start `claude -w 019-many-projects-any-agent`, and run `/spex:specify docs/my-specs/019-many-projects-any-agent/README.md`.
 
 ## Why
 
