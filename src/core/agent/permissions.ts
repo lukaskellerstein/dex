@@ -1,5 +1,5 @@
 /**
- * What: The permission chain Dex adds to every Claude session (research R6) — `preToolUseDecision` (the PreToolUse hook: the policy's deny → `deny` + `policy_denied`, its ask → `ask`, else `{}`; never `allow`, so the project's own deny and ask rules always run), and `makeCanUseTool` (AskUserQuestion → a held question; a policy `ask`, or a settings ask rule (`matchedAskRule` or `decisionReasonType: "rule"`) → a held tool approval; anything else → allow). `policyEnvFor` gives the decision its git probe.
+ * What: The permission chain Dex adds to every Claude session (research R6) — `preToolUseDecision` (the PreToolUse hook: the policy's deny → `deny` + `policy_denied`, its ask → `ask`, a settings Bash ask rule on any part of a compound command → `ask`, else `{}`; never `allow`, so the project's own deny and ask rules always run), and `makeCanUseTool` (AskUserQuestion → a held question; a policy `ask`, or a settings ask rule (`matchedAskRule` or `decisionReasonType: "rule"`) → a held tool approval; anything else → allow). `policyEnvFor` gives the decision its git probe.
  * Not: Does not build SDK options or run the session (claudeSession.ts). Does not parse the policy (policy.ts) or own the request queue (humanInput.ts).
  * Deps: policy.{decideToolUse, subjectOf}, humanInput.{askQuestions, requestToolApproval}, git.isTrackedAtHead, SDK types only.
  */
@@ -17,6 +17,7 @@ import {
 import type { RunLogger } from "../log.js";
 import { decideToolUse, type Policy, type PolicyEnv, subjectOf, type ToolCall } from "../policy.js";
 import type { UserInputQuestion } from "../types.js";
+import { matchSettingsAsk, type SettingsAskRule } from "./settingsRules.js";
 
 export interface PermissionDeps {
   policy: Policy;
@@ -28,6 +29,8 @@ export interface PermissionDeps {
   questions: QuestionOptions;
   isAborted: () => boolean;
   rlog?: Pick<RunLogger, "agentRun">;
+  /** The Bash ask rules of the session's settings files, checked per part of a compound command. */
+  settingsAsk: SettingsAskRule[];
 }
 
 const STOPPED = "Run stopped by user";
@@ -77,7 +80,20 @@ export function preToolUseDecision(
     return hookDecision("deny", decision.reason);
   }
   if (decision.kind === "ask") return hookDecision("ask", decision.reason);
+  const settingsRule = compoundAskReason(d, call);
+  if (settingsRule) return hookDecision("ask", settingsRule);
   return {};
+}
+
+function describeRule(source: string, toolName: string, content: string | null | undefined): string {
+  return `${source} ask rule ${toolName}${content ? `(${content})` : ""}`;
+}
+
+/** A settings ask rule that matches one part of a Bash command; the SDK does not report those. */
+function compoundAskReason(d: PermissionDeps, call: ToolCall): string | null {
+  if (call.toolName !== "Bash" || typeof call.input.command !== "string") return null;
+  const rule = matchSettingsAsk(d.settingsAsk, call.input.command);
+  return rule ? describeRule(rule.source, "Bash", rule.content) : null;
 }
 
 type CanUseToolOptions = Parameters<CanUseTool>[2];
@@ -90,10 +106,7 @@ type CanUseToolOptions = Parameters<CanUseTool>[2];
  */
 function settingsAskReason(options: CanUseToolOptions | undefined): string | null {
   const rule = options?.matchedAskRule;
-  if (rule) {
-    const content = rule.ruleContent ? `(${rule.ruleContent})` : "";
-    return `${rule.source} ask rule ${rule.toolName}${content}`;
-  }
+  if (rule) return describeRule(rule.source, rule.toolName, rule.ruleContent);
   const reasonType = (options as { decisionReasonType?: unknown } | undefined)?.decisionReasonType;
   return reasonType === "rule" ? "a settings ask rule" : null;
 }
@@ -106,7 +119,7 @@ export function makeCanUseTool(d: PermissionDeps): CanUseTool {
     const decision = decideToolUse(d.policy, call, d.policyEnv);
     // The hook denies first; this keeps a deny a deny if the hook did not run.
     if (decision.kind === "deny") return { behavior: "deny", message: decision.reason };
-    const settingsReason = settingsAskReason(options);
+    const settingsReason = settingsAskReason(options) ?? compoundAskReason(d, call);
     if (decision.kind !== "ask" && !settingsReason)
       return { behavior: "allow", updatedInput: input };
     const answer = await requestToolApproval(d.io, d.entryId, {

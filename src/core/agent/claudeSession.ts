@@ -1,7 +1,7 @@
 /**
  * What: One Claude Agent SDK `query()` session — the options (`buildQueryOptions`, from the project's policy), the trace and permission hooks, the message loop and the usage totals. Shared by `runStep` and `runTaskPhase`, so both get the same abort, environment, system prompt, permission chain and accounting.
  * Not: Does not build prompts. Does not decide what a tool call may do — permissions.ts does, from the policy. Does not know about stages, cycles or task phases beyond the trace slug it is given.
- * Deps: @anthropic-ai/claude-agent-sdk (lazy `query` import; types only at load time), ./permissions, policy.skipsPermissionChecks, runs.{appendAgentStep, recordSubagent, completeSubagent}, parser.parseTasksFile, ./steps.
+ * Deps: @anthropic-ai/claude-agent-sdk (lazy `query` import; types only at load time), ./permissions, ./settingsRules, policy.skipsPermissionChecks, runs.{appendAgentStep, recordSubagent, completeSubagent}, parser.parseTasksFile, ./steps.
  */
 
 import fs from "node:fs";
@@ -24,6 +24,7 @@ import {
   policyEnvFor,
   preToolUseDecision,
 } from "./permissions.js";
+import { loadSettingsAskRules } from "./settingsRules.js";
 import {
   estimateCost,
   makeStep,
@@ -182,6 +183,7 @@ function permissionDeps(p: SessionParams, isAborted: () => boolean): PermissionD
     },
     isAborted,
     rlog: p.rlog,
+    settingsAsk: loadSettingsAskRules(p.config.projectDir, p.policy.settingSources),
   };
 }
 

@@ -119,6 +119,7 @@ function deps(projectDir: string, events: OrchestratorEvent[], aborted = false):
     entryId: "021-agent-entry",
     questions: { mode: "wait", step: "implement" },
     isAborted: () => aborted,
+    settingsAsk: [{ source: "projectSettings", content: "git push:*" }],
   };
 }
 
@@ -143,6 +144,9 @@ test("preToolUseDecision: deny (+ policy_denied), ask, or no opinion — never a
     },
   ]);
   assert.equal(decide("kubectl apply -f x.yaml").hookSpecificOutput?.permissionDecision, "ask");
+  const compound = decide("git add -A && git push origin HEAD").hookSpecificOutput;
+  assert.equal(compound?.permissionDecision, "ask");
+  assert.equal(compound?.permissionDecisionReason, "projectSettings ask rule Bash(git push:*)");
   assert.deepEqual(decide("npm test"), {});
   for (const command of ["git push --force x", "kubectl apply -f y", "ls", "rm -rf build"]) {
     assert.notEqual(decide(command).hookSpecificOutput?.permissionDecision, "allow");
@@ -225,6 +229,24 @@ test(
     assert.equal(request.reason, "a settings ask rule");
     resolveRequest(request.requestId, { kind: "tool_approval", decision: "deny" });
     assert.deepEqual(await asked, { behavior: "deny", message: "Denied by the human" });
+  }),
+);
+
+test(
+  "canUseTool: a settings ask rule on one part of a compound command is held (subcommandResults)",
+  withState(async (dir) => {
+    const events: OrchestratorEvent[] = [];
+    const command = "git add -A && git push origin HEAD";
+    const asked = makeCanUseTool(deps(dir, events))("Bash", { command }, {
+      ...SDK_OPTIONS,
+      decisionReasonType: "subcommandResults",
+    } as CanUseToolOptions);
+    const request = events.find((e) => e.type === "tool_approval_request");
+    assert.ok(request?.type === "tool_approval_request");
+    assert.equal(request.source, "settings");
+    assert.equal(request.reason, "projectSettings ask rule Bash(git push:*)");
+    resolveRequest(request.requestId, { kind: "tool_approval", decision: "approve" });
+    assert.deepEqual(await asked, { behavior: "allow", updatedInput: { command } });
   }),
 );
 

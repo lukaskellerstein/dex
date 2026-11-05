@@ -92,9 +92,10 @@ flowchart TD
 that the SDK reports as `matchedAskRule` or as `decisionReasonType: "rule"`, holds
 the call as a `tool_approval` with source `policy` or `settings`; anything else is
 allowed; a policy `deny` stays a deny even if the hook did not run). A settings
-ask rule that matches only one part of a compound command arrives as
-`"subcommandResults"` and is allowed (research R6, Known gap); a policy `ask`
-pattern catches it. `agent/claudeSession.ts` `buildQueryOptions(policy)` turns the policy
+Bash ask rule that matches one part of a compound command arrives as
+`"subcommandResults"`, so Dex matches the settings files' Bash ask rules
+against each part itself (`agent/settingsRules.ts`, research R6): the hook
+returns `ask`, and `canUseTool` holds the call with source `settings`. `agent/claudeSession.ts` `buildQueryOptions(policy)` turns the policy
 into SDK options: `settingSources`, `permissionMode`, `env: { ...process.env,
 ...policy.env, ...stageEnv }`, the `claude_code` preset system prompt with the
 append file, `maxTurns = min(config.maxTurns, limits.maxTurnsPerStage)` and

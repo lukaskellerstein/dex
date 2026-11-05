@@ -375,12 +375,12 @@ Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clon
 
 The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the dogfood run whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
 
-The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.08 in all:
+The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.09 in all:
 
 - **T012**: one real `specify` stage on the 0.3 SDK wrote `spec.md` with the preset system prompt, for $0.013 in 36 s (`scripts/smoke-stage.mjs`).
 - **T067**: a project-settings `ask` rule for `git push` now reaches the approval card. The first run found that the SDK reports a plain rule-forced ask as `decisionReasonType: "rule"`, not as `matchedAskRule`, so Dex had allowed the push. After the fix the card held the command, nothing reached the remote, and the agent reported the denial.
 
-Known gap: a settings `ask` rule that matches only one part of a compound command (`git add -A && git push`) is still allowed. The SDK reports that call the same way as a compound command that matches no rule. A policy `ask` rule catches it, because its pattern is a regex over the whole command (research § R6).
+Compound commands: the SDK reports a settings `ask` rule on one part of a compound command (`git add -A && git push`) the same way as a compound command that matches no rule. So Dex reads the Bash ask rules of the settings files itself and matches each part of the command (`agent/settingsRules.ts`, research § R6). Live, the card held that command and the agent reported the denial.
 
 Still open in `tasks.md`: **T112, T113**, the dogfood run on `onion-demo-01`, first `--dry-run` for owner sign-off (SC-009), then the first real `specify` (SC-010).
 

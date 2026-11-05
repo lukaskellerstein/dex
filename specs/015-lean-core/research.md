@@ -212,8 +212,8 @@ the hook script reads the process environment, not the prompt.
      or `decisionReasonType: "rule"` (see the T067 measurement below);
    - else → **allow**. This is a call that matched no allow rule in `default`
      mode. The policy and the project's deny and ask rules have already run, so
-     nothing that either of them guards reaches this branch — except a compound
-     command, below.
+     nothing that either of them guards reaches this branch. A compound
+     command is the one case the SDK does not mark; Dex checks it itself, below.
 
 **Measured, T067 (2026-11-05, SDK 0.3.318).** The plan assumed that
 `matchedAskRule` is set whenever a settings ask rule matches. It is not. The
@@ -235,12 +235,30 @@ With the fix, the live run held `git push origin HEAD` on the approval card,
 nothing reached the remote, Deny returned "Denied by the human", and the agent
 left T001 open with the note "denied by the human … Not retried".
 
-**Known gap: compound commands.** A settings ask rule that matches one part of
-a compound command (`git add -A && git push`) arrives as
-`"subcommandResults"`, the same as a compound with no rule at all. Dex cannot
-tell the two apart from the options, so it allows both. Only the suggestions
-differ: they leave out the part an ask rule covers. A policy `ask` rule does
-not have this gap, because its pattern is a regex over the whole command.
+**Compound commands.** A settings ask rule that matches one part of a compound
+command (`git add -A && git push`) arrives as `"subcommandResults"`, the same
+as a compound with no rule at all. Only the suggestions differ: they leave out
+the part an ask rule covers. So Dex checks it itself (`agent/settingsRules.ts`,
+the owner's pick B):
+
+- At session start, Dex reads the Bash `permissions.ask` rules of the
+  policy's `settingSources` (`~/.claude/settings.json`,
+  `.claude/settings.json`, `.claude/settings.local.json`). An unreadable file
+  has no rules.
+- It splits a Bash command on `&&`, `||`, `;`, `|` and new lines, and matches
+  each part: `x:*` and `x *` match `x` and `x <anything>`, another `*` matches
+  any text, anything else must match exactly, and a bare `Bash` rule matches
+  every command.
+- A match makes the PreToolUse hook return `ask`, and `canUseTool` holds the
+  call with source `settings` and the rule as the reason. With a broad user
+  `allow: ["Bash"]` the hook `ask` is what brings the call to `canUseTool`.
+- It reads no allow or deny rules, so it can only add an ask. A command inside
+  `$(…)` or `bash -c "…"` is not split.
+
+Live, with the user settings loaded: the card held
+`git add -A && git push origin HEAD` as "projectSettings ask rule
+Bash(git push:*)", nothing reached the remote, and the agent reported the
+denial ($0.011).
 3. **Options from the policy:** `settingSources`, `permissionMode` (bypass is
    refused for `existing`, FR-014), `env` (R1), the preset `systemPrompt` with
    the `systemPromptAppend` file, `maxTurns = min(config.maxTurns, limits.maxTurnsPerStage)`,
