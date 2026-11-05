@@ -26,13 +26,13 @@ dex queue init <projectDir>
 
 ```text
 queue    : .dex/queue.json · existing project
-policy   : .dex/policy.json · deny 7 · ask 0 · frozen 3 · preflight 2 · questions recommended-then-review · pull request off
-limits   : maxBudgetUsdPerStage=15 maxBudgetUsdPerRun=120 maxImplementRunsWithoutProgress=2 maxVerifyRounds=3
+policy   : .dex/policy.json · deny 5 · ask 1 · frozen 1 · preflight 1 · questions recommended-then-review · pull request off
+limits   : maxBudgetUsdPerStage=2 maxBudgetUsdPerRun=20 maxImplementRunsWithoutProgress=2 maxVerifyRounds=3
 
-━━ 021-agent-entry ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-decision : specify — specs/021-agent-entry/spec.md is missing
-branch   : switch to 020-onion-thin-layer (base), spec-kit creates 021-agent-entry
-env      : GIT_BRANCH_NAME=021-agent-entry SPECIFY_FEATURE_DIRECTORY=specs/021-agent-entry CLAUDE_NO_WORKTREE=1
+━━ 004-product-recommendations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+decision : specify — specs/004-product-recommendations/spec.md is missing
+branch   : switch to 003-customer-accounts (base), spec-kit creates 004-product-recommendations
+env      : GIT_BRANCH_NAME=004-product-recommendations SPECIFY_FEATURE_DIRECTORY=specs/004-product-recommendations CLAUDE_NO_WORKTREE=1
 options  : settingSources=user,project,local permissionMode=default maxTurns=… budget/stage=…
 system   : claude_code preset + append .dex/loop-rules.md (1,204 chars)
 prompt   :
@@ -89,12 +89,12 @@ prompt   :
 
 Run: 3f1c… · paused 2026-11-12T09:41:00.000Z · reason: tool_approval
 
-## 1 · Approve a tool call (021-agent-entry)
+## 1 · Approve a tool call (004-product-recommendations)
 
-**Bash** (settings — project settings ask rule Bash(helm upgrade:*))
+**Bash** (settings — project settings ask rule Bash(git push:*))
 
 ```text
-helm upgrade --install postara ./charts/postara -n postara
+git push -u origin 004-product-recommendations
 ```
 
 Options: Approve / Deny
@@ -103,7 +103,7 @@ Answer in the Dex app, or with `dex run <projectDir>` in a terminal.
 
 ## Answered by default — review (recommended-then-review)
 
-- (021-agent-entry · clarify) "Which namespace hosts the agent?" → **listovna** (recommended)
+- (004-product-recommendations · clarify) "Which signal ranks recommendations first?" → **purchase history** (recommended)
 ````
 
 A question renders as `## n · Question (<entry>)` with numbered options, a pause as

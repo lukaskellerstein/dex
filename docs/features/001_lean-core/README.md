@@ -364,16 +364,16 @@ Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clon
 
 ## Size and open items
 
-**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 21,982, which is 21.8% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called, and the compound-command check added 106 lines). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
+**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 22,009, which is 21.7% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called, the compound-command check added 106 lines, and the `queue init` base-branch rule 27). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
 
 | Area | Baseline (`7ec23aa`) | After | Change |
 |---|---:|---:|---:|
-| core | 11,740 | 9,692 | −2,048 (−17%) |
+| core | 11,740 | 9,719 | −2,021 (−17%) |
 | main | 1,104 | 524 | −580 (−53%) |
 | renderer | 15,266 | 11,766 | −3,500 (−23%) |
-| **total** | **28,110** | **21,982** | **−6,128 (−21.8%)** |
+| **total** | **28,110** | **22,009** | **−6,101 (−21.7%)** |
 
-The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the dogfood run whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
+The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the real-project check whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
 
 The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.09 in all:
 
@@ -382,6 +382,6 @@ The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.
 
 Compound commands: the SDK reports a settings `ask` rule on one part of a compound command (`git add -A && git push`) the same way as a compound command that matches no rule. So Dex reads the Bash ask rules of the settings files itself and matches each part of the command (`agent/settingsRules.ts`, research § R6). Live, the card held that command and the agent reported the denial.
 
-Still open in `tasks.md`: **T112, T113**, the dogfood run on `onion-demo-01`, first `--dry-run` for owner sign-off (SC-009), then the first real `specify` (SC-010).
+The real-project check (T112, T113) ran on a scratch clone of dex-ecommerce, never on another project: `dex queue init` and `--dry-run` gave one block per open entry with the tree unchanged, and one real `specify` cost $0.028 with no Dex-made commit, branch or push. It found one flaw, now fixed: the drafted queue paused because a done entry's branch was gone, so `dex queue init` now sets `baseBranch` after a done entry. All 114 tasks are done.
 
 Seen but not changed: reloading the renderer returns to the welcome screen while the run goes on, because the open project lives in renderer state. The pending request survives the reload.

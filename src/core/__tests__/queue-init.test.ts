@@ -6,6 +6,7 @@ import { afterEach, beforeEach, test } from "node:test";
 import { DEFAULT_POLICY, loadPolicy } from "../policy.ts";
 import { loadQueue } from "../queue.ts";
 import { initQueue, QueueExistsError } from "../queue-init.ts";
+import { mkTmpRepo, rmTmp } from "./helpers/git.ts";
 
 let dir: string;
 
@@ -131,6 +132,29 @@ test("queue init: refuses when .dex/queue.json exists and changes nothing", () =
       err instanceof QueueExistsError && err.message.includes(path.join(dir, ".dex", "queue.json")),
   );
   assert.equal(fs.existsSync(path.join(dir, ".dex/policy.json")), false);
+});
+
+test("queue init: in a git repo, an open entry after a done one starts from the current branch", () => {
+  // A finished feature's branch is usually merged and gone, so the default base
+  // (the previous entry's branch) would not exist and the run would pause.
+  const repo = mkTmpRepo("dex-queue-init-git-");
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    dir = repo;
+    fixture();
+    initQueue(repo);
+    const base = Object.fromEntries(
+      (loadQueue(repo)?.entries ?? []).map((e) => [e.id, e.baseBranch ?? null]),
+    );
+    assert.deepEqual(base, {
+      "010-done": null,
+      "015-both": "main",
+      "020-half": null,
+      "030-brief-only": null,
+    });
+  } finally {
+    rmTmp(repo);
+  }
 });
 
 test("queue init: a project with no feature folders is refused and nothing is written", () => {

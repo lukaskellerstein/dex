@@ -115,7 +115,7 @@ non-done entry's decision; it switches no branch.
 
 **Rationale.**
 
-- In `onion-demo-01`, entry N's `verify.md` lives on branch N. Deciding whether
+- In an existing project, entry N's `verify.md` lives on branch N. Deciding whether
   N is done while the checkout is on N+1 needs N's files without a checkout, or
   every picker call would flip branches.
 - The working tree is used for the current branch so that uncommitted progress
@@ -281,7 +281,7 @@ denial ($0.011).
 
 - `settingSources` with `"user"` loads `~/.claude` hooks, plugins and
   `CLAUDE.md` into every agent. A worktree guard there will fire, which is why
-  `onion-demo-01`'s policy sets `CLAUDE_NO_WORKTREE=1`. A project that wants
+  a project's policy can set `CLAUDE_NO_WORKTREE=1`. A project that wants
   isolation drops `"user"`.
 - `AskUserQuestion` options carry only `label` and `description`; there is
   **no `recommended` field**. So today's `o.recommended` (`:111`) is always
@@ -470,7 +470,7 @@ core 11,740, renderer 15,266, main 1,104.
 | **expected after** | **~21,100** |
 
 The target (21k) is at the edge. If Phase 6 ends above it, the brief's open
-decision 8 applies: decide after the dogfood run.
+decision 8 applies: decide after the real-project check.
 
 **Final measurement** (2026-11-05, after Phase 11 and the biome format pass,
 T110; `bash scripts/loc-by-area.sh`, non-test `.ts`/`.tsx` under `src/`). The
@@ -493,7 +493,7 @@ drop is 21.4%, not 25%. The additions came out larger than the ~1,900 estimated:
 the `dex` CLI (`cli.ts` + `cli/`, ~610 lines with the dry run, the terminal
 input and the event printer), the snapshot path (`run-snapshot.ts`,
 `useRunSnapshot`, `QueuePanel`, `PauseCard`) and the approval UI. The brief's
-open decision 8 applies: decide after the dogfood run (T112, T113). One
+open decision 8 applies: decide after the real-project check (T112, T113). One
 candidate the owner can weigh: the renderer's event-built stage history
 (`useLoopState` + `buildLoopStateFromRun`, ~400 lines) could read the run
 record through the snapshot instead.
@@ -512,7 +512,9 @@ exports with no caller left the tree — `countCommitsBetween`,
 fragments in `renderer/styles/tokens.ts`. Core 9,586, main 524, renderer
 11,766; grand total 21,876 (−22.2%). The compound-command check
 (`agent/settingsRules.ts`, R6) then added 106 lines: core 9,692, **grand
-total 21,982** (−21.8%). SC-007 stays unmet by 982 lines.
+total 21,982** (−21.8%). The `baseBranch` rule in `dex queue init`
+(T112) added 27: core 9,719, **grand total 22,009** (−21.7%). SC-007 stays
+unmet by 1,009 lines.
 
 ### Phase 0 measurements (2026-11-05, tree at `7ec23aa`)
 

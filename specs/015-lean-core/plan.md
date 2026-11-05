@@ -41,7 +41,7 @@ together:
 - Dex makes no commit, branch or push in an existing project;
 - no `bypassPermissions` outside the refusal check;
 - every phase ends with the tests, the typecheck and a green mock loop
-**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (21,982 at the end of the branch, after a dead-code cut and the compound-command check)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; 1 real user (`onion-demo-01`, 5 queue entries, 7 sibling repos)
+**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (22,009 at the end of the branch, after a dead-code cut and the compound-command check)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; 1 real user (`onion-demo-01`, 5 queue entries, 7 sibling repos)
 
 ## Constitution Check
 
@@ -183,7 +183,7 @@ mock loop on a `dex-ecommerce` scratch clone finishes (quickstart § 1–2).
 | 4 | **Existing-project entry** | `dex queue init`; `branching.ts`; gates; `brief` stage; autonomous `clarify`; `verify.md` + fix phase; failure policy; check-only prerequisites; preflight | dirty-tree pauses in the mock fixture: the mock commits, so the tree stays clean |
 | 5 | **Headless CLI** | `cli.ts`, `bin`, TTY and no-TTY input, answer book, `--once` / `--dry-run` / `--status` | stdin handling under `node --test` |
 | 6 | **UI** | `useRunSnapshot`, `QueuePanel`, approval and pause cards, timeline and profile UI removed, `d3-*` removed | runs in parallel with Phase 7 |
-| 7 | **Dogfood** | `dex run --dry-run` on `onion-demo-01`, owner sign-off, then `021` `specify` with the owner watching | the onion policy file lives in that repo and is written by its owner, not by this feature |
+| 7 | **Real-project check** | `dex queue init` and `dex run --dry-run` on a scratch clone of dex-ecommerce, then one real `specify` | never on `onion-demo-01` or the original repo (owner's decision) |
 
 ### How the phases ran
 

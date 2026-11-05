@@ -270,7 +270,7 @@ description: "Task list for 015 Lean Core"
 
 ## Phase 10: User Story 8 — A slimmer app that shows what you need while a run goes (Priority: P3)
 
-**Goal**: The renderer reads one snapshot from disk on every stage boundary; queue panel; approvals and pause cards; no timeline, branch or profile UI (brief Phase 6, research R17). Can run in parallel with the dogfood tasks.
+**Goal**: The renderer reads one snapshot from disk on every stage boundary; queue panel; approvals and pause cards; no timeline, branch or profile UI (brief Phase 6, research R17). Can run in parallel with the real-project checks.
 
 **Independent Test**: With a mock run in the app, the queue panel shows entry, stage, task phase and cost; an approval can be approved from the questions panel; no screen shows a timeline, jump, promote, branch-delete or profile control.
 
@@ -292,7 +292,7 @@ description: "Task list for 015 Lean Core"
 
 ---
 
-## Phase 11: Polish & Dogfood (brief Phase 7)
+## Phase 11: Polish & Real-Project Check (brief Phase 7)
 
 **Purpose**: Docs, final measurements, and the first real user.
 
@@ -301,8 +301,8 @@ description: "Task list for 015 Lean Core"
 - [X] T109 [P] Delete docs/my-specs/01X-state-reconciliation/ (brief open decision 7: superseded by this feature)
 - [X] T110 Final size: run scripts/loc-by-area.sh, compare with the T003 baseline per area, write the table into specs/015-lean-core/research.md § R14 for the PR description; if the total is above 21k, record it for open decision 8 (SC-007)
 - [X] T111 Final checks: `nvim-tools --json --all` adds no findings against the T003 baseline; `npm test`; `npm run typecheck`; quickstart § 1–8 end to end
-- [ ] T112 **Owner step.** The owner writes `.dex/queue.json`, `.dex/policy.json` and `.dex/loop-rules.md` in `~/Projects/Github/onion-ai-eu/onion-demo-01` (brief Appendix A); then run `dex run <onion-demo-01> --dry-run`, confirm 5 blocks and 0 validation errors, and hand the output to the owner for sign-off (SC-009)
-- [ ] T113 **Owner step, real spend.** With the owner watching, `dex run <onion-demo-01> --once` for `021-agent-entry` `specify`; confirm no policy breach in the trace and no Dex-made commit, branch or push (SC-010)
+- [X] T112 Real-project dry run (SC-009) on a scratch clone of dex-ecommerce `main`, never on `onion-demo-01` (owner's decision) and never on the original: `dex queue init`, review the draft, then `dex run <clone> --dry-run`; confirm one block per open entry, 0 validation errors, exit 0 and an unchanged tree
+- [X] T113 **Small real spend.** One real stage on the same clone (SC-010): `specify` for the first open entry on a cheap model with a stage budget cap; confirm no policy breach and no Dex-made commit, branch or push
 - [X] T114 Run `/sync-spec-kit` and `/update-feature-docs` for the branch
 
 ---
@@ -325,7 +325,7 @@ flowchart LR
   U1 --> U7["Phase 9<br/>US7 brief + gates"]
   U2 --> U8["Phase 10<br/>US8 UI"]
   U3 --> U8
-  U6 --> P["Phase 11<br/>Polish + Dogfood"]
+  U6 --> P["Phase 11<br/>Polish + real-project check"]
   U7 --> P
   U8 --> P
   U4 --> P
@@ -340,7 +340,7 @@ flowchart LR
 - **US5 (P2)**: after US2 (the shared request kinds in `humanInput.ts`).
 - **US6 (P2)**: after US3 (`cli.ts` exists, the existing-project fixture for `--dry-run`) and US5 (terminal answers use the question modes).
 - **US7 (P3)**: after US1 only.
-- **US8 (P3)**: after US2 (approval card) and US3 (snapshot over both kinds); in parallel with the dogfood tasks.
+- **US8 (P3)**: after US2 (approval card) and US3 (snapshot over both kinds); in parallel with the real-project checks.
 
 ### Within each story
 
@@ -397,15 +397,15 @@ Task: "T034 src/core/queue.ts"  +  "T035 src/core/tree-reader.ts"
 2. + US3 → the first existing-project run, on the fixture.
 3. + US4, US5 → unattended runs that stop when stuck and do not stall on easy questions.
 4. + US6 → headless runs and the dry run the owner reviews.
-5. + US7 → months 2–4 of the dogfood queue.
+5. + US7 → briefs generated for later queue entries.
 6. + US8 → the slim app.
-7. Dogfood (T112–T113).
+7. Real-project check on a dex-ecommerce clone (T112–T113).
 
 ### Notes
 
 - Never commit unless the owner asks (repo rule). The mock agent's `mock(<stage>)` commits happen only inside scratch clones and temp repos.
 - T012, T067 and T113 spend real money. Each one needs the owner's go-ahead first.
-- **Status (2026-11-05):** 112 of 114 done. Open: T112 and T113 (owner steps on `onion-demo-01`). T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule on one part of a compound command is matched by Dex itself (`agent/settingsRules.ts`, research.md § R6), checked live for $0.011.
+- **Status (2026-11-05):** 114 of 114 done. T112 and T113 ran on a scratch clone of dex-ecommerce, not on `onion-demo-01` (owner's decision): the dry run gave 2 blocks with the tree unchanged after `dex queue init` learned to set `baseBranch` after a done entry, and one real `specify` cost $0.028. T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule on one part of a compound command is matched by Dex itself (`agent/settingsRules.ts`, research.md § R6), checked live for $0.011.
 - **Where the build differs from a task's wording** (the task lines stay as written; research.md has the reasons):
   - T035: the tree reader uses `git cat-file -t` / `cat-file blob` on `<ref>:./<rel>`, not `cat-file -e` / `git show`; `headSha` was not added (`getHeadSha` exists); a test-only `statusPorcelain` helper was removed.
   - T042: `humanInput.ts` is a new file (`userInput.ts` is deleted) and exports `askQuestions` and `recordPause`, not `requestHuman()`; T048's loop entry is `runQueueLoop`.

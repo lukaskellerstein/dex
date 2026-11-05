@@ -7,7 +7,7 @@ humans.
 ## Format
 
 ```markdown
-# Verification: 021-agent-entry
+# Verification: 004-product-recommendations
 
 **Verdict**: failed
 **Tasks-SHA256**: 9f2c4b0e8d1a3c5e7f9b2d4a6c8e0f1a3b5c7d9e1f2a4b6c8d0e2f4a6b8c0d2e4
@@ -23,7 +23,7 @@ humans.
 ## Criteria
 
 - [x] SC-001 — …
-- [ ] SC-004 — typecheck fails in `src/agent/entry.ts:41`
+- [ ] SC-004 — typecheck fails in `src/recommendations/rank.ts:41`
 
 ## Fix phase
 

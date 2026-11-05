@@ -2,7 +2,7 @@
 
 **Feature Branch**: `015-lean-core`
 **Created**: 2026-11-05
-**Status**: Implemented on the branch (tasks.md: 109 of 114 done). Open: the live checks that spend money (T012, T067) and the owner's dogfood steps (T112, T113). SC-007 is not met; see [Outcomes](#outcomes-as-built).
+**Status**: Implemented on the branch (tasks.md: 114 of 114 done). SC-007 is not met; see [Outcomes](#outcomes-as-built).
 **Input**: User description: "docs/my-specs/015-lean-core/README.md" — the brief, draft v1.0 of 2026-11-04. The brief is the source of truth; this spec restates it as outcomes and requirements. It supersedes the never-numbered `01X-state-reconciliation` brief.
 
 ## Overview
@@ -15,7 +15,7 @@ Three problems follow:
 2. **Dex can only start new projects.** The only way in is goal file → clarification → constitution → manifest. A project that already has specs, briefs, branch conventions and its own Claude Code setup cannot use Dex.
 3. **It runs with no brakes.** Agents run with permission checks bypassed and with the user's own settings, hooks and `ask`/`deny` rules skipped. That is acceptable on the throwaway example project. It is not acceptable on a project where an agent can deploy to a shared cluster.
 
-After this feature, Dex is: a **queue** of features, a **picker** that reads the project's files to choose the next stage, one fresh agent per stage, a **policy** the project owns and Dex enforces, and a human who is asked only when it matters. The first real user is the `onion-demo-01` project; this feature is done when Dex runs that project's queue.
+After this feature, Dex is: a **queue** of features, a **picker** that reads the project's files to choose the next stage, one fresh agent per stage, a **policy** the project owns and Dex enforces, and a human who is asked only when it matters. The real-project check runs on a scratch clone of the dex-ecommerce example project; this feature is done when Dex runs that queue.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -160,7 +160,7 @@ Some queue entries have no brief yet, only a list of source documents. Dex write
 
 The desktop app keeps the project picker, the run controls with a new queue panel (entry, stage, task phase, cost), the task board, the agent trace, and the questions panel — which now also handles tool approvals. The timeline, branch operations, conflict-resolver progress, the leftovers of "try N ways" and agent profiles are gone. After every stage, the app re-reads the run state and the queue from disk, so what it shows always matches the files.
 
-**Why this priority**: The UI is the largest remaining weight, and it is where the "three views disagree" bugs showed up. The headless runner already covers a run without it, so this can run in parallel with the dogfood run.
+**Why this priority**: The UI is the largest remaining weight, and it is where the "three views disagree" bugs showed up. The headless runner already covers a run without it, so this can run in parallel with the real-project check.
 
 **Independent Test**: Open the example project in the app, start a mock run, and check that the queue panel shows each entry's stage and cost, that a tool approval appears in the questions panel and can be approved, and that no timeline or branch controls appear anywhere.
 
@@ -349,8 +349,8 @@ The desktop app keeps the project picker, the run controls with a new queue pane
 - **SC-006**: No agent in an existing project can run with permission checks bypassed; the only remaining reference to bypass mode in the source is the refusal check.
 - **SC-007**: Source size drops from 28.1k lines to 21k or less (at least 25% smaller), measured per area against the Phase 0 baseline and reported in the pull request.
 - **SC-008**: A stuck entry (2 `implement` runs with no new task checked, or 3 failed verify rounds) pauses for the human in 100% of cases, with no further agent spend on that entry.
-- **SC-009**: A dry run over the `onion-demo-01` queue prints exactly one decision and one prompt for each of its 5 entries, starts no agent, and the owner signs it off before any real stage runs.
-- **SC-010**: Dex runs the first real stage on `onion-demo-01` (`specify` for `021-agent-entry`) with the owner watching, with no policy breach and no Dex-made commit, branch or push.
+- **SC-009**: On a scratch clone of the dex-ecommerce example project, a dry run over the queue that `dex queue init` drafted (after the owner's review) prints exactly one decision and one prompt for each open entry, starts no agent and changes no file.
+- **SC-010**: Dex runs one real stage on that clone (`specify` for the first open entry) with no policy breach and no Dex-made commit, branch or push.
 
 ### Outcomes (as built)
 
@@ -364,10 +364,10 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
 | SC-004 | Met. The existing-project fixture ends `queue_complete`; the only new branch is the one the mock `specify` made; every new commit is `mock(...)`; exit 0 proves no push was tried. |
 | SC-005 | Policy table cases met. The live check (a project `ask` rule reaching the approval card) is **open** (T067, needs the owner's approval). The approval card has component tests, and the live UI check (T106) covered everything but that card, because the mock makes no tool calls. |
 | SC-006 | Met. `bypassPermissions` appears in `policy.ts` and its test only. |
-| SC-007 | **Not met.** 22,086 lines after the format pass (21,982, or 21.8% below, at the end of the branch, after a dead-code cut and the compound-command check); 22,086 is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. |
+| SC-007 | **Not met.** 22,086 lines after the format pass (22,009, or 21.7% below, at the end of the branch, after a dead-code cut and the compound-command check); 22,086 is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. |
 | SC-008 | Met by tests (`failure-policy`, `loop`): two implement runs with no new task, or three failed verify rounds, pause with no further agent run. |
-| SC-009 | **Open** (T112, owner step: the owner writes the onion-demo-01 queue and policy first). |
-| SC-010 | **Open** (T113, owner step, real spend). |
+| SC-009 | **Met** (T112): 2 blocks, one per open entry, exit 0, tree unchanged. It needed one fix: `dex queue init` now sets `baseBranch` after a done entry. |
+| SC-010 | **Met** (T113): `specify` for `002-improvements-1` on `claude-haiku-5-5`, $0.028; no denial, no Dex-made commit, branch or push. |
 
 ## Assumptions
 
@@ -379,7 +379,7 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
   5. Only `queue.json` and `policy.json` are tracked in the project's git; run state, run records and `questions.md` are ignored.
   6. Delete the Codex/Copilot runner kinds and variant profiles entirely.
   7. Delete the `01X-state-reconciliation` brief folder in Phase 1.
-  8. Decide after the dogfood run whether to cut further (the next cut would be the loop UI, about 3.4k lines).
+  8. Decide after the real-project check (T112, T113) whether to cut further (the next cut would be the loop UI, about 3.4k lines).
 - **Entry status is derived, not written** (plan research R2, amending the brief). The brief has Dex write each entry's `status` into the tracked queue file. Because Dex never commits, that edit would make the tree dirty, block the next branch switch, and go stale after a reset. So `done` is derived from `verify.md`, and the queue's `status` field is a human-owned override (`done` / `skipped`). Dex writes no tracked file during a run. For the same reason, spec-kit is pointed at the entry's spec folder through the agent's environment, not by writing `.specify/feature.json` (research R5).
 - **Ignore rules for Dex's runtime files are part of setup.** In a new project Dex writes them as today. In an existing project they come with the queue and policy files that the human reviews and commits; Dex does not silently edit the project's ignore file.
 - **The checkout is single-writer.** Dex runs in the project's main checkout (the first real user's sibling clones do not exist in a worktree), and nobody else edits that checkout while Dex runs.

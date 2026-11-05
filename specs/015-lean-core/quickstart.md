@@ -5,8 +5,8 @@ success criteria. All mock runs cost nothing; steps 9–10 spend real money and
 need the owner's go-ahead.
 
 Status on 2026-11-05 (research.md, "Final checks"): steps 1–8 were run end to end
-on scratch clones with `node dist/core/cli.js`. Step 9 (T067) and step 10 (T112,
-T113) are open. The UI check that tasks.md calls T106 is step 11.
+on scratch clones with `node dist/core/cli.js`. Steps 9 (T067) and 10 (T112,
+T113) passed with real agent runs. The UI check that tasks.md calls T106 is step 11.
 
 Paths: `$DEX` is this checkout, `$EX` is
 `$HOME/Projects/Github/lukaskellerstein/dex-ecommerce`, `$SCRATCH` is a fresh
@@ -123,7 +123,7 @@ grep -rn bypassPermissions src   # only policy.ts (the refusal) and its test
 bash scripts/loc-by-area.sh      # prints lines per area; compare with research.md § R14 baseline
 ```
 
-Result: 22,086 lines after the format pass (21,982 at the end of the branch, after a dead-code cut and the compound-command check)
+Result: 22,086 lines after the format pass (22,009 at the end of the branch, after a dead-code cut and the compound-command check)
 against the 21k target. **SC-007 is not met**; research.md § R14 has the table.
 
 ## 9. Live permission check (SC-005, real agent, small cost)
@@ -137,15 +137,36 @@ real agent and the owner's go-ahead). Until then the approval card is covered by
 `ToolApprovalCard.test.tsx`, the `permissions` / `runner-options` unit tests and the
 mock-driven UI check in step 11.
 
-## 10. Dogfood on onion-demo-01 (SC-009, SC-010)
+## 10. Real-project check on dex-ecommerce (SC-009, SC-010)
+
+Always on a scratch clone of `$EX` `main`, with `origin` pointed at a scratch bare
+repo. Never on the original, and never on another project.
 
 ```bash
-node "$DEX/dist/core/cli.js" run ~/Projects/Github/onion-ai-eu/onion-demo-01 --dry-run > /tmp/onion-dry-run.txt
-grep -c '^━━ ' /tmp/onion-dry-run.txt     # 5 — one block per entry
+git clone -q --no-local "$EX" "$SCRATCH/real" && cd "$SCRATCH/real"
+git remote remove origin && git init -q --bare "$SCRATCH/real.git" && git remote add origin "$SCRATCH/real.git"
+node "$DEX/dist/core/cli.js" queue init .   # review the draft, then commit .dex/
+node "$DEX/dist/core/cli.js" run . --dry-run > "$SCRATCH/real-dry-run.txt"
+grep -c '^━━ ' "$SCRATCH/real-dry-run.txt"   # one block per open entry
 ```
 
-The owner reads every prompt and signs off. Then, with the owner watching:
-`dex run … --once` for `021-agent-entry` `specify`.
+Then one real `specify` for the first open entry. Set `.dex/dex-config.json` to
+`{"agent":"claude"}` (dex-ecommerce `main` ships `mock`, and its `mock-config.json`
+predates 015), cap the stage in `.dex/policy.json`, and use a cheap model.
+
+Done on 2026-11-05:
+
+- The review dropped the drafted `001-initialization`: it is the store's first
+  brief, already built as specs 001–003.
+- Dry run: 2 blocks (`002-improvements-1`, `003-promo-codes`), each with
+  `specify` on `main`. Exit 0, no agent, tree unchanged. The first try paused
+  both entries: their default base was the branch of the done entry before them,
+  which was merged and deleted. `dex queue init` now writes `baseBranch` (the
+  current branch) after a done entry.
+- Real `specify` for `002-improvements-1` on `claude-haiku-5-5`, run from the
+  app: 113 s, $0.028, 9 turns. No denial, and no Dex-made commit, branch or
+  push. The agent created the branch through spec-kit and made one commit; the
+  scratch remote kept only `main`.
 
 ## 11. UI check against a mock run (SC-005 partly, FR-041–043)
 

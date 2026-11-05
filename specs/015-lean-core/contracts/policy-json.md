@@ -4,7 +4,7 @@ Tracked in the project's git, owned by the project. Types, defaults and
 validation: [`../data-model.md`](../data-model.md) § Policy. Why the chain
 looks like this: [`../research.md`](../research.md) R6.
 
-## Example (shape of `onion-demo-01`'s policy, abridged)
+## Example (an existing project's policy, abridged)
 
 ```json
 {
@@ -15,25 +15,25 @@ looks like this: [`../research.md`](../research.md) R6.
     { "tool": "Bash", "pattern": "\\bgit\\s+push\\b[^\\n]*(\\s--force\\b|\\s-f\\b|--force-with-lease|--delete\\b|--mirror\\b|--tags\\b)", "reason": "no force, delete, mirror or tag-all pushes" },
     { "tool": "Bash", "pattern": "\\bgit\\s+push\\b[^\\n]*\\s(origin\\s+)?(main|master)\\b", "reason": "never push to main/master" },
     { "tool": "Bash", "pattern": "\\bgit\\s+(reset\\s+--hard|clean\\s+-[a-z]*f|merge|rebase|worktree)\\b", "reason": "history-rewriting git commands are the owner's" },
-    { "tool": "Bash", "pattern": "\\bkubectl\\s+(delete|apply|create(?!\\s+job\\s+--from=)|replace|patch|edit|scale|drain|cordon|taint)\\b", "reason": "helm is the only deploy path" },
-    { "tool": "Bash", "pattern": "\\bhelm\\s+(uninstall|delete|rollback)\\b", "reason": "destructive helm commands are the owner's" },
-    { "tool": "Bash", "pattern": "\\bsops\\s+(-d|--decrypt|decrypt|edit|exec-env)\\b", "reason": "secrets are never decrypted by an agent" },
-    { "tool": "*", "pattern": "mgmt-01|rancher\\.cellarwood\\.org", "reason": "the management cluster is off limits" }
+    { "tool": "Bash", "pattern": "\\bnpm\\s+publish\\b", "reason": "publishing is the owner's" },
+    { "tool": "Bash", "pattern": "\\bsops\\s+(-d|--decrypt|decrypt|edit|exec-env)\\b", "reason": "secrets are never decrypted by an agent" }
   ],
-  "ask": [],
+  "ask": [
+    { "tool": "Bash", "pattern": "\\bgit\\s+push\\b", "reason": "every push needs a human" }
+  ],
   "writeRoots": ["."],
-  "frozen": ["workload/onion-poc-report/thresholds.md", "workload/onion-poc-report/claim*.md", "workload/onion-poc-report/*-thresholds.md"],
-  "preflight": ["kubectl config current-context | grep -q '^onion-demo-01'", "timeout 15 kubectl get ns >/dev/null"],
-  "repos": ["workload/*", "workload/sectors/*", "workload/tenants/*"],
+  "frozen": ["docs/my-specs/*/README.md"],
+  "preflight": ["timeout 60 npm run --silent typecheck"],
+  "repos": [],
   "systemPromptAppend": ".dex/loop-rules.md",
   "questions": "recommended-then-review",
   "openPullRequest": false,
-  "limits": { "maxBudgetUsdPerStage": 15, "maxBudgetUsdPerRun": 120, "maxImplementRunsWithoutProgress": 2, "maxVerifyRounds": 3 }
+  "limits": { "maxBudgetUsdPerStage": 2, "maxBudgetUsdPerRun": 20, "maxImplementRunsWithoutProgress": 2, "maxVerifyRounds": 3 }
 }
 ```
 
-The owner writes the real file in that repo. The table tests in this repo carry
-the rules above as fixtures, one passing and one blocked command each.
+The project's owner writes the real file. The table tests in this repo carry
+rules of this kind as fixtures, one passing and one blocked command each.
 
 ## `decideToolUse(policy, call, env)` — pure
 

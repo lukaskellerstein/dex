@@ -8,7 +8,7 @@ status is derived from files (research R2).
 
 Types and validation rules: [`../data-model.md`](../data-model.md) § Queue.
 
-## Example — existing project (`onion-demo-01`, abridged)
+## Example — existing project (dex-ecommerce shaped, abridged)
 
 ```json
 {
@@ -16,30 +16,28 @@ Types and validation rules: [`../data-model.md`](../data-model.md) § Queue.
   "kind": "existing",
   "entries": [
     {
-      "id": "020-onion-thin-layer",
-      "title": "Onion thin layer — US7 labels + Trino access rules",
+      "id": "003-customer-accounts",
+      "title": "Customer accounts",
       "skip": ["brief", "specify", "clarify", "plan", "tasks"],
-      "tasks": ["T110", "T122-T134"]
+      "tasks": ["T005", "T007-T009"]
     },
     {
-      "id": "021-agent-entry",
-      "title": "Agent entry",
-      "brief": "docs/my-specs/021-agent-entry/README.md",
-      "baseBranch": "020-onion-thin-layer"
+      "id": "004-product-recommendations",
+      "title": "Product recommendations",
+      "brief": "docs/my-specs/004-product-recommendations/README.md",
+      "baseBranch": "003-customer-accounts"
     },
     {
-      "id": "022-installable-pilot",
-      "title": "Month 2 — installable pilot",
-      "brief": "docs/my-specs/022-installable-pilot/README.md",
+      "id": "005-promo-codes",
+      "title": "Promo codes and discounts",
+      "brief": "docs/my-specs/005-promo-codes/README.md",
       "generate": {
         "sources": [
-          "../executive-management/product/first-paying-customer/index.html",
-          "../executive-management/product/first-paying-customer/demo-coverage.html",
-          "docs/my-specs/021-agent-entry/README.md",
-          "demo/gap-report.md",
-          "specs/020-onion-thin-layer/tasks.md"
+          "docs/product/roadmap.md",
+          "specs/002-cart-and-checkout/spec.md",
+          "docs/my-specs/004-product-recommendations/README.md"
         ],
-        "instructions": "Month 2 features from §3 of the plan. Include US8 (T135–T144) from 020."
+        "instructions": "Percentage and fixed-amount codes only. One code per order, no stacking."
       },
       "gates": ["brief"]
     }
@@ -47,7 +45,7 @@ Types and validation rules: [`../data-model.md`](../data-model.md) § Queue.
 }
 ```
 
-`022`'s `baseBranch` is absent, so it defaults to `021-agent-entry`.
+`005`'s `baseBranch` is absent, so it defaults to `004-product-recommendations`.
 
 ## Example — new project (written by manifest extraction)
 
@@ -95,6 +93,9 @@ is no per-entry branch switching.
    - `skip` = the stages whose artefacts already exist (`specify` if `spec.md`,
      `clarify` if it has `## Clarifications`, `plan`, `tasks`);
    - `status: "done"` when `tasks.md` exists with every task checked.
+   - `baseBranch` = the current branch for an open entry right after a `done`
+     one, because a finished feature's branch is usually merged and gone. Outside
+     a git repo it is left out.
 4. Writes `kind: "existing"`, `.dex/policy.json` with every default spelled
    out (if absent; `systemPromptAppend: null` parses back to the default), and
    `.dex/.gitignore` (if absent). The code lives in `src/core/queue-init.ts`.

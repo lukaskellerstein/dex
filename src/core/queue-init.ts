@@ -1,11 +1,12 @@
 /**
- * What: `dex queue init` (contracts/queue-json.md § `dex queue init`) — writes a first `kind: "existing"` queue from the project's `specs/*` and `docs/my-specs/*` folders, with `skip` and `status` derived from the files that are already there, plus `.dex/policy.json` with every default spelled out and `.dex/.gitignore`, each only when absent. A folder name that is not a valid id (`001-Initialization`) gets a lowercase id; its `brief` and `specDir` keep the real name.
- * Not: Never overwrites a queue, never runs git and never starts a run — the human reviews and commits what it wrote.
- * Deps: queue.{validateQueue, saveQueue, queuePath}, policy.{DEFAULT_POLICY, policyPath}, state.ensureRuntimeIgnore, parser.parseTasksMd.
+ * What: `dex queue init` (contracts/queue-json.md § `dex queue init`) — writes a first `kind: "existing"` queue from the project's `specs/*` and `docs/my-specs/*` folders, with `skip` and `status` derived from the files that are already there, plus `.dex/policy.json` with every default spelled out and `.dex/.gitignore`, each only when absent. A folder name that is not a valid id (`001-Initialization`) gets a lowercase id; its `brief` and `specDir` keep the real name. An open entry right after a `done` one gets `baseBranch` = the current branch, because a finished feature's branch is usually gone.
+ * Not: Never overwrites a queue, never changes git (one read-only call for the current branch; outside a repo it sets no base) and never starts a run — the human reviews and commits what it wrote.
+ * Deps: queue.{validateQueue, saveQueue, queuePath}, policy.{DEFAULT_POLICY, policyPath}, state.ensureRuntimeIgnore, parser.parseTasksMd, git.getCurrentBranch.
  */
 
 import fs from "node:fs";
 import path from "node:path";
+import { getCurrentBranch } from "./git.js";
 import { parseTasksMd } from "./parser.js";
 import { DEFAULT_POLICY, policyPath } from "./policy.js";
 import { type QueueEntry, queuePath, type StageName, saveQueue, validateQueue } from "./queue.js";
@@ -78,6 +79,29 @@ function entryFor(projectDir: string, id: string, folders: Folders): QueueEntry 
   };
 }
 
+function currentBranchOrNull(projectDir: string): string | null {
+  try {
+    const branch = getCurrentBranch(projectDir);
+    return branch && branch !== "HEAD" ? branch : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An open entry's default base is the previous entry's branch. A finished
+ * feature's branch is usually merged and deleted, so after a `done` entry the
+ * draft names the branch the project is on now; the human sees it in review.
+ */
+function withBaseAfterDone(entries: QueueEntry[], branch: string | null): QueueEntry[] {
+  if (!branch) return entries;
+  return entries.map((entry, i) =>
+    i > 0 && entries[i - 1].status === "done" && entry.status !== "done"
+      ? { ...entry, baseBranch: branch }
+      : entry,
+  );
+}
+
 /**
  * Writes the first queue for an existing project. Returns the files it wrote,
  * relative to the project. Throws QueueExistsError when a queue is already there.
@@ -100,7 +124,10 @@ export function initQueue(projectDir: string): string[] {
       `no feature folders under ${SPECS}/ or ${BRIEFS}/ in ${projectDir} — nothing to queue`,
     );
   }
-  const entries = [...byId.keys()].sort().map((id) => entryFor(projectDir, id, byId.get(id) ?? {}));
+  const entries = withBaseAfterDone(
+    [...byId.keys()].sort().map((id) => entryFor(projectDir, id, byId.get(id) ?? {})),
+    currentBranchOrNull(projectDir),
+  );
   const queue = validateQueue({ version: 3, kind: "existing", entries }, file);
   const written = [".dex/queue.json"];
   saveQueue(projectDir, queue);
