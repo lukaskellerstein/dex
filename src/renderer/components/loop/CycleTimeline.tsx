@@ -428,7 +428,9 @@ export function CycleTimeline({
   const hasPausedCycle = !isRunning && cycles.some((c) => c.status === "running");
   const ghostOpacities = [0.35, 0.2, 0.1];
   const ghostCount =
-    isRunning || hasPausedCycle ? Math.min(upcoming ?? ghostOpacities.length, ghostOpacities.length) : 0;
+    isRunning || hasPausedCycle
+      ? Math.min(upcoming ?? ghostOpacities.length, ghostOpacities.length)
+      : 0;
 
   return (
     <div>

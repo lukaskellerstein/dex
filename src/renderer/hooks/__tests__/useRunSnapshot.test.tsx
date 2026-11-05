@@ -208,7 +208,12 @@ describe("queueProgress", () => {
       errors: [],
       queue: {
         kind: "new",
-        entries: [row("001-a", "done"), row("002-b", "active"), row("003-c", "pending"), row("004-d", "skipped")],
+        entries: [
+          row("001-a", "done"),
+          row("002-b", "active"),
+          row("003-c", "pending"),
+          row("004-d", "skipped"),
+        ],
       },
     };
     expect(queueProgress(snapshot)).toEqual({ done: 1, total: 3, pending: 1 });

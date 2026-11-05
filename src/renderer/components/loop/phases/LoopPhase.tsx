@@ -52,7 +52,10 @@ export function LoopPhase({
         }}
       >
         {total > 0 && (
-          <span data-testid="loop-cycle-count" style={{ display: "flex", alignItems: "center", gap: 3 }}>
+          <span
+            data-testid="loop-cycle-count"
+            style={{ display: "flex", alignItems: "center", gap: 3 }}
+          >
             <Clock size={10} />
             {done}/{total} cycles
           </span>

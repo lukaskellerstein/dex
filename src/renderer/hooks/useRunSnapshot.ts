@@ -84,5 +84,9 @@ export function queueProgress(snapshot: RunSnapshot | null): QueueProgress | nul
   const entries = snapshot?.queue?.entries;
   if (!entries) return null;
   const count = (status: string) => entries.filter((e) => e.status === status).length;
-  return { done: count("done"), total: entries.length - count("skipped"), pending: count("pending") };
+  return {
+    done: count("done"),
+    total: entries.length - count("skipped"),
+    pending: count("pending"),
+  };
 }
