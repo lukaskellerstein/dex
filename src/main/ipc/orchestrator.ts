@@ -30,9 +30,12 @@ export function registerOrchestratorHandlers(getWindow: () => BrowserWindow | nu
     stopRun();
   });
 
-  ipcMain.handle("orchestrator:answer-request", (_event, requestId: string, answer: RequestAnswer) => {
-    resolveRequest(requestId, answer);
-  });
+  ipcMain.handle(
+    "orchestrator:answer-request",
+    (_event, requestId: string, answer: RequestAnswer) => {
+      resolveRequest(requestId, answer);
+    },
+  );
 
   ipcMain.handle("orchestrator:getRunState", () => {
     return getRunState();

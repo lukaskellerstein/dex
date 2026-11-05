@@ -5,17 +5,8 @@
     {
       "id": "900-fixture-a",
       "title": "Fixture A — finish the greeter",
-      "skip": [
-        "brief",
-        "specify",
-        "clarify",
-        "plan",
-        "tasks"
-      ],
-      "tasks": [
-        "T002",
-        "T004-T005"
-      ]
+      "skip": ["brief", "specify", "clarify", "plan", "tasks"],
+      "tasks": ["T002", "T004-T005"]
     },
     {
       "id": "901-fixture-b",

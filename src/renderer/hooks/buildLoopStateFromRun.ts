@@ -36,7 +36,10 @@ export function lastCycleOf(runData: RunRecord): number | null {
  *
  * Pure data transformation — no React, no setters, no IO. Easy to unit-test.
  */
-export function buildLoopStateFromRun(runData: RunRecord, activeCycle: number | null): LoopStateRebuild {
+export function buildLoopStateFromRun(
+  runData: RunRecord,
+  activeCycle: number | null,
+): LoopStateRebuild {
   const runEnded = runData.status !== "running";
   const preCycleStages: UiLoopStage[] = [];
   const cycleMap = new Map<number, UiLoopStage[]>();

@@ -11,7 +11,12 @@ import type { LimitHit } from "../agent/AgentRunner.js";
 import { getActiveContext } from "../orchestrator.js";
 import { parseTasksMd } from "../parser.js";
 import { tasksHash } from "../picker.js";
-import { buildImplementPrompt, buildVerifyPrompt, stageEnv, type VerifyExtras } from "../prompts.js";
+import {
+  buildImplementPrompt,
+  buildVerifyPrompt,
+  stageEnv,
+  type VerifyExtras,
+} from "../prompts.js";
 import { isFixPhase, isInScope, type QueueV3, type ResolvedEntry } from "../queue.js";
 import * as runs from "../runs.js";
 import type { RunConfig, TaskPhase } from "../types.js";
@@ -39,7 +44,8 @@ function readTasks(projectDir: string, entry: ResolvedEntry): string {
 
 /** Checked tasks that count toward the entry: its scope, plus every fix phase. */
 export function countCheckedInScope(entry: ResolvedEntry, phases: TaskPhase[]): number {
-  return phases.flatMap((p) => p.tasks.filter((t) => isInScope(entry, p, t) && t.status === "done")).length;
+  return phases.flatMap((p) => p.tasks.filter((t) => isInScope(entry, p, t) && t.status === "done"))
+    .length;
 }
 
 function ctxOrThrow() {
@@ -84,7 +90,15 @@ export async function runImplement(
     taskPhaseNumber: phase.number,
     taskPhaseName: phase.name,
   });
-  emit({ type: "step_started", runId: deps.runId, cycleNumber, step: "implement", agentRunId, specDir: entry.specDir, taskPhaseNumber: phase.number });
+  emit({
+    type: "step_started",
+    runId: deps.runId,
+    cycleNumber,
+    step: "implement",
+    agentRunId,
+    specDir: entry.specDir,
+    taskPhaseNumber: phase.number,
+  });
   emit({ type: "tasks_updated", taskPhases: phases });
   emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
 
@@ -112,9 +126,28 @@ export async function runImplement(
     outputTokens: r.outputTokens || null,
   });
   emit({ type: "tasks_updated", taskPhases: after });
-  emit({ type: "task_phase_completed", taskPhase: after.find((p) => p.number === phase.number) ?? phase, cost: r.cost, durationMs: r.durationMs });
-  emit({ type: "step_completed", runId: deps.runId, cycleNumber, step: "implement", agentRunId, costUsd: r.cost, durationMs: r.durationMs, ...(stopped ? { stopped: true } : {}) });
-  return { cost: r.cost, checkedBefore, checkedAfter: countCheckedInScope(entry, after), limitHit: r.limitHit ?? null };
+  emit({
+    type: "task_phase_completed",
+    taskPhase: after.find((p) => p.number === phase.number) ?? phase,
+    cost: r.cost,
+    durationMs: r.durationMs,
+  });
+  emit({
+    type: "step_completed",
+    runId: deps.runId,
+    cycleNumber,
+    step: "implement",
+    agentRunId,
+    costUsd: r.cost,
+    durationMs: r.durationMs,
+    ...(stopped ? { stopped: true } : {}),
+  });
+  return {
+    cost: r.cost,
+    checkedBefore,
+    checkedAfter: countCheckedInScope(entry, after),
+    limitHit: r.limitHit ?? null,
+  };
 }
 
 /** `T<max+1>`, padded like the file's ids (T009 → T010). */

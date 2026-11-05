@@ -41,7 +41,11 @@ export function runSnapshot(projectDir: string): RunSnapshot {
   if (!queue) return { state, queue: null, errors };
   try {
     const costs = state ? costsByEntry(projectDir, state.runId) : {};
-    return { state, queue: describeQueue({ projectDir, queue, runBranch: state?.runBranch ?? null }, costs), errors };
+    return {
+      state,
+      queue: describeQueue({ projectDir, queue, runBranch: state?.runBranch ?? null }, costs),
+      errors,
+    };
   } catch (err) {
     return { state, queue: null, errors: [...errors, message(err)] };
   }

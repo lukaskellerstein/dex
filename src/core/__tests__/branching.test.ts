@@ -86,7 +86,11 @@ test("prepareBranch: an entry whose branch does not exist yet starts from its ba
   execSync("git branch 900-a", { cwd: dir });
   const { b } = entries();
   assert.equal(b.baseBranch, "900-a");
-  assert.deepEqual(prepareBranch(dir, b, "existing"), { kind: "ready", branch: "900-a", switched: true });
+  assert.deepEqual(prepareBranch(dir, b, "existing"), {
+    kind: "ready",
+    branch: "900-a",
+    switched: true,
+  });
   assert.equal(currentBranch(dir), "900-a");
 });
 

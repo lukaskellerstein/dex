@@ -87,9 +87,25 @@ function emitDecision(ctx: OrchestrationContext, runId: string, d: PickerDecisio
     entryId: d.kind === "complete" ? "" : d.entry.id,
     stage: d.kind === "stage" ? d.stage : null,
     decision: d.kind,
-    reason: d.kind === "complete" ? "every entry is done or skipped" : d.kind === "stage" ? d.reason : d.detail,
+    reason:
+      d.kind === "complete"
+        ? "every entry is done or skipped"
+        : d.kind === "stage"
+          ? d.reason
+          : d.detail,
   });
-  ctx.rlog.run("INFO", `loop: decision ${d.kind}`, d.kind === "complete" ? {} : { entryId: d.entry.id, ...(d.kind === "stage" ? { stage: d.stage, taskPhase: d.taskPhase ?? null, reason: d.reason } : { detail: d.detail }) });
+  ctx.rlog.run(
+    "INFO",
+    `loop: decision ${d.kind}`,
+    d.kind === "complete"
+      ? {}
+      : {
+          entryId: d.entry.id,
+          ...(d.kind === "stage"
+            ? { stage: d.stage, taskPhase: d.taskPhase ?? null, reason: d.reason }
+            : { detail: d.detail }),
+        },
+  );
 }
 
 function closeCycle(ctx: OrchestrationContext, runId: string, c: Cycle, decision: string): void {
@@ -105,7 +121,12 @@ function closeCycle(ctx: OrchestrationContext, runId: string, c: Cycle, decision
 }
 
 /** Emits the cycle events when the picker moves to another entry. */
-function enterCycle(ctx: OrchestrationContext, runId: string, current: Cycle | null, entry: ResolvedEntry): Cycle {
+function enterCycle(
+  ctx: OrchestrationContext,
+  runId: string,
+  current: Cycle | null,
+  entry: ResolvedEntry,
+): Cycle {
   if (current?.entry.id === entry.id) return current;
   if (current) closeCycle(ctx, runId, current, "done");
   const next: Cycle = { number: entry.index + 1, entry, cost: 0 };
@@ -114,8 +135,18 @@ function enterCycle(ctx: OrchestrationContext, runId: string, current: Cycle | n
   return next;
 }
 
-function pause(ctx: OrchestrationContext, runId: string, entry: ResolvedEntry | null, guard: Guard): void {
-  recordPause({ projectDir: ctx.projectDir, runId, emit: ctx.emit }, entry?.id ?? null, guard.reason, guard.detail);
+function pause(
+  ctx: OrchestrationContext,
+  runId: string,
+  entry: ResolvedEntry | null,
+  guard: Guard,
+): void {
+  recordPause(
+    { projectDir: ctx.projectDir, runId, emit: ctx.emit },
+    entry?.id ?? null,
+    guard.reason,
+    guard.detail,
+  );
   mutateState(ctx.projectDir, (s) => ({
     ...s,
     status: "paused",
@@ -160,13 +191,19 @@ async function decisionGuard(
 
 /** The policy's preflight commands and extra checkouts (research R12). */
 async function preflightGuard(ctx: OrchestrationContext): Promise<Guard | null> {
-  const log = (level: "INFO" | "WARN", msg: string, data?: unknown) => ctx.rlog.run(level, msg, data);
-  const failure = (await runPreflight(ctx.policy, ctx.projectDir, log)) ?? checkRepos(ctx.policy, ctx.projectDir);
+  const log = (level: "INFO" | "WARN", msg: string, data?: unknown) =>
+    ctx.rlog.run(level, msg, data);
+  const failure =
+    (await runPreflight(ctx.policy, ctx.projectDir, log)) ?? checkRepos(ctx.policy, ctx.projectDir);
   return failure ? { reason: "preflight_failed", detail: failure } : null;
 }
 
 /** Right before a stage: preflight for implement and verify, then the branch switch (research R4). */
-async function beforeStage(ctx: OrchestrationContext, deps: LoopDeps, d: StageDecision): Promise<Guard | null> {
+async function beforeStage(
+  ctx: OrchestrationContext,
+  deps: LoopDeps,
+  d: StageDecision,
+): Promise<Guard | null> {
   if (d.stage === "implement" || d.stage === "verify") {
     const failed = await preflightGuard(ctx);
     if (failed) return failed;
@@ -178,7 +215,8 @@ async function beforeStage(ctx: OrchestrationContext, deps: LoopDeps, d: StageDe
       detail: `${d.entry.id} · ${d.stage} needs branch ${prep.target}, but the tree has uncommitted files: ${prep.files.join(", ")}`,
     };
   }
-  if (prep.switched) ctx.rlog.run("INFO", `loop: switched to ${prep.branch} for ${d.entry.id} · ${d.stage}`);
+  if (prep.switched)
+    ctx.rlog.run("INFO", `loop: switched to ${prep.branch} for ${d.entry.id} · ${d.stage}`);
   return null;
 }
 
@@ -214,7 +252,8 @@ async function runOneStage(
     return { kind: "failed" };
   }
   const dirty = leftUncommitted(ctx.projectDir);
-  if (dirty.length > 0) ctx.emit({ type: "tree_dirty", runId: deps.runId, cycleNumber: cycle.number, files: dirty });
+  if (dirty.length > 0)
+    ctx.emit({ type: "tree_dirty", runId: deps.runId, cycleNumber: cycle.number, files: dirty });
   // A gate is for a stage that finished: not one that Stop or a limit cut short.
   const finished = !ctx.abort.signal.aborted && r.limitHit === null;
   const after =
@@ -231,8 +270,13 @@ function terminate(
   cost: number,
   stagesRun: number,
 ): LoopResult {
-  const view = describeQueue({ projectDir: ctx.projectDir, queue: deps.queue, runBranch: deps.runBranch });
-  const titles = (status: string) => view.entries.filter((e) => e.status === status).map((e) => e.title);
+  const view = describeQueue({
+    projectDir: ctx.projectDir,
+    queue: deps.queue,
+    runBranch: deps.runBranch,
+  });
+  const titles = (status: string) =>
+    view.entries.filter((e) => e.status === status).map((e) => e.title);
   const termination: LoopTermination = {
     reason,
     cyclesCompleted: titles("done").length,
@@ -265,7 +309,11 @@ export async function runQueueLoop(ctx: OrchestrationContext, deps: LoopDeps): P
       reason = "budget_exceeded";
       break;
     }
-    const d = pickNext({ projectDir: ctx.projectDir, queue: deps.queue, runBranch: deps.runBranch });
+    const d = pickNext({
+      projectDir: ctx.projectDir,
+      queue: deps.queue,
+      runBranch: deps.runBranch,
+    });
     emitDecision(ctx, runId, d);
     if (d.kind === "complete") {
       reason = "queue_complete";
@@ -295,7 +343,12 @@ export async function runQueueLoop(ctx: OrchestrationContext, deps: LoopDeps): P
     stagesRun++;
     last = { entryId: d.entry.id, stage: d.stage, taskPhase: d.taskPhase ?? null };
     // A stopped stage still cost money, but it says nothing about progress.
-    recordStage(ctx.projectDir, last, outcome.cost, ctx.abort.signal.aborted ? null : outcome.implement);
+    recordStage(
+      ctx.projectDir,
+      last,
+      outcome.cost,
+      ctx.abort.signal.aborted ? null : outcome.implement,
+    );
     if (outcome.after) {
       pause(ctx, runId, d.entry, outcome.after);
       reason = "paused";
@@ -307,7 +360,8 @@ export async function runQueueLoop(ctx: OrchestrationContext, deps: LoopDeps): P
 
   if (ctx.abort.signal.aborted) reason = "user_abort";
   if (cycle) {
-    const decision = reason === "queue_complete" ? "done" : reason === "user_abort" ? "stopped" : reason;
+    const decision =
+      reason === "queue_complete" ? "done" : reason === "user_abort" ? "stopped" : reason;
     closeCycle(ctx, runId, cycle, decision);
   }
   return terminate(ctx, deps, reason, cost, stagesRun);

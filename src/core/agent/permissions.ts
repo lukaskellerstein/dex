@@ -7,7 +7,13 @@
 import os from "node:os";
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { isTrackedAtHead } from "../git.js";
-import { askQuestions, type HumanIO, isRecommended, type QuestionOptions, requestToolApproval } from "../humanInput.js";
+import {
+  askQuestions,
+  type HumanIO,
+  isRecommended,
+  type QuestionOptions,
+  requestToolApproval,
+} from "../humanInput.js";
 import type { RunLogger } from "../log.js";
 import { decideToolUse, type Policy, type PolicyEnv, subjectOf, type ToolCall } from "../policy.js";
 import type { UserInputQuestion } from "../types.js";
@@ -65,7 +71,9 @@ export function preToolUseDecision(
       reason: decision.reason,
       rule: decision.rule,
     });
-    d.rlog?.agentRun("WARN", `policy: denied ${toolName} (${decision.rule}) — ${decision.reason}`, { subject });
+    d.rlog?.agentRun("WARN", `policy: denied ${toolName} (${decision.rule}) — ${decision.reason}`, {
+      subject,
+    });
     return hookDecision("deny", decision.reason);
   }
   if (decision.kind === "ask") return hookDecision("ask", decision.reason);
@@ -117,7 +125,10 @@ function toQuestions(raw: Array<Record<string, unknown>>): UserInputQuestion[] {
 }
 
 /** AskUserQuestion: answered by the stage's question mode (research R7); no recommended option means wait. */
-async function answerQuestions(d: PermissionDeps, input: Record<string, unknown>): Promise<PermissionResult> {
+async function answerQuestions(
+  d: PermissionDeps,
+  input: Record<string, unknown>,
+): Promise<PermissionResult> {
   const rawQuestions = (input.questions ?? []) as Array<Record<string, unknown>>;
   const answers = await askQuestions(d.io, d.entryId, toQuestions(rawQuestions), d.questions);
   d.rlog?.agentRun("INFO", `canUseTool: questions answered (${d.questions.mode})`, { answers });

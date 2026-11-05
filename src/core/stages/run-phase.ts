@@ -82,12 +82,18 @@ export function buildEntry(config: RunConfig): ResolvedEntry {
   const queue = loadQueue(config.projectDir);
   const target = path.resolve(config.projectDir, config.specDir);
   const found = queue
-    ? resolveEntries(queue, branch, null).find((e) => path.resolve(config.projectDir, e.specDir) === target)
+    ? resolveEntries(queue, branch, null).find(
+        (e) => path.resolve(config.projectDir, e.specDir) === target,
+      )
     : undefined;
   return found ?? entryForSpecDir(config.specDir, branch);
 }
 
-export function buildPrompt(config: RunConfig, phase: TaskPhase, entry: ResolvedEntry = buildEntry(config)): string {
+export function buildPrompt(
+  config: RunConfig,
+  phase: TaskPhase,
+  entry: ResolvedEntry = buildEntry(config),
+): string {
   if (config.mode !== "plan") {
     return buildImplementPrompt(entry, config.projectDir, { phase, goalPath: null });
   }

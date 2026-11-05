@@ -40,7 +40,11 @@ after(() => {
 });
 
 /** A terminal that records every line; `answers` makes it a TTY that types them in order. */
-function fakeTerminal(answers: string[] | null = null): { term: Terminal; text: () => string; left: () => number } {
+function fakeTerminal(answers: string[] | null = null): {
+  term: Terminal;
+  text: () => string;
+  left: () => number;
+} {
   const lines: string[] = [];
   const queue = answers ? [...answers] : null;
   const term: Terminal = {
@@ -65,14 +69,17 @@ function treeHash(dir: string): Record<string, string> {
   for (const rel of fs.readdirSync(dir, { recursive: true }) as string[]) {
     if (rel === ".git" || rel.startsWith(`.git${path.sep}`)) continue;
     const abs = path.join(dir, rel);
-    if (fs.statSync(abs).isFile()) out[rel] = crypto.createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
+    if (fs.statSync(abs).isFile())
+      out[rel] = crypto.createHash("sha256").update(fs.readFileSync(abs)).digest("hex");
   }
   return out;
 }
 
 /** The existing-project fixture where every implement of 900-fixture-a asks a question with no recommended option. */
 function mkAskingProject(): string {
-  const mock = mockFixture("existing-project.json") as { entries: Record<string, Record<string, Record<string, unknown>>> };
+  const mock = mockFixture("existing-project.json") as {
+    entries: Record<string, Record<string, Record<string, unknown>>>;
+  };
   mock.entries["900-fixture-a"].implement.asks = [
     { question: "What is the SLA?", options: [{ label: "99.9%" }, { label: "99.99%" }] },
   ];
@@ -80,7 +87,12 @@ function mkAskingProject(): string {
 }
 
 test("parseArgs: run with one mode flag and --agent, queue init; anything else is a usage error", () => {
-  assert.deepEqual(parseArgs(["run", "p"]), { kind: "run", projectDir: "p", mode: "run", agent: null });
+  assert.deepEqual(parseArgs(["run", "p"]), {
+    kind: "run",
+    projectDir: "p",
+    mode: "run",
+    agent: null,
+  });
   assert.deepEqual(parseArgs(["run", "p", "--once", "--agent", "mock"]), {
     kind: "run",
     projectDir: "p",
@@ -132,13 +144,22 @@ test("dex run --dry-run: one block per remaining entry, every prompt shown, noth
     assert.match(blockA, /^decision : implement phase 1 — phase 1 \(.+\) has unchecked tasks$/m);
     assert.match(blockA, /^branch {3}: stay on 900-fixture-a$/m);
     assert.match(blockA, /^env {6}: SPECIFY_FEATURE_DIRECTORY=specs\/900-fixture-a/m);
-    assert.match(blockA, /^options {2}: settingSources=user,project,local permissionMode=default maxTurns=75 budget\/stage=none$/m);
+    assert.match(
+      blockA,
+      /^options {2}: settingSources=user,project,local permissionMode=default maxTurns=75 budget\/stage=none$/m,
+    );
     assert.match(blockA, /^system {3}: claude_code preset$/m);
     assert.match(blockA, /^prompt {3}:\n {2}\S/m);
     assert.match(blockB, /^decision : specify — specs\/901-fixture-b\/spec\.md is missing$/m);
-    assert.match(blockB, /^branch {3}: stay on 900-fixture-a \(base\), spec-kit creates 901-fixture-b$/m);
+    assert.match(
+      blockB,
+      /^branch {3}: stay on 900-fixture-a \(base\), spec-kit creates 901-fixture-b$/m,
+    );
     assert.match(blockB, /GIT_BRANCH_NAME=901-fixture-b/);
-    assert.match(out, /^policy {3}: \.dex\/policy\.json · deny 1 · ask 0 · frozen 1 · preflight 1/m);
+    assert.match(
+      out,
+      /^policy {3}: \.dex\/policy\.json · deny 1 · ask 0 · frozen 1 · preflight 1/m,
+    );
 
     assert.deepEqual(treeHash(dir), before);
     assert.equal(execSync("git rev-parse HEAD", { cwd: dir, encoding: "utf-8" }), head);
@@ -153,7 +174,9 @@ test("dex run --once: exactly one stage, then the run pauses user_abort and exit
   try {
     const commits = logSubjects(dir).length;
     assert.equal(await main(["run", dir, "--once"], fakeTerminal().term), 0);
-    assert.deepEqual(logSubjects(dir).slice(0, logSubjects(dir).length - commits), ["mock(implement): 900-fixture-a"]);
+    assert.deepEqual(logSubjects(dir).slice(0, logSubjects(dir).length - commits), [
+      "mock(implement): 900-fixture-a",
+    ]);
     const state = readState(dir);
     assert.equal(state?.status, "paused");
     assert.equal(state?.pauseReason, "user_abort");
@@ -173,7 +196,10 @@ test("dex run without a TTY: a question that waits is parked, the run pauses, ex
     assert.equal(state?.pauseReason, "question");
     assert.equal(state?.pendingRequests.length, 1);
     assert.equal(logSubjects(dir).length, commits, "the parked stage leaves nothing behind");
-    assert.match(fs.readFileSync(path.join(dir, ".dex/questions.md"), "utf-8"), /What is the SLA\?/);
+    assert.match(
+      fs.readFileSync(path.join(dir, ".dex/questions.md"), "utf-8"),
+      /What is the SLA\?/,
+    );
 
     const before = treeHash(dir);
     const s = fakeTerminal();

@@ -96,7 +96,13 @@ export async function runClarificationPhase(
   if (!fs.existsSync(productDomainPath)) {
     rlog.run("INFO", "runLoop: starting product domain clarification");
     const prompt = buildProductClarificationPrompt(goalPath, productDomainPath);
-    const result = await runStage({ config, prompt, runId, cycleNumber: 0, step: "clarification_product" });
+    const result = await runStage({
+      config,
+      prompt,
+      runId,
+      cycleNumber: 0,
+      step: "clarification_product",
+    });
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
     if (!fs.existsSync(productDomainPath)) {
@@ -116,7 +122,13 @@ export async function runClarificationPhase(
       productDomainPath,
       technicalDomainPath,
     );
-    const result = await runStage({ config, prompt, runId, cycleNumber: 0, step: "clarification_technical" });
+    const result = await runStage({
+      config,
+      prompt,
+      runId,
+      cycleNumber: 0,
+      step: "clarification_technical",
+    });
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
     if (!fs.existsSync(technicalDomainPath)) {

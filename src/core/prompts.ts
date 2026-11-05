@@ -1,5 +1,11 @@
 import path from "node:path";
-import { isFixPhase, isInScope, type QueueV3, type ResolvedEntry, type StageName } from "./queue.js";
+import {
+  isFixPhase,
+  isInScope,
+  type QueueV3,
+  type ResolvedEntry,
+  type StageName,
+} from "./queue.js";
 import type { RunConfig, TaskPhase } from "./types.js";
 
 // ── Structured Output Schemas ──
@@ -255,7 +261,11 @@ export interface BriefExtras {
   previousBrief: string | null;
 }
 
-export function buildBriefPrompt(entry: ResolvedEntry, projectDir: string, extras: BriefExtras): string {
+export function buildBriefPrompt(
+  entry: ResolvedEntry,
+  projectDir: string,
+  extras: BriefExtras,
+): string {
   const target = absPath(projectDir, entry.brief ?? `docs/${entry.id}.md`);
   const sources = (entry.generate?.sources ?? []).map((s) => `- ${absPath(projectDir, s)}`);
   const example = extras.previousBrief
@@ -345,7 +355,9 @@ export function buildImplementPrompt(
   const lines = [
     `- You are implementing task phase ${phase.number}: ${phase.name}.`,
     ...(scope
-      ? [`- Only these tasks are in scope: ${scope.join(", ")}. Leave every other unchecked task alone.`]
+      ? [
+          `- Only these tasks are in scope: ${scope.join(", ")}. Leave every other unchecked task alone.`,
+        ]
       : []),
     `- After completing EACH task, mark it [X] in ${specPath}/tasks.md before you start the next one. Dex reads the ticks to decide what runs next.`,
     "- Run the build, the typecheck and the tests after each logical group of changes.",
@@ -424,10 +436,17 @@ ${rules([commitRule(entry)])}`;
 }
 
 /** The prompt for one of the five file stages (brief → tasks); implement and verify have their own builders. */
-export function buildStagePrompt(queue: QueueV3, entry: ResolvedEntry, projectDir: string, stage: StageName): string {
+export function buildStagePrompt(
+  queue: QueueV3,
+  entry: ResolvedEntry,
+  projectDir: string,
+  stage: StageName,
+): string {
   switch (stage) {
     case "brief":
-      return buildBriefPrompt(entry, projectDir, { previousBrief: queue.entries[entry.index - 1]?.brief ?? null });
+      return buildBriefPrompt(entry, projectDir, {
+        previousBrief: queue.entries[entry.index - 1]?.brief ?? null,
+      });
     case "specify":
       return buildSpecifyPrompt(entry, projectDir);
     case "clarify":

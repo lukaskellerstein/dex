@@ -20,7 +20,10 @@ import { runBuild } from "./stages/build.js";
 import { runClarificationPhase } from "./stages/clarification.js";
 import { type LoopResult, runQueueLoop } from "./stages/loop.js";
 import { ensureManifest } from "./stages/manifest-extraction.js";
-import { checkExistingProject, runPrerequisites as runPrerequisitesPhase } from "./stages/prerequisites.js";
+import {
+  checkExistingProject,
+  runPrerequisites as runPrerequisitesPhase,
+} from "./stages/prerequisites.js";
 import { RunTaskState, runPhase } from "./stages/run-phase.js";
 import { runStage } from "./stages/run-stage.js";
 import { loadState, updateState } from "./state.js";
@@ -142,7 +145,9 @@ async function resolveGoalPath(config: RunConfig, rlog: RunLogger): Promise<stri
   };
   const persisted = (await loadState(config.projectDir))?.config.descriptionFile;
   const found =
-    probe(config.descriptionFile) ?? probe(persisted) ?? probe(path.join(config.projectDir, "GOAL.md"));
+    probe(config.descriptionFile) ??
+    probe(persisted) ??
+    probe(path.join(config.projectDir, "GOAL.md"));
   if (found) return found;
   const recovered = runs
     .listRuns(config.projectDir)
@@ -252,7 +257,10 @@ async function runNewProject(
     fullPlanPath: clarified.fullPlanPath,
   });
   await updateState(config.projectDir, {
-    cumulativeCostUsd: ((await loadState(config.projectDir))?.cumulativeCostUsd ?? 0) + clarified.cumulativeCost + cost,
+    cumulativeCostUsd:
+      ((await loadState(config.projectDir))?.cumulativeCostUsd ?? 0) +
+      clarified.cumulativeCost +
+      cost,
   });
   const goalForAgents = fs.existsSync(clarified.fullPlanPath) ? clarified.fullPlanPath : goalPath;
   const result = await runQueueLoop(ctx, {
@@ -276,7 +284,10 @@ async function runLoop(ctx: OrchestrationContext, run: LoopRun): Promise<LoopOut
  * The branch the run ended on and its queue base — what an opt-in pull
  * request would compare. No base when the branch is no entry's own.
  */
-function endBranches(projectDir: string, queue: QueueV3): { baseBranch: string; branchName: string } {
+function endBranches(
+  projectDir: string,
+  queue: QueueV3,
+): { baseBranch: string; branchName: string } {
   const branchName = getCurrentBranch(projectDir);
   const entry = resolveEntries(queue, branchName, null).find((e) => e.branch === branchName);
   const baseBranch = entry && entry.baseBranch !== branchName ? entry.baseBranch : "";
@@ -288,12 +299,21 @@ function endBranches(projectDir: string, queue: QueueV3): { baseBranch: string; 
  * creates no branch, runs no clarification and makes no commit; the agents
  * commit and spec-kit makes the feature branches.
  */
-async function runExistingProject(ctx: OrchestrationContext, run: LoopRun, queue: QueueV3): Promise<LoopOutcome> {
+async function runExistingProject(
+  ctx: OrchestrationContext,
+  run: LoopRun,
+  queue: QueueV3,
+): Promise<LoopOutcome> {
   const { config, runId, rlog } = run;
   rlog.run("INFO", `runLoop: existing project, ${queue.entries.length} queue entries`);
   const failures = await checkExistingProject(ctx, runId);
   const startGuard =
-    failures.length > 0 ? { reason: "preflight_failed" as const, detail: `prerequisites failed: ${failures.join("; ")}` } : null;
+    failures.length > 0
+      ? {
+          reason: "preflight_failed" as const,
+          detail: `prerequisites failed: ${failures.join("; ")}`,
+        }
+      : null;
   const result = await runQueueLoop(ctx, {
     config,
     runId,

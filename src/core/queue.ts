@@ -137,7 +137,11 @@ function checkTasks(file: string, where: string, v: unknown): void {
   for (const item of v) {
     const m = typeof item === "string" ? TASK_RE.exec(item) : null;
     if (!m || (m[2] !== undefined && Number(m[1]) > Number(m[2]))) {
-      throw new QueueInvalidError(file, where, `"tasks" item "${String(item)}" is not T<n> or T<a>-T<b>`);
+      throw new QueueInvalidError(
+        file,
+        where,
+        `"tasks" item "${String(item)}" is not T<n> or T<a>-T<b>`,
+      );
     }
   }
 }
@@ -147,8 +151,16 @@ function checkGenerate(file: string, where: string, v: unknown): void {
   if (!isObject(v)) throw new QueueInvalidError(file, where, `"generate" must be an object`);
   rejectUnknown(file, `${where}.generate`, v, GENERATE_KEYS);
   const { sources, instructions } = v;
-  if (!Array.isArray(sources) || sources.length === 0 || sources.some((s) => typeof s !== "string" || !s)) {
-    throw new QueueInvalidError(file, where, `"generate.sources" must be a non-empty list of paths`);
+  if (
+    !Array.isArray(sources) ||
+    sources.length === 0 ||
+    sources.some((s) => typeof s !== "string" || !s)
+  ) {
+    throw new QueueInvalidError(
+      file,
+      where,
+      `"generate.sources" must be a non-empty list of paths`,
+    );
   }
   if (instructions !== undefined && typeof instructions !== "string") {
     throw new QueueInvalidError(file, where, `"generate.instructions" must be a string`);
@@ -222,8 +234,7 @@ export function resolveEntries(
   const out: ResolvedEntry[] = [];
   for (const [index, e] of queue.entries.entries()) {
     const prev = out[index - 1];
-    const branch =
-      queue.kind === "new" ? (runBranch ?? currentBranch) : (e.branch ?? e.id);
+    const branch = queue.kind === "new" ? (runBranch ?? currentBranch) : (e.branch ?? e.id);
     out.push({
       index,
       id: e.id,
@@ -350,7 +361,10 @@ function migrateManifest(projectDir: string): QueueV3 | null {
  * `persistMigration` is false (a dry run writes nothing). Null when the
  * project has neither.
  */
-export function loadQueue(projectDir: string, opts: { persistMigration?: boolean } = {}): QueueV3 | null {
+export function loadQueue(
+  projectDir: string,
+  opts: { persistMigration?: boolean } = {},
+): QueueV3 | null {
   const file = queuePath(projectDir);
   if (fs.existsSync(file)) {
     let raw: unknown;

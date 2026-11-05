@@ -24,7 +24,15 @@ function verifyMd(verdict: "passed" | "failed", hash: string): string {
   return `# Verification\n\n**Verdict**: ${verdict}\n**Tasks-SHA256**: ${hash}\n**Checked**: 2026-11-05T10:00:00Z\n`;
 }
 
-const ALL_DONE = tasksMd([["Setup", [["T001", true], ["T002", true]]]]);
+const ALL_DONE = tasksMd([
+  [
+    "Setup",
+    [
+      ["T001", true],
+      ["T002", true],
+    ],
+  ],
+]);
 
 /** Every artefact for `id`, verified against its own tasks.md. */
 function doneEntryFiles(id: string): Record<string, string> {
@@ -104,8 +112,20 @@ test("picker: an unchecked task → implement on the first phase that has one", 
     "specs/001-a/spec.md": SPEC_CLARIFIED,
     "specs/001-a/plan.md": "# Plan\n",
     "specs/001-a/tasks.md": tasksMd([
-      ["Setup", [["T001", true], ["T002", true]]],
-      ["Core", [["T003", true], ["T004", false]]],
+      [
+        "Setup",
+        [
+          ["T001", true],
+          ["T002", true],
+        ],
+      ],
+      [
+        "Core",
+        [
+          ["T003", true],
+          ["T004", false],
+        ],
+      ],
       ["Polish", [["T005", false]]],
     ]),
   };
@@ -165,13 +185,25 @@ test("picker: skip treats the listed stages as done", () => {
 });
 
 test("picker: human status done or skipped passes over the entry without reading files", () => {
-  const d = pickIn({}, newQueue([{ ...A, status: "done" }, { ...B, status: "skipped" }]));
+  const d = pickIn(
+    {},
+    newQueue([
+      { ...A, status: "done" },
+      { ...B, status: "skipped" },
+    ]),
+  );
   assert.deepEqual(d, { kind: "complete" });
 });
 
 test("picker: out-of-scope unchecked tasks do not block verify", () => {
   const tasks = tasksMd([
-    ["Core", [["T001", true], ["T002", false]]],
+    [
+      "Core",
+      [
+        ["T001", true],
+        ["T002", false],
+      ],
+    ],
     ["Later", [["T003", false]]],
   ]);
   const files = {
@@ -184,7 +216,15 @@ test("picker: out-of-scope unchecked tasks do not block verify", () => {
 });
 
 test("picker: a fix phase is in scope even with a task filter", () => {
-  const tasks = `${tasksMd([["Core", [["T001", true], ["T002", false]]]])}\n## Phase 2: Verify fixes V1\n\n- [ ] T003 fix it\n`;
+  const tasks = `${tasksMd([
+    [
+      "Core",
+      [
+        ["T001", true],
+        ["T002", false],
+      ],
+    ],
+  ])}\n## Phase 2: Verify fixes V1\n\n- [ ] T003 fix it\n`;
   const files = {
     "specs/001-a/spec.md": SPEC_CLARIFIED,
     "specs/001-a/plan.md": "# Plan\n",
@@ -199,7 +239,11 @@ test("picker: task ids that tasks.md does not have → pause invalid_input", () 
     "specs/001-a/plan.md": "# Plan\n",
     "specs/001-a/tasks.md": ALL_DONE,
   };
-  assertPause(pickIn(files, newQueue([{ ...A, tasks: ["T001", "T900-T901"] }])), "001-a", /T900, T901/);
+  assertPause(
+    pickIn(files, newQueue([{ ...A, tasks: ["T001", "T900-T901"] }])),
+    "001-a",
+    /T900, T901/,
+  );
 });
 
 test("picker: a brief path that is missing, with no generate → pause invalid_input", () => {
@@ -295,7 +339,12 @@ test("describeQueue: statuses and next stages for every entry, read-only", () =>
   const files = { ...doneEntryFiles("001-a"), "specs/002-b/spec.md": "# Spec\n" };
   const dir = mkTmpProject(files);
   try {
-    const queue = newQueue([A, B, { id: "003-c", title: "C" }, { id: "004-d", title: "D", status: "skipped" }]);
+    const queue = newQueue([
+      A,
+      B,
+      { id: "003-c", title: "C" },
+      { id: "004-d", title: "D", status: "skipped" },
+    ]);
     const view = describeQueue({ projectDir: dir, queue, runBranch: null }, { "002-b": 1.5 });
     assert.equal(view.kind, "new");
     assert.deepEqual(

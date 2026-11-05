@@ -7,11 +7,7 @@
       "reason": "this project's maintainers push by hand"
     }
   ],
-  "frozen": [
-    "docs/claim*.md"
-  ],
-  "preflight": [
-    "test -d .specify"
-  ],
+  "frozen": ["docs/claim*.md"],
+  "preflight": ["test -d .specify"],
   "openPullRequest": false
 }

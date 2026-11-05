@@ -24,11 +24,15 @@ function isRuntimePath(file: string): boolean {
  */
 export function dirtyFiles(projectDir: string): string[] {
   // --no-optional-locks: no index refresh, so a read never writes .git/index.
-  const out = execFileSync("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
-    cwd: projectDir,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const out = execFileSync(
+    "git",
+    ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    {
+      cwd: projectDir,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   const records = out.split("\0");
   const files: string[] = [];
   for (let i = 0; i < records.length; i++) {
@@ -60,7 +64,11 @@ export function stageBranch(projectDir: string, entry: ResolvedEntry): string {
 }
 
 /** Right before a stage: switch an existing project to the stage's branch if the tree is clean. */
-export function prepareBranch(projectDir: string, entry: ResolvedEntry, kind: QueueKind): BranchPrep {
+export function prepareBranch(
+  projectDir: string,
+  entry: ResolvedEntry,
+  kind: QueueKind,
+): BranchPrep {
   const current = getCurrentBranch(projectDir);
   if (kind === "new") return { kind: "ready", branch: current, switched: false };
   const target = stageBranch(projectDir, entry);

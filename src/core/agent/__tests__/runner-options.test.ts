@@ -50,8 +50,15 @@ test("buildQueryOptions: the preset system prompt carries the policy's append fi
   const dir = mkTmpProject({ ".dex/loop-rules.md": "Never touch prod.\n" });
   try {
     const o = options(policyIn(dir, { systemPromptAppend: ".dex/loop-rules.md" }), undefined, dir);
-    assert.deepEqual(o.systemPrompt, { type: "preset", preset: "claude_code", append: "Never touch prod.\n" });
-    assert.deepEqual(options(DEFAULT_POLICY).systemPrompt, { type: "preset", preset: "claude_code" });
+    assert.deepEqual(o.systemPrompt, {
+      type: "preset",
+      preset: "claude_code",
+      append: "Never touch prod.\n",
+    });
+    assert.deepEqual(options(DEFAULT_POLICY).systemPrompt, {
+      type: "preset",
+      preset: "claude_code",
+    });
   } finally {
     rmTmp(dir);
   }
@@ -68,8 +75,14 @@ test("buildQueryOptions: keeps PATH, merges the policy env, the stage env wins",
 
 test("buildQueryOptions: maxTurns is the smaller of the config and the policy limit", () => {
   assert.equal(options(DEFAULT_POLICY).maxTurns, 40);
-  assert.equal(options(policyIn("/tmp/project", { limits: { maxTurnsPerStage: 25 } })).maxTurns, 25);
-  assert.equal(options(policyIn("/tmp/project", { limits: { maxTurnsPerStage: 99 } })).maxTurns, 40);
+  assert.equal(
+    options(policyIn("/tmp/project", { limits: { maxTurnsPerStage: 25 } })).maxTurns,
+    25,
+  );
+  assert.equal(
+    options(policyIn("/tmp/project", { limits: { maxTurnsPerStage: 99 } })).maxTurns,
+    40,
+  );
 });
 
 test("buildQueryOptions: the policy's sources, mode and stage budget; never skips permission checks", () => {
@@ -148,7 +161,13 @@ function withState(fn: (dir: string) => Promise<void>): () => Promise<void> {
   return async () => {
     const dir = mkTmpProject({});
     try {
-      await saveState(dir, createInitialState({ ...config, projectDir: dir }, "run-1", { kind: "existing", runBranch: null }));
+      await saveState(
+        dir,
+        createInitialState({ ...config, projectDir: dir }, "run-1", {
+          kind: "existing",
+          runBranch: null,
+        }),
+      );
       await fn(dir);
     } finally {
       rmTmp(dir);
@@ -175,7 +194,14 @@ test(
     assert.equal(pending.length, 1);
     assert.equal(pending[0].kind, "tool_approval");
 
-    assert.equal(resolveRequest(request.requestId, { kind: "tool_approval", decision: "deny", message: "not today" }), true);
+    assert.equal(
+      resolveRequest(request.requestId, {
+        kind: "tool_approval",
+        decision: "deny",
+        message: "not today",
+      }),
+      true,
+    );
     assert.deepEqual(await asked, { behavior: "deny", message: "not today" });
     assert.deepEqual((await loadState(dir))?.pendingRequests, []);
   }),
@@ -185,13 +211,20 @@ test(
   "canUseTool: a policy ask rule asks with source policy; approve runs the call",
   withState(async (dir) => {
     const events: OrchestratorEvent[] = [];
-    const asked = makeCanUseTool(deps(dir, events))("Bash", { command: "kubectl apply -f x.yaml" }, SDK_OPTIONS as CanUseToolOptions);
+    const asked = makeCanUseTool(deps(dir, events))(
+      "Bash",
+      { command: "kubectl apply -f x.yaml" },
+      SDK_OPTIONS as CanUseToolOptions,
+    );
     const request = events.find((e) => e.type === "tool_approval_request");
     assert.ok(request?.type === "tool_approval_request");
     assert.equal(request.source, "policy");
     assert.equal(request.reason, "deploys need a human");
     resolveRequest(request.requestId, { kind: "tool_approval", decision: "approve" });
-    assert.deepEqual(await asked, { behavior: "allow", updatedInput: { command: "kubectl apply -f x.yaml" } });
+    assert.deepEqual(await asked, {
+      behavior: "allow",
+      updatedInput: { command: "kubectl apply -f x.yaml" },
+    });
   }),
 );
 
@@ -199,7 +232,11 @@ test(
   "canUseTool: nothing matched anywhere → allow, with no request",
   withState(async (dir) => {
     const events: OrchestratorEvent[] = [];
-    const result = await makeCanUseTool(deps(dir, events))("Edit", { file_path: "src/a.ts" }, SDK_OPTIONS as CanUseToolOptions);
+    const result = await makeCanUseTool(deps(dir, events))(
+      "Edit",
+      { file_path: "src/a.ts" },
+      SDK_OPTIONS as CanUseToolOptions,
+    );
     assert.deepEqual(result, { behavior: "allow", updatedInput: { file_path: "src/a.ts" } });
     assert.deepEqual(events, []);
   }),

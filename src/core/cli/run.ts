@@ -6,7 +6,13 @@
 
 import { LOOP_DEFAULTS } from "../config.js";
 import type { OrchestratorEvent } from "../events.js";
-import { bookAnswers, isWaiting, type PendingRequest, type RequestAnswer, resolveRequest } from "../humanInput.js";
+import {
+  bookAnswers,
+  isWaiting,
+  type PendingRequest,
+  type RequestAnswer,
+  resolveRequest,
+} from "../humanInput.js";
 import { pauseForHuman, run, stopRun } from "../orchestrator.js";
 import { type DexState, readState } from "../state.js";
 import type { RunConfig } from "../types.js";
@@ -52,9 +58,13 @@ class EventPrinter {
         if (ev.decision === "stage") return [`→ ${ev.entryId} · ${ev.stage}: ${ev.reason}`];
         return ev.decision === "pause" ? [`⏸ ${ev.entryId}: ${ev.reason}`] : [];
       case "step_started":
-        return [`   ▸ ${ev.step}${ev.taskPhaseNumber ? ` (task phase ${ev.taskPhaseNumber})` : ""}`];
+        return [
+          `   ▸ ${ev.step}${ev.taskPhaseNumber ? ` (task phase ${ev.taskPhaseNumber})` : ""}`,
+        ];
       case "step_completed":
-        return [`   ${ev.stopped ? "■" : "✓"} ${ev.step} ${secs(ev.durationMs)} · $${ev.costUsd.toFixed(2)}`];
+        return [
+          `   ${ev.stopped ? "■" : "✓"} ${ev.step} ${secs(ev.durationMs)} · $${ev.costUsd.toFixed(2)}`,
+        ];
       case "request_resolved":
         return this.defaulted(ev.requestId, ev.by);
       case "tree_dirty":
@@ -97,7 +107,9 @@ function onHeldRequest(ev: OrchestratorEvent, term: Terminal, chain: Promise<voi
   if (!request || !("requestId" in ev) || !isWaiting(ev.requestId)) return chain;
   const { requestId } = ev;
   if (!term.ask) {
-    term.out(`⏸ ${request.kind === "question" ? "a question" : "a tool approval"} waits for a human, and there is no TTY`);
+    term.out(
+      `⏸ ${request.kind === "question" ? "a question" : "a tool approval"} waits for a human, and there is no TTY`,
+    );
     pauseForHuman(request.kind);
     return chain;
   }
@@ -114,14 +126,22 @@ function onHeldRequest(ev: OrchestratorEvent, term: Terminal, chain: Promise<voi
 type HeldRequest = Exclude<PendingRequest, { kind: "pause" }>;
 
 /** The requests a parked run left behind go to the answer book first, when a human is here to answer them. */
-async function answerParked(projectDir: string, state: DexState | null, term: Terminal): Promise<void> {
+async function answerParked(
+  projectDir: string,
+  state: DexState | null,
+  term: Terminal,
+): Promise<void> {
   const pending = state?.pendingRequests ?? [];
-  for (const p of pending) if (p.kind === "pause") term.out(`⏸ the last run paused (${p.reason}): ${p.detail}`);
+  for (const p of pending)
+    if (p.kind === "pause") term.out(`⏸ the last run paused (${p.reason}): ${p.detail}`);
   const parked = pending.filter((r): r is HeldRequest => r.kind !== "pause");
   if (parked.length === 0 || !term.ask) return;
-  term.out(`The last run left ${parked.length} request(s). Your answers go to the answer book; the stage reads them when it asks again.`);
+  term.out(
+    `The last run left ${parked.length} request(s). Your answers go to the answer book; the stage reads them when it asks again.`,
+  );
   const answered: Array<{ request: PendingRequest; answer: RequestAnswer }> = [];
-  for (const request of parked) answered.push({ request, answer: await askInTerminal(term, request) });
+  for (const request of parked)
+    answered.push({ request, answer: await askInTerminal(term, request) });
   bookAnswers(projectDir, answered);
 }
 
@@ -151,7 +171,12 @@ function runConfig(projectDir: string, state: DexState | null, opts: RunOptions)
  * `error` event fails the run even when the loop carried on (a failed push,
  * a broken mock config), so a clean exit 0 means nothing went wrong.
  */
-function exitCode(projectDir: string, printer: EventPrinter, once: boolean, interrupted: boolean): number {
+function exitCode(
+  projectDir: string,
+  printer: EventPrinter,
+  once: boolean,
+  interrupted: boolean,
+): number {
   const end = readState(projectDir);
   if (!printer.started || !end || printer.errors > 0) return 1;
   if (end.status === "completed") return 0;
@@ -160,7 +185,11 @@ function exitCode(projectDir: string, printer: EventPrinter, once: boolean, inte
 }
 
 /** Runs the project's queue from the terminal; resolves with the exit code. */
-export async function runCommand(projectDir: string, opts: RunOptions, term: Terminal): Promise<number> {
+export async function runCommand(
+  projectDir: string,
+  opts: RunOptions,
+  term: Terminal,
+): Promise<number> {
   const state = readState(projectDir);
   const printer = new EventPrinter(term);
   let interrupted = false;

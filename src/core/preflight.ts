@@ -28,15 +28,27 @@ interface ExecError {
 }
 
 /** The first preflight command that fails, as one line; null when all pass. */
-export async function runPreflight(policy: Policy, projectDir: string, log: PreflightLog): Promise<string | null> {
+export async function runPreflight(
+  policy: Policy,
+  projectDir: string,
+  log: PreflightLog,
+): Promise<string | null> {
   for (const command of policy.preflight) {
     try {
-      const { stdout, stderr } = await run("bash", ["-c", command], { cwd: projectDir, timeout: TIMEOUT_MS });
+      const { stdout, stderr } = await run("bash", ["-c", command], {
+        cwd: projectDir,
+        timeout: TIMEOUT_MS,
+      });
       log("INFO", `preflight: ok — ${command}`, { stdout: tail(stdout), stderr: tail(stderr) });
     } catch (err) {
       const e = err as ExecError;
-      const exit = e.killed ? `timed out after ${TIMEOUT_MS / 1000} s` : `exit code ${e.code ?? e.signal ?? "unknown"}`;
-      log("WARN", `preflight: failed — ${command} (${exit})`, { stdout: tail(e.stdout), stderr: tail(e.stderr) });
+      const exit = e.killed
+        ? `timed out after ${TIMEOUT_MS / 1000} s`
+        : `exit code ${e.code ?? e.signal ?? "unknown"}`;
+      log("WARN", `preflight: failed — ${command} (${exit})`, {
+        stdout: tail(e.stdout),
+        stderr: tail(e.stderr),
+      });
       return `preflight command \`${command}\` failed (${exit})`;
     }
   }
@@ -59,7 +71,8 @@ export function checkRepos(policy: Policy, projectDir: string): string | null {
       const rel = path.relative(projectDir, repo);
       if (!isGitCheckout(repo)) return `${rel} (repos: "${glob}") is not a git checkout`;
       const dirty = dirtyFiles(repo);
-      if (dirty.length > 0) return `${rel} (repos: "${glob}") has uncommitted changes: ${dirty.join(", ")}`;
+      if (dirty.length > 0)
+        return `${rel} (repos: "${glob}") has uncommitted changes: ${dirty.join(", ")}`;
     }
   }
   return null;

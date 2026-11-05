@@ -44,14 +44,26 @@ export function PauseCard({
           {TITLE[request.reason] ?? `Paused: ${request.reason}`}
         </span>
         {request.entryId && (
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--foreground-muted)" }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.75rem",
+              color: "var(--foreground-muted)",
+            }}
+          >
             {request.entryId}
           </span>
         )}
       </div>
       <p
         data-testid="pause-detail"
-        style={{ margin: "0 0 14px", fontSize: "0.8rem", lineHeight: 1.5, color: "var(--foreground)", whiteSpace: "pre-wrap" }}
+        style={{
+          margin: "0 0 14px",
+          fontSize: "0.8rem",
+          lineHeight: 1.5,
+          color: "var(--foreground)",
+          whiteSpace: "pre-wrap",
+        }}
       >
         {request.detail}
       </p>

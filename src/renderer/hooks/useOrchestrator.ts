@@ -207,7 +207,9 @@ export function useOrchestrator(): OrchestratorHook {
         loop.setLoopTermination({
           reason: "queue_complete",
           cyclesCompleted: completed.length,
-          featuresCompleted: completed.map((c) => c.featureName ?? c.specDir ?? `Cycle ${c.cycleNumber}`),
+          featuresCompleted: completed.map(
+            (c) => c.featureName ?? c.specDir ?? `Cycle ${c.cycleNumber}`,
+          ),
           featuresSkipped: [],
           totalCostUsd: run.totalCostUsd ?? 0,
           totalDurationMs: run.totalDurationMs ?? 0,

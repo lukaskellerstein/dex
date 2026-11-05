@@ -27,7 +27,11 @@ export function mockFixture(name: string): Record<string, unknown> {
  */
 export function stubCliTools(): () => void {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "dex-bin-"));
-  for (const [name, code] of [["claude", 0], ["specify", 0], ["gh", 1]] as const) {
+  for (const [name, code] of [
+    ["claude", 0],
+    ["specify", 0],
+    ["gh", 1],
+  ] as const) {
     const file = path.join(bin, name);
     fs.writeFileSync(file, `#!/bin/sh\nexit ${code}\n`);
     fs.chmodSync(file, 0o755);
@@ -82,10 +86,16 @@ export function writeFile(dir: string, rel: string, content: string): void {
  * done, plus the human's queue and policy, committed by the human. `mock`
  * replaces `fixtures/mock/existing-project.json`.
  */
-export function mkExistingProject(mock: Record<string, unknown> = mockFixture("existing-project.json")): string {
+export function mkExistingProject(
+  mock: Record<string, unknown> = mockFixture("existing-project.json"),
+): string {
   const dir = mkTmpRepo("dex-existing-");
   writeFile(dir, ".specify/integration.json", "{}\n");
-  writeFile(dir, ".specify/scripts/bash/common.sh", '# spec-kit\nFEATURE_DIR="$SPECIFY_FEATURE_DIRECTORY"\n');
+  writeFile(
+    dir,
+    ".specify/scripts/bash/common.sh",
+    '# spec-kit\nFEATURE_DIR="$SPECIFY_FEATURE_DIRECTORY"\n',
+  );
   writeFile(dir, ".specify/feature.json", FIXTURE_FEATURE_JSON);
   execSync("git add -A && git commit -q -m 'spec-kit setup'", { cwd: dir });
   execSync("git switch -q -c 900-fixture-a", { cwd: dir });

@@ -25,7 +25,11 @@ import { mkTmpProject } from "./helpers/project.ts";
 
 let dir: string;
 let events: OrchestratorEvent[];
-const io = () => ({ projectDir: dir, runId: "run-1", emit: (e: OrchestratorEvent) => events.push(e) });
+const io = () => ({
+  projectDir: dir,
+  runId: "run-1",
+  emit: (e: OrchestratorEvent) => events.push(e),
+});
 
 const CONFIG: RunConfig = {
   projectDir: "",
@@ -40,7 +44,13 @@ const CONFIG: RunConfig = {
 beforeEach(async () => {
   dir = mkTmpProject({});
   events = [];
-  await saveState(dir, createInitialState({ ...CONFIG, projectDir: dir }, "run-1", { kind: "existing", runBranch: null }));
+  await saveState(
+    dir,
+    createInitialState({ ...CONFIG, projectDir: dir }, "run-1", {
+      kind: "existing",
+      runBranch: null,
+    }),
+  );
 });
 
 afterEach(() => {
@@ -57,7 +67,10 @@ function question(text: string, labels: string[]): UserInputQuestion {
   };
 }
 
-const NAMESPACE = question("Which namespace hosts the agent?", ["listovna (Recommended)", "postara"]);
+const NAMESPACE = question("Which namespace hosts the agent?", [
+  "listovna (Recommended)",
+  "postara",
+]);
 const CHART = question("Which chart tool?", ["Use helm (recommended) ", "kustomize"]);
 const OPEN = question("What is the SLA?", ["99.9%", "99.99%"]);
 
@@ -96,24 +109,47 @@ test("recommended-then-review: every sub-question has a recommended option → a
   const state = readState(dir);
   assert.deepEqual(state?.pendingRequests, []);
   assert.deepEqual(
-    state?.reviewList.map(({ question: q, answer, entryId, stage }) => ({ q, answer, entryId, stage })),
+    state?.reviewList.map(({ question: q, answer, entryId, stage }) => ({
+      q,
+      answer,
+      entryId,
+      stage,
+    })),
     [
-      { q: "Which namespace hosts the agent?", answer: "listovna (Recommended)", entryId: "021-agent-entry", stage: "clarify" },
-      { q: "Which chart tool?", answer: "Use helm (recommended) ", entryId: "021-agent-entry", stage: "clarify" },
+      {
+        q: "Which namespace hosts the agent?",
+        answer: "listovna (Recommended)",
+        entryId: "021-agent-entry",
+        stage: "clarify",
+      },
+      {
+        q: "Which chart tool?",
+        answer: "Use helm (recommended) ",
+        entryId: "021-agent-entry",
+        stage: "clarify",
+      },
     ],
   );
   const md = fs.readFileSync(path.join(dir, ".dex/questions.md"), "utf-8");
   assert.match(md, /## Answered by default — review \(recommended-then-review\)/);
-  assert.match(md, /- \(021-agent-entry · clarify\) "Which namespace hosts the agent\?" → \*\*listovna\*\* \(recommended\)/);
+  assert.match(
+    md,
+    /- \(021-agent-entry · clarify\) "Which namespace hosts the agent\?" → \*\*listovna\*\* \(recommended\)/,
+  );
 });
 
 test("recommended-then-review: one sub-question without a marker → the whole question waits", async () => {
-  const held = askQuestions(io(), null, [NAMESPACE, OPEN], { mode: "recommended-then-review", step: "plan" });
+  const held = askQuestions(io(), null, [NAMESPACE, OPEN], {
+    mode: "recommended-then-review",
+    step: "plan",
+  });
   assert.equal(await settled(held), false);
   const pending = readState(dir)?.pendingRequests ?? [];
   assert.equal(pending.length, 1);
   assert.equal(readState(dir)?.reviewList.length, 0);
-  assert.ok(resolveRequest(pending[0].id, { kind: "question", answers: { "What is the SLA?": "99.9%" } }));
+  assert.ok(
+    resolveRequest(pending[0].id, { kind: "question", answers: { "What is the SLA?": "99.9%" } }),
+  );
   assert.deepEqual(await held, { "What is the SLA?": "99.9%" });
 });
 
@@ -128,7 +164,8 @@ test("a waiting question is in state.json and .dex/questions.md, and reads back 
   const fromDisk = await loadState(dir);
   assert.equal(fromDisk?.pendingRequests[0]?.kind, "question");
   assert.equal(
-    fromDisk?.pendingRequests[0]?.kind === "question" && fromDisk.pendingRequests[0].questions[0].question,
+    fromDisk?.pendingRequests[0]?.kind === "question" &&
+      fromDisk.pendingRequests[0].questions[0].question,
     "What is the SLA?",
   );
   const md = fs.readFileSync(path.join(dir, ".dex/questions.md"), "utf-8");
@@ -155,9 +192,14 @@ test("answer book: a matching key answers the re-asked request and is consumed",
     source: "settings",
   });
   assert.equal(approval.decision, "deny");
-  assert.deepEqual(readState(dir)?.answerBook.map((b) => b.key), [questionKey("Unrelated?")]);
   assert.deepEqual(
-    events.filter((e) => e.type === "request_resolved").map((e) => e.type === "request_resolved" && e.by),
+    readState(dir)?.answerBook.map((b) => b.key),
+    [questionKey("Unrelated?")],
+  );
+  assert.deepEqual(
+    events
+      .filter((e) => e.type === "request_resolved")
+      .map((e) => e.type === "request_resolved" && e.by),
     ["answer_book", "answer_book"],
   );
   assert.deepEqual(readState(dir)?.pendingRequests, []);

@@ -24,9 +24,16 @@ const policy = (p: Partial<Policy>): Policy => ({ ...DEFAULT_POLICY, ...p });
 
 test("runPreflight: every command passes in the project folder, and each is logged", async () => {
   fs.writeFileSync(path.join(dir, "marker"), "");
-  const result = await runPreflight(policy({ preflight: ["test -f marker", "echo ok | grep -q ok"] }), dir, log);
+  const result = await runPreflight(
+    policy({ preflight: ["test -f marker", "echo ok | grep -q ok"] }),
+    dir,
+    log,
+  );
   assert.equal(result, null);
-  assert.deepEqual(logged, ["preflight: ok — test -f marker", "preflight: ok — echo ok | grep -q ok"]);
+  assert.deepEqual(logged, [
+    "preflight: ok — test -f marker",
+    "preflight: ok — echo ok | grep -q ok",
+  ]);
 });
 
 test("runPreflight: the first failing command is named with its exit code; later ones do not run", async () => {
@@ -58,5 +65,8 @@ test("checkRepos: a dirty checkout and a plain folder are named", () => {
   );
   fs.rmSync(path.join(dir, "workload", "svc", "wip.txt"));
   fs.mkdirSync(path.join(dir, "workload", "plain"));
-  assert.equal(checkRepos(policy({ repos: ["workload/*"] }), dir), 'workload/plain (repos: "workload/*") is not a git checkout');
+  assert.equal(
+    checkRepos(policy({ repos: ["workload/*"] }), dir),
+    'workload/plain (repos: "workload/*") is not a git checkout',
+  );
 });

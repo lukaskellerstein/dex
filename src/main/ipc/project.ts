@@ -84,7 +84,9 @@ export function registerProjectHandlers(): void {
   );
 
   // The queue and status views read this on every stage boundary (research R17).
-  ipcMain.handle("project:get-run-snapshot", (_event, projectDir: string) => runSnapshot(projectDir));
+  ipcMain.handle("project:get-run-snapshot", (_event, projectDir: string) =>
+    runSnapshot(projectDir),
+  );
 
   ipcMain.handle("project:path-exists", (_event, targetPath: string): boolean => {
     try {

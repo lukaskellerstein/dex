@@ -66,11 +66,18 @@ export function gateCheck(entry: ResolvedEntry, stage: StageName): Guard | null 
  * since `stageStartSha`, committed or not (research R13). Null when nothing
  * changed, or when there was no commit to compare against.
  */
-export function frozenCheck(projectDir: string, frozen: string[], stageStartSha: string | null): Guard | null {
+export function frozenCheck(
+  projectDir: string,
+  frozen: string[],
+  stageStartSha: string | null,
+): Guard | null {
   if (!stageStartSha || frozen.length === 0) return null;
   const files = frozenChangesSince(projectDir, stageStartSha, frozen);
   if (files.length === 0) return null;
-  return { reason: "frozen_changed", detail: `the stage changed frozen files: ${files.join(", ")}` };
+  return {
+    reason: "frozen_changed",
+    detail: `the stage changed frozen files: ${files.join(", ")}`,
+  };
 }
 
 /**
@@ -118,8 +125,13 @@ export function progressCheck(
  * (its `Verify fixes V<k>` phases) and is still not done (research R9).
  * The files decide the count, so Resume pauses again until a human acts.
  */
-export function verifyRoundsCheck(decision: PickerDecision, rounds: number, limits: PolicyLimits): Guard | null {
-  if (decision.kind !== "stage" || (decision.stage !== "implement" && decision.stage !== "verify")) return null;
+export function verifyRoundsCheck(
+  decision: PickerDecision,
+  rounds: number,
+  limits: PolicyLimits,
+): Guard | null {
+  if (decision.kind !== "stage" || (decision.stage !== "implement" && decision.stage !== "verify"))
+    return null;
   const max = limits.maxVerifyRounds;
   if (rounds < max) return null;
   return {

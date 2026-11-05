@@ -17,9 +17,13 @@ import { initQueue, QueueExistsError } from "./queue-init.js";
 
 /** Input the human must fix: exit 2, not 1. */
 function isRefusal(err: unknown): boolean {
-  return [UsageError, QueueInvalidError, PolicyInvalidError, PolicyRefusedError, QueueExistsError].some(
-    (cls) => err instanceof cls,
-  );
+  return [
+    UsageError,
+    QueueInvalidError,
+    PolicyInvalidError,
+    PolicyRefusedError,
+    QueueExistsError,
+  ].some((cls) => err instanceof cls);
 }
 
 function queueInit(projectDir: string, term: Terminal): number {
@@ -40,7 +44,8 @@ async function dispatch(cmd: CliCommand, term: Terminal): Promise<number> {
   if (cmd.kind === "queue-init") return queueInit(projectDir, term);
   checkRules(projectDir);
   if (cmd.mode === "dry-run" || cmd.mode === "status") {
-    for (const line of cmd.mode === "dry-run" ? dryRunLines(projectDir) : statusLines(projectDir)) term.out(line);
+    for (const line of cmd.mode === "dry-run" ? dryRunLines(projectDir) : statusLines(projectDir))
+      term.out(line);
     return 0;
   }
   return runCommand(projectDir, { once: cmd.mode === "once", agent: cmd.agent }, term);

@@ -35,9 +35,7 @@
         }
       ],
       "structured_output": {
-        "filesProduced": [
-          "GOAL_clarified.md"
-        ]
+        "filesProduced": ["GOAL_clarified.md"]
       }
     },
     "constitution": {
@@ -124,9 +122,7 @@
         "rounds": [
           {
             "verdict": "failed",
-            "fixTasks": [
-              "Handle an empty list in src/{feature}/index.ts"
-            ]
+            "fixTasks": ["Handle an empty list in src/{feature}/index.ts"]
           },
           {
             "verdict": "passed"

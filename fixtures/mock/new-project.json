@@ -35,9 +35,7 @@
         }
       ],
       "structured_output": {
-        "filesProduced": [
-          "GOAL_clarified.md"
-        ]
+        "filesProduced": ["GOAL_clarified.md"]
       }
     },
     "constitution": {

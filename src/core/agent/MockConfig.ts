@@ -157,7 +157,6 @@ export function stageScript(
 
 // ── Loader + validator ─────────────────────────────────────
 
-
 export function mockConfigPath(projectDir: string): string {
   return path.join(projectDir, ".dex", "mock-config.json");
 }
@@ -242,7 +241,8 @@ function validateEntries(file: string, entries: unknown): void {
         );
       }
       validateStepDescriptor(file, `${where}.${stage}`, desc);
-      if (stage === "verify") validateRounds(file, `${where}.verify`, (desc as Record<string, unknown>).rounds);
+      if (stage === "verify")
+        validateRounds(file, `${where}.verify`, (desc as Record<string, unknown>).rounds);
     }
   }
 }
@@ -304,7 +304,10 @@ function validateAsks(file: string, where: string, asks: unknown): void {
     }
     q.options.forEach((o, j) => {
       if (!isObject(o) || typeof o.label !== "string" || o.label === "") {
-        throw new MockConfigInvalidError(file, `${at}.options[${j}].label must be a non-empty string`);
+        throw new MockConfigInvalidError(
+          file,
+          `${at}.options[${j}].label must be a non-empty string`,
+        );
       }
     });
   });

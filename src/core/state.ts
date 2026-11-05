@@ -96,7 +96,10 @@ function deepMerge<T>(target: T, patch: DeepPartial<T>): T {
       result[key] = patchVal;
     } else {
       const base = (target as Record<string, unknown>)[key];
-      result[key] = deepMerge(base && typeof base === "object" ? base : {}, patchVal as DeepPartial<object>);
+      result[key] = deepMerge(
+        base && typeof base === "object" ? base : {},
+        patchVal as DeepPartial<object>,
+      );
     }
   }
   return result as T;
@@ -130,7 +133,10 @@ export async function loadState(projectDir: string): Promise<DexStateV2 | null> 
   return readState(projectDir);
 }
 
-export async function updateState(projectDir: string, patch: DeepPartial<DexStateV2>): Promise<void> {
+export async function updateState(
+  projectDir: string,
+  patch: DeepPartial<DexStateV2>,
+): Promise<void> {
   mutateState(projectDir, (s) => deepMerge(s, patch));
 }
 

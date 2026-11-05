@@ -65,7 +65,11 @@ export function ToolApprovalCard({
   const answer = (decision: "approve" | "deny") => {
     if (sent) return;
     setSent(true);
-    onAnswer(request.requestId, decision, decision === "deny" ? message.trim() || undefined : undefined);
+    onAnswer(
+      request.requestId,
+      decision,
+      decision === "deny" ? message.trim() || undefined : undefined,
+    );
   };
 
   return (

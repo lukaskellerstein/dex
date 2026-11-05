@@ -31,7 +31,15 @@ function snapshot(stage: string): RunSnapshot {
     queue: {
       kind: "existing",
       entries: [
-        { id: "001-a", title: "A", status: "active", nextStage: stage as "plan", reason: "r", taskPhase: null, costUsd: 0 },
+        {
+          id: "001-a",
+          title: "A",
+          status: "active",
+          nextStage: stage as "plan",
+          reason: "r",
+          taskPhase: null,
+          costUsd: 0,
+        },
       ],
     },
     errors: [],
@@ -48,7 +56,14 @@ async function emit(event: { type: string }) {
   });
 }
 
-const BOUNDARIES = ["run_started", "step_started", "step_completed", "paused", "run_completed", "loop_terminated"];
+const BOUNDARIES = [
+  "run_started",
+  "step_started",
+  "step_completed",
+  "paused",
+  "run_completed",
+  "loop_terminated",
+];
 
 beforeEach(() => {
   dispatchedHandler = null;
@@ -128,21 +143,45 @@ describe("startActionFor", () => {
     taskPhase: null,
     costUsd: 0,
   });
-  const snap = (over: Partial<RunSnapshot>): RunSnapshot => ({ state: null, queue: null, errors: [], ...over });
+  const snap = (over: Partial<RunSnapshot>): RunSnapshot => ({
+    state: null,
+    queue: null,
+    errors: [],
+    ...over,
+  });
   const state = (status: "paused" | "completed", descriptionFile?: string) =>
-    ({ status, config: { model: "m", maxTurns: 1, maxIterations: 1, ...(descriptionFile ? { descriptionFile } : {}) } }) as RunSnapshot["state"];
-  const queue = (...entries: ReturnType<typeof entry>[]) => ({ kind: "existing" as const, entries });
+    ({
+      status,
+      config: {
+        model: "m",
+        maxTurns: 1,
+        maxIterations: 1,
+        ...(descriptionFile ? { descriptionFile } : {}),
+      },
+    }) as RunSnapshot["state"];
+  const queue = (...entries: ReturnType<typeof entry>[]) => ({
+    kind: "existing" as const,
+    entries,
+  });
 
   it("refuses on a validation error, and does nothing without a snapshot", () => {
     expect(startActionFor(null, 3)).toBe("none");
-    expect(startActionFor(snap({ errors: ["bad policy"], queue: queue(entry("active")) }), 3)).toBe("none");
+    expect(startActionFor(snap({ errors: ["bad policy"], queue: queue(entry("active")) }), 3)).toBe(
+      "none",
+    );
   });
 
   it("with a queue: Resume when paused or when a run state exists; start the loop otherwise; nothing when all done", () => {
-    expect(startActionFor(snap({ queue: queue(entry("done")), state: state("paused") }), 0)).toBe("resume");
-    expect(startActionFor(snap({ queue: queue(entry("active")), state: state("completed") }), 0)).toBe("resume");
+    expect(startActionFor(snap({ queue: queue(entry("done")), state: state("paused") }), 0)).toBe(
+      "resume",
+    );
+    expect(
+      startActionFor(snap({ queue: queue(entry("active")), state: state("completed") }), 0),
+    ).toBe("resume");
     expect(startActionFor(snap({ queue: queue(entry("pending")) }), 0)).toBe("start-loop");
-    expect(startActionFor(snap({ queue: queue(entry("done")), state: state("completed") }), 5)).toBe("none");
+    expect(
+      startActionFor(snap({ queue: queue(entry("done")), state: state("completed") }), 5),
+    ).toBe("none");
   });
 
   it("without a queue: a new project's run resumes; spec folders run in build mode", () => {

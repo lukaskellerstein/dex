@@ -95,14 +95,7 @@ export async function runBuild(
       emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
 
       try {
-        const result = await runPhase(
-          specConfig,
-          phase,
-          agentRunId,
-          runId,
-          emit,
-          rlog,
-        );
+        const result = await runPhase(specConfig, phase, agentRunId, runId, emit, rlog);
 
         runs.completeAgentRun(config.projectDir, runId, agentRunId, {
           status: "completed",

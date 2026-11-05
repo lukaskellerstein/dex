@@ -82,9 +82,15 @@ test("queue: unknown fields are rejected, top level and entry", () => {
 });
 
 test("queue: generate needs a non-empty sources list and a brief path", () => {
-  assertInvalid(q([{ id: "a", title: "A", brief: "b.md", generate: { sources: [] } }]), /generate\.sources/);
+  assertInvalid(
+    q([{ id: "a", title: "A", brief: "b.md", generate: { sources: [] } }]),
+    /generate\.sources/,
+  );
   assertInvalid(q([{ id: "a", title: "A", brief: "b.md", generate: {} }]), /generate\.sources/);
-  assertInvalid(q([{ id: "a", title: "A", generate: { sources: ["x.md"] } }]), /"generate" needs "brief"/);
+  assertInvalid(
+    q([{ id: "a", title: "A", generate: { sources: ["x.md"] } }]),
+    /"generate" needs "brief"/,
+  );
 });
 
 test("queue: status accepts only done and skipped", () => {
@@ -240,7 +246,9 @@ test("loadQueue: migrates a v2 manifest to v3 and writes queue.json once", () =>
     assert.ok(fs.existsSync(path.join(dir, ".dex", "feature-manifest.json")), "manifest kept");
 
     // Once written, queue.json wins: a later manifest change is not re-migrated.
-    writeManifest(dir, [{ id: 9, title: "Other", description: "", status: "pending", specDir: null }]);
+    writeManifest(dir, [
+      { id: 9, title: "Other", description: "", status: "pending", specDir: null },
+    ]);
     assert.deepEqual(
       loadQueue(dir)?.entries.map((e) => e.id),
       ["001-catalog", "002-cart-checkout", "003-admin", "012-find"],

@@ -15,7 +15,12 @@ import type { OrchestratorEvent } from "../events.ts";
 import type * as Orchestrator from "../orchestrator.ts";
 import type { RunConfig } from "../types.ts";
 import { branches, currentBranch, headSha, logSubjects, rmTmp } from "./helpers/git.ts";
-import { FIXTURE_FEATURE_JSON, mkExistingProject, stubCliTools, writeFile as write } from "./helpers/loop.ts";
+import {
+  FIXTURE_FEATURE_JSON,
+  mkExistingProject,
+  stubCliTools,
+  writeFile as write,
+} from "./helpers/loop.ts";
 
 const realHome = process.env.HOME;
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "dex-home-"));
@@ -78,18 +83,30 @@ test("existing project: both entries run to done; Dex makes no branch, no commit
     assert.equal(events.filter((e) => e.type === "tree_dirty").length, 0);
 
     // Branches: only spec-kit's, for entry B; the run ends on it.
-    assert.deepEqual(branches(dir).filter((b) => !branchesBefore.includes(b)), ["901-fixture-b"]);
+    assert.deepEqual(
+      branches(dir).filter((b) => !branchesBefore.includes(b)),
+      ["901-fixture-b"],
+    );
     assert.equal(currentBranch(dir), "901-fixture-b");
 
     // Commits: every new one is an agent's.
     const subjects = logSubjects(dir, `--all ^${before}`);
     assert.ok(subjects.length >= 8, `expected agent commits, got ${subjects.length}`);
-    assert.deepEqual(subjects.filter((s) => !s.startsWith("mock(")), []);
+    assert.deepEqual(
+      subjects.filter((s) => !s.startsWith("mock(")),
+      [],
+    );
     assert.equal(logSubjects(dir, "--all").filter((s) => s.includes("[checkpoint:")).length, 0);
 
     // Files Dex never writes: spec-kit's feature.json, and A's out-of-scope task.
-    assert.equal(fs.readFileSync(path.join(dir, ".specify/feature.json"), "utf-8"), FIXTURE_FEATURE_JSON);
-    const tasksA = execSync("git show 900-fixture-a:specs/900-fixture-a/tasks.md", { cwd: dir, encoding: "utf-8" });
+    assert.equal(
+      fs.readFileSync(path.join(dir, ".specify/feature.json"), "utf-8"),
+      FIXTURE_FEATURE_JSON,
+    );
+    const tasksA = execSync("git show 900-fixture-a:specs/900-fixture-a/tasks.md", {
+      cwd: dir,
+      encoding: "utf-8",
+    });
     assert.match(tasksA, /- \[X\] T002 /);
     assert.match(tasksA, /- \[X\] T005 /);
     assert.match(tasksA, /- \[ \] T006 /);
@@ -104,9 +121,16 @@ test("existing project, build mode: a queued spec folder keeps its task scope, a
   try {
     const branchesBefore = branches(dir);
     const events: OrchestratorEvent[] = [];
-    await run({ ...config(dir), mode: "build", specDir: "specs/900-fixture-a" }, (ev) => events.push(ev));
-    assert.deepEqual(events.filter((e) => e.type === "error"), []);
-    const phases = events.flatMap((e) => (e.type === "task_phase_started" ? [e.taskPhase.number] : []));
+    await run({ ...config(dir), mode: "build", specDir: "specs/900-fixture-a" }, (ev) =>
+      events.push(ev),
+    );
+    assert.deepEqual(
+      events.filter((e) => e.type === "error"),
+      [],
+    );
+    const phases = events.flatMap((e) =>
+      e.type === "task_phase_started" ? [e.taskPhase.number] : [],
+    );
     assert.deepEqual(phases, [1, 2]);
     assert.deepEqual(branches(dir), branchesBefore);
     assert.equal(currentBranch(dir), "900-fixture-a");
@@ -128,8 +152,15 @@ test("existing project: prerequisites only check — no spec-kit pauses with the
     const paused = events.find((e) => e.type === "paused");
     assert.equal(paused?.type === "paused" && paused.reason, "preflight_failed");
     assert.match((paused?.type === "paused" && paused.detail) || "", /\.specify\/ is missing/);
-    const checks = events.flatMap((e) => (e.type === "prerequisites_check" ? [`${e.check.name}:${e.check.status}`] : []));
-    assert.deepEqual(checks, ["claude_cli:pass", "specify_cli:pass", "git_init:pass", "speckit_init:fail"]);
+    const checks = events.flatMap((e) =>
+      e.type === "prerequisites_check" ? [`${e.check.name}:${e.check.status}`] : [],
+    );
+    assert.deepEqual(checks, [
+      "claude_cli:pass",
+      "specify_cli:pass",
+      "git_init:pass",
+      "speckit_init:fail",
+    ]);
     assert.equal(fs.existsSync(path.join(dir, ".specify")), false);
     assert.equal(headSha(dir), before);
     assert.deepEqual(stagesRun(events), []);
@@ -144,11 +175,17 @@ test("existing project: a dirty tree before a branch switch pauses dirty_tree an
     // Entry A is done already; entry B starts from 900-fixture-a, so put the checkout elsewhere.
     execSync("git switch -q main", { cwd: dir });
     write(dir, "notes.txt", "uncommitted\n");
-    const queue = JSON.parse(execSync("git show 900-fixture-a:.dex/queue.json", { cwd: dir, encoding: "utf-8" }));
+    const queue = JSON.parse(
+      execSync("git show 900-fixture-a:.dex/queue.json", { cwd: dir, encoding: "utf-8" }),
+    );
     queue.entries[0].status = "done";
     write(dir, ".dex/queue.json", `${JSON.stringify(queue, null, 2)}\n`);
     for (const f of ["policy.json", "mock-config.json", "dex-config.json"]) {
-      write(dir, `.dex/${f}`, execSync(`git show 900-fixture-a:.dex/${f}`, { cwd: dir, encoding: "utf-8" }));
+      write(
+        dir,
+        `.dex/${f}`,
+        execSync(`git show 900-fixture-a:.dex/${f}`, { cwd: dir, encoding: "utf-8" }),
+      );
     }
     execSync("git add .dex && git commit -q -m 'queue on main'", { cwd: dir });
 

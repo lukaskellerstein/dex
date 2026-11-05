@@ -50,12 +50,16 @@ function pickedLabels(q: UserInputQuestion, raw: string): string[] | null {
   const picks = raw.split(",").map((s) => s.trim());
   if (!picks.every((p) => /^\d+$/.test(p))) return null;
   const labels = picks.map((p) => q.options[Number(p) - 1]?.label);
-  return labels.every((l): l is string => l !== undefined) && (q.multiSelect || labels.length === 1) ? labels : [];
+  return labels.every((l): l is string => l !== undefined) && (q.multiSelect || labels.length === 1)
+    ? labels
+    : [];
 }
 
 async function askQuestion(term: Terminal, ask: Ask, q: UserInputQuestion): Promise<string> {
   term.out(`\n? ${q.header ? `[${q.header}] ` : ""}${q.question}`);
-  q.options.forEach((o, i) => term.out(`  ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ""}`));
+  q.options.forEach((o, i) =>
+    term.out(`  ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ""}`),
+  );
   const fallback = q.options.findIndex((o) => isRecommended(o.label));
   const pick = q.multiSelect ? "numbers, comma-separated" : "a number";
   const prompt = `  answer (${pick}${fallback >= 0 ? `, Enter = ${fallback + 1}` : ""}, or type your own): `;
@@ -77,12 +81,16 @@ async function askApproval(term: Terminal, ask: Ask, r: ToolApprovalBody): Promi
   for (;;) {
     const raw = (await ask("  approve? (y/n): ")).trim().toLowerCase();
     if (raw === "y" || raw === "yes") return { kind: "tool_approval", decision: "approve" };
-    if (raw === "n" || raw === "no") return { kind: "tool_approval", decision: "deny", message: "Denied in the terminal" };
+    if (raw === "n" || raw === "no")
+      return { kind: "tool_approval", decision: "deny", message: "Denied in the terminal" };
   }
 }
 
 /** Asks one request in the terminal and returns its answer. The terminal must have a prompt. */
-export async function askInTerminal(term: Terminal, request: AskableRequest): Promise<RequestAnswer> {
+export async function askInTerminal(
+  term: Terminal,
+  request: AskableRequest,
+): Promise<RequestAnswer> {
   const ask = term.ask;
   if (!ask) throw new Error("askInTerminal needs a terminal with a prompt (a TTY)");
   if (request.kind === "tool_approval") return askApproval(term, ask, request);

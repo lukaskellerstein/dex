@@ -111,7 +111,12 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
-function rejectUnknown(obj: Record<string, unknown>, known: string[], prefix: string, fail: Fail): void {
+function rejectUnknown(
+  obj: Record<string, unknown>,
+  known: string[],
+  prefix: string,
+  fail: Fail,
+): void {
   const extra = Object.keys(obj).find((k) => !known.includes(k));
   if (extra) fail(`unknown field "${prefix}${extra}"`);
 }
@@ -122,7 +127,8 @@ function oneOf<T extends string>(v: unknown, values: readonly T[], field: string
 }
 
 function stringList(v: unknown, field: string, fail: Fail): string[] {
-  if (!Array.isArray(v) || !v.every((s) => typeof s === "string")) fail(`"${field}" must be a list of strings`);
+  if (!Array.isArray(v) || !v.every((s) => typeof s === "string"))
+    fail(`"${field}" must be a list of strings`);
   return [...(v as string[])];
 }
 
@@ -134,7 +140,8 @@ function rules(v: unknown, field: string, fail: Fail): CompiledRule[] {
     const r = raw as Record<string, unknown>;
     rejectUnknown(r, RULE_FIELDS, `${where}.`, fail);
     for (const key of RULE_FIELDS) {
-      if (typeof r[key] !== "string" || r[key] === "") fail(`"${where}.${key}" must be a non-empty string`);
+      if (typeof r[key] !== "string" || r[key] === "")
+        fail(`"${where}.${key}" must be a non-empty string`);
     }
     let regex: RegExp;
     try {
@@ -142,7 +149,12 @@ function rules(v: unknown, field: string, fail: Fail): CompiledRule[] {
     } catch (err) {
       fail(`"${where}.pattern" is not a valid regular expression (${(err as Error).message})`);
     }
-    return { tool: r.tool as string, pattern: r.pattern as string, reason: r.reason as string, regex };
+    return {
+      tool: r.tool as string,
+      pattern: r.pattern as string,
+      reason: r.reason as string,
+      regex,
+    };
   });
 }
 
@@ -153,12 +165,18 @@ function limits(v: unknown, fail: Fail): PolicyLimits {
   const out: PolicyLimits = { ...DEFAULT_POLICY.limits };
   for (const key of ["maxBudgetUsdPerStage", "maxBudgetUsdPerRun"] as const) {
     if (raw[key] === undefined) continue;
-    if (typeof raw[key] !== "number" || !(raw[key] > 0)) fail(`"limits.${key}" must be a positive number`);
+    if (typeof raw[key] !== "number" || !(raw[key] > 0))
+      fail(`"limits.${key}" must be a positive number`);
     out[key] = raw[key] as number;
   }
-  for (const key of ["maxTurnsPerStage", "maxImplementRunsWithoutProgress", "maxVerifyRounds"] as const) {
+  for (const key of [
+    "maxTurnsPerStage",
+    "maxImplementRunsWithoutProgress",
+    "maxVerifyRounds",
+  ] as const) {
     if (raw[key] === undefined) continue;
-    if (!Number.isInteger(raw[key]) || (raw[key] as number) < 1) fail(`"limits.${key}" must be a positive integer`);
+    if (!Number.isInteger(raw[key]) || (raw[key] as number) < 1)
+      fail(`"limits.${key}" must be a positive integer`);
     out[key] = raw[key] as number;
   }
   return out;
@@ -215,7 +233,9 @@ export function parsePolicy(
     questions: has("questions")
       ? oneOf(r.questions, QUESTION_MODES, "questions", fail)
       : DEFAULT_POLICY.questions,
-    openPullRequest: has("openPullRequest") ? bool(r.openPullRequest, "openPullRequest", fail) : false,
+    openPullRequest: has("openPullRequest")
+      ? bool(r.openPullRequest, "openPullRequest", fail)
+      : false,
     limits: has("limits") ? limits(r.limits, fail) : { ...DEFAULT_POLICY.limits },
   };
   if (policy.permissionMode === SKIP_CHECKS_MODE && kind === "existing") {
@@ -291,7 +311,11 @@ export function subjectOf(call: ToolCall, projectDir: string): string {
   return JSON.stringify(call.input);
 }
 
-function firstMatch(list: CompiledRule[], call: ToolCall, subject: string): CompiledRule | undefined {
+function firstMatch(
+  list: CompiledRule[],
+  call: ToolCall,
+  subject: string,
+): CompiledRule | undefined {
   return list.find((r) => (r.tool === "*" || r.tool === call.toolName) && r.regex.test(subject));
 }
 
@@ -303,7 +327,11 @@ function isInside(root: string, target: string): boolean {
 function writeDecision(policy: Policy, target: string, env: PolicyEnv): PolicyDecision | null {
   const roots = [...policy.writeRoots.map((r) => path.resolve(env.projectDir, r)), env.tmpDir];
   if (!roots.some((root) => isInside(root, target))) {
-    return { kind: "deny", rule: "writeRoots", reason: `${target} is outside the policy's write roots` };
+    return {
+      kind: "deny",
+      rule: "writeRoots",
+      reason: `${target} is outside the policy's write roots`,
+    };
   }
   const rel = path.relative(env.projectDir, target);
   const frozen = policy.frozen.find((glob) => path.matchesGlob(rel, glob));

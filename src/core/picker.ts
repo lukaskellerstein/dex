@@ -80,11 +80,12 @@ export function tasksHash(content: string): string {
   return crypto.createHash("sha256").update(content, "utf-8").digest("hex");
 }
 
-
 // ── One entry ──
 
 const stage = (s: StageName, reason: string, taskPhase?: number): Outcome =>
-  taskPhase === undefined ? { kind: "stage", stage: s, reason } : { kind: "stage", stage: s, reason, taskPhase };
+  taskPhase === undefined
+    ? { kind: "stage", stage: s, reason }
+    : { kind: "stage", stage: s, reason, taskPhase };
 
 /** brief → specify → clarify → plan → tasks, in D-015-1 order. Null when all are in place. */
 function artefactStage(entry: ResolvedEntry, tree: TreeReader): Outcome | null {
@@ -93,7 +94,10 @@ function artefactStage(entry: ResolvedEntry, tree: TreeReader): Outcome | null {
   if (entry.brief && !skip.has("brief") && !tree.exists(entry.brief)) {
     return entry.generate
       ? stage("brief", `the brief ${entry.brief} is missing; generate it`)
-      : { kind: "pause", detail: `the brief ${entry.brief} is missing and the entry has no "generate"` };
+      : {
+          kind: "pause",
+          detail: `the brief ${entry.brief} is missing and the entry has no "generate"`,
+        };
   }
   if (!skip.has("specify") && !tree.exists(spec("spec.md"))) {
     return stage("specify", `${spec("spec.md")} is missing`);
@@ -117,11 +121,16 @@ function implementStage(entry: ResolvedEntry, phases: TaskPhase[]): Outcome | nu
     const known = new Set(phases.flatMap((p) => p.tasks.map((t) => t.id)));
     const unknown = [...scope].filter((id) => !known.has(id));
     if (unknown.length > 0) {
-      return { kind: "pause", detail: `tasks ${unknown.join(", ")} are not in ${entry.specDir}/tasks.md` };
+      return {
+        kind: "pause",
+        detail: `tasks ${unknown.join(", ")} are not in ${entry.specDir}/tasks.md`,
+      };
     }
   }
   const open = phases.find((p) => hasOpenScopedTask(entry, p));
-  return open ? stage("implement", `phase ${open.number} (${open.name}) has unchecked tasks`, open.number) : null;
+  return open
+    ? stage("implement", `phase ${open.number} (${open.name}) has unchecked tasks`, open.number)
+    : null;
 }
 
 function verifyStage(entry: ResolvedEntry, tree: TreeReader, tasks: string): Outcome {
@@ -130,7 +139,8 @@ function verifyStage(entry: ResolvedEntry, tree: TreeReader, tasks: string): Out
   if (record.tasksHash !== tasksHash(tasks)) {
     return stage("verify", "verify.md checked a different tasks.md");
   }
-  if (record.verdict !== "passed") return stage("verify", "verify.md failed for the current tasks.md");
+  if (record.verdict !== "passed")
+    return stage("verify", "verify.md failed for the current tasks.md");
   return { kind: "done", reason: "verify.md passed for the current tasks.md" };
 }
 
@@ -143,7 +153,8 @@ export function stageFor(entry: ResolvedEntry, tree: TreeReader): Outcome {
     const impl = implementStage(entry, parseTasksMd(tasks));
     if (impl) return impl;
   }
-  if (entry.skip.includes("verify")) return { kind: "done", reason: "every stage is done or skipped" };
+  if (entry.skip.includes("verify"))
+    return { kind: "done", reason: "every stage is done or skipped" };
   return verifyStage(entry, tree, tasks);
 }
 
@@ -184,7 +195,12 @@ function evaluate(input: PickerInput, entry: ResolvedEntry, current: string): Ou
   if ("error" in t) return { kind: "pause", detail: t.error };
   const outcome = stageFor(entry, t.tree);
   // Without its own branch, an entry can only start (brief, specify) or be done.
-  if (t.fromBase && outcome.kind === "stage" && outcome.stage !== "brief" && outcome.stage !== "specify") {
+  if (
+    t.fromBase &&
+    outcome.kind === "stage" &&
+    outcome.stage !== "brief" &&
+    outcome.stage !== "specify"
+  ) {
     return {
       kind: "pause",
       detail: `branch "${entry.branch}" does not exist, but "${entry.baseBranch}" already has ${entry.specDir}/spec.md; create the branch or set "branch" in queue.json`,
@@ -210,13 +226,18 @@ export function pickNext(input: PickerInput): PickerDecision {
         ? { kind: "stage", entry, stage: o.stage, reason: o.reason }
         : { kind: "stage", entry, stage: o.stage, taskPhase: o.taskPhase, reason: o.reason };
     }
-    if (o.kind === "pause") return { kind: "pause", entry, reason: "invalid_input", detail: o.detail };
+    if (o.kind === "pause")
+      return { kind: "pause", entry, reason: "invalid_input", detail: o.detail };
   }
   return { kind: "complete" };
 }
 
 /** A file of the entry (project-relative), read from the same tree the picker decides on. */
-export function readEntryFile(input: PickerInput, entry: ResolvedEntry, rel: string): string | null {
+export function readEntryFile(
+  input: PickerInput,
+  entry: ResolvedEntry,
+  rel: string,
+): string | null {
   const t = entryTree(input, entry, currentBranchOf(input.projectDir));
   return "error" in t ? null : t.tree.read(rel);
 }
@@ -256,6 +277,12 @@ export function describeEntries(
 }
 
 /** Derived status of every entry, for the queue panel, `--status` and `--dry-run`. */
-export function describeQueue(input: PickerInput, costsByEntry: Record<string, number> = {}): QueueView {
-  return { kind: input.queue.kind, entries: describeEntries(input, costsByEntry).map((e) => e.view) };
+export function describeQueue(
+  input: PickerInput,
+  costsByEntry: Record<string, number> = {},
+): QueueView {
+  return {
+    kind: input.queue.kind,
+    entries: describeEntries(input, costsByEntry).map((e) => e.view),
+  };
 }

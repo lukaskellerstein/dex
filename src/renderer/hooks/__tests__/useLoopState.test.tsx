@@ -172,7 +172,15 @@ describe("useLoopState", () => {
     emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
     emit({ type: "loop_cycle_started", runId: "r-1", cycleNumber: 1 });
     emit({ type: "step_started", runId: "r-1", cycleNumber: 1, step: "plan", agentRunId: "a-1" });
-    emit({ type: "step_completed", runId: "r-1", cycleNumber: 1, step: "plan", agentRunId: "a-1", costUsd: 0, durationMs: 1 });
+    emit({
+      type: "step_completed",
+      runId: "r-1",
+      cycleNumber: 1,
+      step: "plan",
+      agentRunId: "a-1",
+      costUsd: 0,
+      durationMs: 1,
+    });
     expect(result.current.currentStage).toBe("plan");
     emit({ type: "step_started", runId: "r-1", cycleNumber: 1, step: "tasks", agentRunId: "a-2" });
     expect(result.current.currentStage).toBe("tasks");

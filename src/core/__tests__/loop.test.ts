@@ -122,7 +122,10 @@ test("loop: a two-entry queue runs every stage from files and ends queue_complet
     const events = await runLoop(dir);
 
     assert.equal(termination(events), "queue_complete");
-    assert.deepEqual(stagesRun(events), [...ENTRY_STAGES("001-alpha"), ...ENTRY_STAGES("002-beta")]);
+    assert.deepEqual(stagesRun(events), [
+      ...ENTRY_STAGES("001-alpha"),
+      ...ENTRY_STAGES("002-beta"),
+    ]);
     for (const id of ["001-alpha", "002-beta"]) {
       const verify = fs.readFileSync(path.join(dir, "specs", id, "verify.md"), "utf8");
       assert.match(verify, /^\*\*Verdict\*\*: passed$/m);
@@ -130,7 +133,10 @@ test("loop: a two-entry queue runs every stage from files and ends queue_complet
     // Dex commits nothing: every commit after setup is the agent's.
     const subjects = logSubjects(dir, "main..HEAD");
     assert.ok(subjects.length > 0);
-    assert.deepEqual(subjects.filter((s) => !s.startsWith("mock(")), []);
+    assert.deepEqual(
+      subjects.filter((s) => !s.startsWith("mock(")),
+      [],
+    );
     assert.equal((await loadState(dir))?.status, "completed");
     assert.equal(
       events.some((e) => e.type.includes("reconcil")),
@@ -196,13 +202,18 @@ test("loop: verify fails once → fix phase V1 appended → implement runs it �
 });
 
 test("loop: an implement that never checks a task pauses limit_reached after 2 runs", async () => {
-  const mock = mockFixture("new-project.json") as { entries: Record<string, Record<string, Record<string, unknown>>> };
+  const mock = mockFixture("new-project.json") as {
+    entries: Record<string, Record<string, Record<string, unknown>>>;
+  };
   mock.entries["*"].implement.tick = false;
   const dir = mkLoopProject({ queue: ONE_ENTRY, mock });
   try {
     const events = await runLoop(dir);
     assert.equal(termination(events), "paused");
-    assert.deepEqual(stagesRun(events).slice(-2), ["001-alpha:implement:1", "001-alpha:implement:1"]);
+    assert.deepEqual(stagesRun(events).slice(-2), [
+      "001-alpha:implement:1",
+      "001-alpha:implement:1",
+    ]);
     const state = await loadState(dir);
     assert.equal(state?.pauseReason, "limit_reached");
     assert.match(state?.pauseDetail ?? "", /limits\.maxImplementRunsWithoutProgress: 2/);
@@ -216,9 +227,14 @@ test("loop: a recommended question is answered and listed for review; one withou
   type Stages = Record<string, Record<string, unknown>>;
   const mock = mockFixture("new-project.json") as { entries: Record<string, Stages> };
   mock.entries["*"].clarify.asks = [
-    { question: "Which store?", options: [{ label: "Postgres (Recommended)" }, { label: "SQLite" }] },
+    {
+      question: "Which store?",
+      options: [{ label: "Postgres (Recommended)" }, { label: "SQLite" }],
+    },
   ];
-  mock.entries["*"].plan.asks = [{ question: "Which SLA?", options: [{ label: "99.9%" }, { label: "99.99%" }] }];
+  mock.entries["*"].plan.asks = [
+    { question: "Which SLA?", options: [{ label: "99.9%" }, { label: "99.99%" }] },
+  ];
   const dir = mkLoopProject({ queue: ONE_ENTRY, mock });
   try {
     const humanAnswered: string[] = [];
@@ -227,7 +243,9 @@ test("loop: a recommended question is answered and listed for review; one withou
       onEvent: (ev) => {
         if (ev.type !== "user_input_request") return;
         setImmediate(() => {
-          if (resolveRequest(ev.requestId, { kind: "question", answers: { "Which SLA?": "99.99%" } })) {
+          if (
+            resolveRequest(ev.requestId, { kind: "question", answers: { "Which SLA?": "99.99%" } })
+          ) {
             humanAnswered.push(ev.questions[0].question);
           }
         });
@@ -252,7 +270,9 @@ test("loop: a recommended question is answered and listed for review; one withou
 
 /** The new-project mock with a `brief` stage for every entry (the mock writes the entry's brief file). */
 function mockWithBrief(): Record<string, unknown> {
-  const mock = mockFixture("new-project.json") as { entries: Record<string, Record<string, unknown>> };
+  const mock = mockFixture("new-project.json") as {
+    entries: Record<string, Record<string, unknown>>;
+  };
   mock.entries["*"].brief = { delay: 0 };
   return mock;
 }
@@ -273,7 +293,10 @@ test("loop: generate and no brief → brief writes it, the run pauses at the gat
         id: "001-alpha",
         title: "Alpha",
         brief: "docs/briefs/001-alpha.md",
-        generate: { sources: ["docs/sources/alpha-notes.md"], instructions: "Keep it to one page." },
+        generate: {
+          sources: ["docs/sources/alpha-notes.md"],
+          instructions: "Keep it to one page.",
+        },
       },
     ],
   };
@@ -300,12 +323,20 @@ test("loop: generate and no brief → brief writes it, the run pauses at the gat
 });
 
 test("loop: gates [plan] pause after plan; Resume runs tasks", async () => {
-  const queue = { version: 3, kind: "new", entries: [{ id: "001-alpha", title: "Alpha", gates: ["plan"] }] };
+  const queue = {
+    version: 3,
+    kind: "new",
+    entries: [{ id: "001-alpha", title: "Alpha", gates: ["plan"] }],
+  };
   const dir = mkLoopProject({ queue, mock: mockFixture("new-project.json") });
   try {
     const first = await runLoop(dir);
     assert.equal(termination(first), "paused");
-    assert.deepEqual(stagesRun(first), ["001-alpha:specify", "001-alpha:clarify", "001-alpha:plan"]);
+    assert.deepEqual(stagesRun(first), [
+      "001-alpha:specify",
+      "001-alpha:clarify",
+      "001-alpha:plan",
+    ]);
     assert.deepEqual(await gatePause(dir), ["gate", ["Continue", "Stop"]]);
     assert.match((await loadState(dir))?.pauseDetail ?? "", /001-alpha · plan/);
 
@@ -318,7 +349,9 @@ test("loop: gates [plan] pause after plan; Resume runs tasks", async () => {
 });
 
 test("loop: a stage that changes a committed frozen file pauses frozen_changed; a new frozen file does not", async () => {
-  const mock = mockFixture("new-project.json") as { entries: Record<string, Record<string, { writes?: unknown[] }>> };
+  const mock = mockFixture("new-project.json") as {
+    entries: Record<string, Record<string, { writes?: unknown[] }>>;
+  };
   const stages = mock.entries["*"];
   stages.specify.writes?.push({ path: "docs/claim-new.md", content: "a new claim\n" });
   stages.plan.writes?.push({ path: "docs/thresholds.md", content: "p99 < 900ms\n" });
@@ -333,7 +366,11 @@ test("loop: a stage that changes a committed frozen file pauses frozen_changed; 
   try {
     const events = await runLoop(dir);
     assert.equal(termination(events), "paused");
-    assert.deepEqual(stagesRun(events), ["001-alpha:specify", "001-alpha:clarify", "001-alpha:plan"]);
+    assert.deepEqual(stagesRun(events), [
+      "001-alpha:specify",
+      "001-alpha:clarify",
+      "001-alpha:plan",
+    ]);
     const state = await loadState(dir);
     assert.equal(state?.pauseReason, "frozen_changed");
     assert.match(state?.pauseDetail ?? "", /docs\/thresholds\.md/);

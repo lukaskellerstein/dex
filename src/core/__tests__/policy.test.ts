@@ -58,7 +58,11 @@ const EXAMPLE = {
       pattern: "\\bsops\\s+(-d|--decrypt|decrypt|edit|exec-env)\\b",
       reason: "secrets are never decrypted by an agent",
     },
-    { tool: "*", pattern: "mgmt-01|rancher\\.cellarwood\\.org", reason: "the management cluster is off limits" },
+    {
+      tool: "*",
+      pattern: "mgmt-01|rancher\\.cellarwood\\.org",
+      reason: "the management cluster is off limits",
+    },
   ],
   ask: [{ tool: "Bash", pattern: "\\bgit\\s+push\\b", reason: "pushes need a human" }],
   writeRoots: ["."],
@@ -81,7 +85,8 @@ function parse(raw: unknown, kind: "new" | "existing" = "existing"): Policy {
 }
 
 const policy = parse(EXAMPLE);
-const bash = (command: string) => decideToolUse(policy, { toolName: "Bash", input: { command } }, ENV);
+const bash = (command: string) =>
+  decideToolUse(policy, { toolName: "Bash", input: { command } }, ENV);
 const write = (file_path: string) =>
   decideToolUse(policy, { toolName: "Write", input: { file_path, content: "x" } }, ENV);
 
@@ -114,18 +119,36 @@ for (const [name, raw, message] of [
     { deny: [{ tool: "Bash", pattern: "git (push", reason: "r" }] },
     /"deny\[0\]\.pattern" is not a valid regular expression/,
   ],
-  ["a rule without a reason", { ask: [{ tool: "Bash", pattern: "x" }] }, /"ask\[0\]\.reason" must be a non-empty string/],
+  [
+    "a rule without a reason",
+    { ask: [{ tool: "Bash", pattern: "x" }] },
+    /"ask\[0\]\.reason" must be a non-empty string/,
+  ],
   ["an unknown field", { allowEverything: true }, /unknown field "allowEverything"/],
-  ["an unknown rule field", { deny: [{ tool: "Bash", pattern: "x", reason: "r", note: 1 }] }, /unknown field "deny\[0\]\.note"/],
+  [
+    "an unknown rule field",
+    { deny: [{ tool: "Bash", pattern: "x", reason: "r", note: 1 }] },
+    /unknown field "deny\[0\]\.note"/,
+  ],
   ["an unknown limit", { limits: { maxCoffee: 1 } }, /unknown field "limits\.maxCoffee"/],
-  ["a negative limit", { limits: { maxVerifyRounds: 0 } }, /"limits\.maxVerifyRounds" must be a positive integer/],
-  ["a missing systemPromptAppend file", { systemPromptAppend: ".dex/missing.md" }, /"systemPromptAppend" file .*missing\.md does not exist/],
+  [
+    "a negative limit",
+    { limits: { maxVerifyRounds: 0 } },
+    /"limits\.maxVerifyRounds" must be a positive integer/,
+  ],
+  [
+    "a missing systemPromptAppend file",
+    { systemPromptAppend: ".dex/missing.md" },
+    /"systemPromptAppend" file .*missing\.md does not exist/,
+  ],
 ] as const) {
   test(`parsePolicy: ${name} is a PolicyInvalidError naming the file`, () => {
     assert.throws(
       () => parse(raw),
       (err: unknown) =>
-        err instanceof PolicyInvalidError && err.message.startsWith(`${FILE}: `) && message.test(err.message),
+        err instanceof PolicyInvalidError &&
+        err.message.startsWith(`${FILE}: `) &&
+        message.test(err.message),
     );
   });
 }
@@ -167,13 +190,22 @@ test("loadPolicy: no file means the defaults; bad JSON is a PolicyInvalidError",
 
 test("subjectOf: the command, a resolved path, the URL, or the JSON input", () => {
   assert.equal(subjectOf({ toolName: "Bash", input: { command: "ls -la" } }, PROJECT), "ls -la");
-  assert.equal(subjectOf({ toolName: "Edit", input: { file_path: "src/a.ts" } }, PROJECT), "/work/onion/src/a.ts");
+  assert.equal(
+    subjectOf({ toolName: "Edit", input: { file_path: "src/a.ts" } }, PROJECT),
+    "/work/onion/src/a.ts",
+  );
   assert.equal(
     subjectOf({ toolName: "NotebookEdit", input: { notebook_path: "n.ipynb" } }, PROJECT),
     "/work/onion/n.ipynb",
   );
-  assert.equal(subjectOf({ toolName: "WebFetch", input: { url: "https://x.dev" } }, PROJECT), "https://x.dev");
-  assert.equal(subjectOf({ toolName: "Glob", input: { pattern: "*.ts" } }, PROJECT), '{"pattern":"*.ts"}');
+  assert.equal(
+    subjectOf({ toolName: "WebFetch", input: { url: "https://x.dev" } }, PROJECT),
+    "https://x.dev",
+  );
+  assert.equal(
+    subjectOf({ toolName: "Glob", input: { pattern: "*.ts" } }, PROJECT),
+    '{"pattern":"*.ts"}',
+  );
 });
 
 // ── decideToolUse: every deny rule, one blocked and one allowed command ──
@@ -182,7 +214,11 @@ const DENY_ROWS: Array<[blocked: string, allowed: string, reason: RegExp]> = [
   ["cd repo && git push -f origin x", "git push origin feature-x", /no force/],
   ["git push origin main", "git push origin maintenance-fix", /never push to main/],
   ["git reset --hard HEAD~1", "git reset --soft HEAD~1", /history-rewriting/],
-  ['bash -c "kubectl delete ns x"', "kubectl create job --from=cronjob/backup backup-now", /helm is the only/],
+  [
+    'bash -c "kubectl delete ns x"',
+    "kubectl create job --from=cronjob/backup backup-now",
+    /helm is the only/,
+  ],
   ["helm uninstall onion", "helm upgrade --install onion ./chart", /destructive helm/],
   ["sops -d secrets.enc.yaml", "sops -e -i secrets.enc.yaml", /never decrypted/],
 ];
@@ -197,7 +233,8 @@ for (const [blocked, allowed, reason] of DENY_ROWS) {
 }
 
 test('decideToolUse: a "*" rule matches any tool, here Read', () => {
-  const read = (file_path: string) => decideToolUse(policy, { toolName: "Read", input: { file_path } }, ENV);
+  const read = (file_path: string) =>
+    decideToolUse(policy, { toolName: "Read", input: { file_path } }, ENV);
   assert.deepEqual(read("/etc/kube/mgmt-01.yaml"), {
     kind: "deny",
     rule: "deny",
@@ -207,7 +244,10 @@ test('decideToolUse: a "*" rule matches any tool, here Read', () => {
 });
 
 test("decideToolUse: an ask rule asks, after the deny rules had their turn", () => {
-  assert.deepEqual(bash("git push origin feature-x"), { kind: "ask", reason: "pushes need a human" });
+  assert.deepEqual(bash("git push origin feature-x"), {
+    kind: "ask",
+    reason: "pushes need a human",
+  });
   assert.equal(bash("git push --force origin feature-x").kind, "deny");
 });
 
@@ -222,7 +262,9 @@ test("decideToolUse: write roots — inside, outside, the temp folder, a ../ esc
 
 test("decideToolUse: a frozen file is denied when tracked, allowed when not", () => {
   const frozen = write("workload/report/thresholds.md");
-  assert.ok(frozen.kind === "deny" && frozen.rule === "frozen" && /thresholds\.md/.test(frozen.reason));
+  assert.ok(
+    frozen.kind === "deny" && frozen.rule === "frozen" && /thresholds\.md/.test(frozen.reason),
+  );
   assert.equal(write("workload/report/claim-a.md").kind, "deny");
   assert.deepEqual(write("workload/report/claim-new.md"), { kind: "none" });
   assert.deepEqual(write("workload/report/sub/claim-a.md"), { kind: "none" });
@@ -230,7 +272,10 @@ test("decideToolUse: a frozen file is denied when tracked, allowed when not", ()
 
 test("decideToolUse: no rule has an opinion", () => {
   assert.deepEqual(bash("npm test"), { kind: "none" });
-  assert.deepEqual(decideToolUse(DEFAULT_POLICY, { toolName: "Bash", input: { command: "rm -rf /" } }, ENV), {
-    kind: "none",
-  });
+  assert.deepEqual(
+    decideToolUse(DEFAULT_POLICY, { toolName: "Bash", input: { command: "rm -rf /" } }, ENV),
+    {
+      kind: "none",
+    },
+  );
 });

@@ -13,7 +13,12 @@ import { LOOP_DEFAULTS } from "../config.js";
 import { getCurrentBranch } from "../git.js";
 import type { PendingRequest } from "../humanInput.js";
 import { parseTasksMd } from "../parser.js";
-import { describeEntries, type PickerInput, type QueueViewEntry, readEntryFile } from "../picker.js";
+import {
+  describeEntries,
+  type PickerInput,
+  type QueueViewEntry,
+  readEntryFile,
+} from "../picker.js";
 import { loadPolicy, type Policy, policyPath } from "../policy.js";
 import { buildImplementPrompt, buildStagePrompt, buildVerifyPrompt, stageEnv } from "../prompts.js";
 import { loadQueue, type QueueV3, type ResolvedEntry, type StageName } from "../queue.js";
@@ -29,17 +34,25 @@ const WIDTH = 80;
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const indent = (text: string) => text.split("\n").map((l) => `  ${l}`);
 
-function loadInput(projectDir: string): { queue: QueueV3; policy: Policy; input: PickerInput } | null {
+function loadInput(
+  projectDir: string,
+): { queue: QueueV3; policy: Policy; input: PickerInput } | null {
   const queue = loadQueue(projectDir, { persistMigration: false });
   if (!queue) return null;
   const policy = loadPolicy(projectDir, queue.kind);
-  return { queue, policy, input: { projectDir, queue, runBranch: readState(projectDir)?.runBranch ?? null } };
+  return {
+    queue,
+    policy,
+    input: { projectDir, queue, runBranch: readState(projectDir)?.runBranch ?? null },
+  };
 }
 
 // ── --dry-run ──
 
 function policyLines(projectDir: string, policy: Policy, kind: QueueV3["kind"]): string[] {
-  const file = fs.existsSync(policyPath(projectDir)) ? ".dex/policy.json" : "defaults (no .dex/policy.json)";
+  const file = fs.existsSync(policyPath(projectDir))
+    ? ".dex/policy.json"
+    : "defaults (no .dex/policy.json)";
   const counts = [
     `deny ${policy.deny.length}`,
     `ask ${policy.ask.length}`,
@@ -49,24 +62,34 @@ function policyLines(projectDir: string, policy: Policy, kind: QueueV3["kind"]):
     `pull request ${policy.openPullRequest ? "on" : "off"}`,
   ];
   const limits = Object.entries(policy.limits).map(([k, v]) => `${k}=${v}`);
-  return [`queue    : .dex/queue.json · ${kind} project`, `policy   : ${file} · ${counts.join(" · ")}`, `limits   : ${limits.join(" ")}`];
+  return [
+    `queue    : .dex/queue.json · ${kind} project`,
+    `policy   : ${file} · ${counts.join(" · ")}`,
+    `limits   : ${limits.join(" ")}`,
+  ];
 }
 
 /** Where the stage runs: the branch move `prepareBranch` would make, and whether a dirty tree refuses it now. */
 function branchMove(input: PickerInput, entry: ResolvedEntry, stage: StageName): string {
-  if (input.queue.kind === "new") return `the run branch ${input.runBranch ?? "(Dex creates it when the run starts)"}`;
+  if (input.queue.kind === "new")
+    return `the run branch ${input.runBranch ?? "(Dex creates it when the run starts)"}`;
   const current = getCurrentBranch(input.projectDir);
   const target = stageBranch(input.projectDir, entry);
   const base = target === entry.branch ? "" : " (base)";
   const move = `${target === current ? "stay on" : "switch to"} ${target}${base}`;
-  const creates = stage === "specify" && target !== entry.branch ? `, spec-kit creates ${entry.branch}` : "";
+  const creates =
+    stage === "specify" && target !== entry.branch ? `, spec-kit creates ${entry.branch}` : "";
   const dirty = target === current ? [] : dirtyFiles(input.projectDir);
-  const refused = dirty.length > 0 ? ` — refused now, the tree has uncommitted files: ${dirty.join(", ")}` : "";
+  const refused =
+    dirty.length > 0 ? ` — refused now, the tree has uncommitted files: ${dirty.join(", ")}` : "";
   return `${move}${creates}${refused}`;
 }
 
 /** A dry run starts no agent, so this is never called; the builder only needs one. */
-const neverAsked: CanUseTool = async (_toolName, input) => ({ behavior: "allow", updatedInput: input });
+const neverAsked: CanUseTool = async (_toolName, input) => ({
+  behavior: "allow",
+  updatedInput: input,
+});
 
 function systemLine(sp: Options["systemPrompt"], policy: Policy): string {
   const append = typeof sp === "object" && sp !== null && "append" in sp ? sp.append : undefined;
@@ -76,7 +99,13 @@ function systemLine(sp: Options["systemPrompt"], policy: Policy): string {
 
 /** The SDK options the stage's agent gets, from the same builder the run uses. */
 function sdkLines(projectDir: string, policy: Policy, env: Record<string, string>): string[] {
-  const config: RunConfig = { projectDir, specDir: "", mode: "loop", taskPhases: "all", ...LOOP_DEFAULTS };
+  const config: RunConfig = {
+    projectDir,
+    specDir: "",
+    mode: "loop",
+    taskPhases: "all",
+    ...LOOP_DEFAULTS,
+  };
   let o: Options;
   try {
     o = buildQueryOptions({ config, env, abortController: null, policy }, {}, neverAsked);
@@ -97,19 +126,32 @@ function goalPathOf(projectDir: string, kind: QueueV3["kind"]): string | null {
   return kind === "new" && fs.existsSync(goal) ? goal : null;
 }
 
-function promptFor(input: PickerInput, entry: ResolvedEntry, stage: StageName, taskPhase: number | null): string {
+function promptFor(
+  input: PickerInput,
+  entry: ResolvedEntry,
+  stage: StageName,
+  taskPhase: number | null,
+): string {
   const { projectDir, queue } = input;
   const tasksMd = () => readEntryFile(input, entry, `${entry.specDir}/tasks.md`) ?? "";
   if (stage === "implement") {
     const phase = parseTasksMd(tasksMd()).find((p) => p.number === taskPhase);
     if (!phase) return `(${entry.specDir}/tasks.md has no phase ${taskPhase})`;
-    return buildImplementPrompt(entry, projectDir, { phase, goalPath: goalPathOf(projectDir, queue.kind) });
+    return buildImplementPrompt(entry, projectDir, {
+      phase,
+      goalPath: goalPathOf(projectDir, queue.kind),
+    });
   }
   if (stage === "verify") return buildVerifyPrompt(entry, projectDir, verifyFacts(tasksMd()));
   return buildStagePrompt(queue, entry, projectDir, stage);
 }
 
-function entryBlock(input: PickerInput, policy: Policy, entry: ResolvedEntry, view: QueueViewEntry): string[] {
+function entryBlock(
+  input: PickerInput,
+  policy: Policy,
+  entry: ResolvedEntry,
+  view: QueueViewEntry,
+): string[] {
   const stage = view.nextStage;
   if (!stage) return [`decision : pause — ${view.reason}`];
   const phase = view.taskPhase === null ? "" : ` phase ${view.taskPhase}`;
@@ -123,7 +165,11 @@ function entryBlock(input: PickerInput, policy: Policy, entry: ResolvedEntry, vi
   return [
     `decision : ${stage}${phase} — ${view.reason}`,
     `branch   : ${branchMove(input, entry, stage)}`,
-    `env      : ${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(" ") || "(none)"}`,
+    `env      : ${
+      Object.entries(env)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ") || "(none)"
+    }`,
     ...sdkLines(input.projectDir, policy, env),
     "prompt   :",
     ...indent(prompt),
@@ -141,9 +187,13 @@ export function dryRunLines(projectDir: string): string[] {
   if (!loaded) return [NO_QUEUE];
   const { queue, policy, input } = loaded;
   const lines = policyLines(projectDir, policy, queue.kind);
-  const remaining = describeEntries(input).filter(({ view }) => view.status === "active" || view.status === "pending");
-  if (remaining.length === 0) lines.push("", "every entry is done or skipped: the run ends queue_complete");
-  for (const { entry, view } of remaining) lines.push("", rule(entry.id), ...entryBlock(input, policy, entry, view));
+  const remaining = describeEntries(input).filter(
+    ({ view }) => view.status === "active" || view.status === "pending",
+  );
+  if (remaining.length === 0)
+    lines.push("", "every entry is done or skipped: the run ends queue_complete");
+  for (const { entry, view } of remaining)
+    lines.push("", rule(entry.id), ...entryBlock(input, policy, entry, view));
   return lines;
 }
 
@@ -151,11 +201,19 @@ export function dryRunLines(projectDir: string): string[] {
 
 function runLines(state: DexState | null): string[] {
   if (!state) return ["run      : none yet"];
-  const why = state.status === "paused" ? ` · ${state.pauseReason ?? "?"}${state.pausedAt ? ` since ${state.pausedAt}` : ""}` : "";
-  const lines = [`run      : ${state.runId.slice(0, 8)} · ${state.status}${why} · cost $${state.cumulativeCostUsd.toFixed(2)}`];
+  const why =
+    state.status === "paused"
+      ? ` · ${state.pauseReason ?? "?"}${state.pausedAt ? ` since ${state.pausedAt}` : ""}`
+      : "";
+  const lines = [
+    `run      : ${state.runId.slice(0, 8)} · ${state.status}${why} · cost $${state.cumulativeCostUsd.toFixed(2)}`,
+  ];
   if (state.pauseDetail) lines.push(`detail   : ${state.pauseDetail}`);
   const c = state.current;
-  if (c) lines.push(`last     : ${c.entryId} · ${c.stage}${c.taskPhase === null ? "" : ` phase ${c.taskPhase}`}`);
+  if (c)
+    lines.push(
+      `last     : ${c.entryId} · ${c.stage}${c.taskPhase === null ? "" : ` phase ${c.taskPhase}`}`,
+    );
   return lines;
 }
 
@@ -170,11 +228,14 @@ function waitingLines(projectDir: string, state: DexState | null): string[] {
   const pending = state?.pendingRequests ?? [];
   const lines: string[] = [];
   if (pending.length > 0) {
-    lines.push(`waiting  : ${pending.length} request(s) — answer with \`dex run ${projectDir}\` in a terminal`);
+    lines.push(
+      `waiting  : ${pending.length} request(s) — answer with \`dex run ${projectDir}\` in a terminal`,
+    );
     lines.push(...pending.flatMap(requestLine));
   }
   const review = state?.reviewList.length ?? 0;
-  if (review > 0) lines.push(`review   : ${review} answer(s) given by default — listed in .dex/questions.md`);
+  if (review > 0)
+    lines.push(`review   : ${review} answer(s) given by default — listed in .dex/questions.md`);
   return lines;
 }
 
@@ -189,7 +250,9 @@ export function statusLines(projectDir: string): string[] {
     for (const e of queue.entries) {
       const phase = e.taskPhase === null ? "" : ` phase ${e.taskPhase}`;
       const next = e.nextStage ? `${e.nextStage}${phase} — ${e.reason}` : e.reason;
-      lines.push(`  ${e.id.padEnd(width)}  ${e.status.padEnd(7)}  ${next} · $${e.costUsd.toFixed(2)}`);
+      lines.push(
+        `  ${e.id.padEnd(width)}  ${e.status.padEnd(7)}  ${next} · $${e.costUsd.toFixed(2)}`,
+      );
     }
   }
   for (const error of errors) lines.push(`error    : ${error}`);

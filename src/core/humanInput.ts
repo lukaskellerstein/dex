@@ -84,7 +84,12 @@ function newRequest(entryId: string | null, body: RequestBody): PendingRequest {
 }
 
 /** Persists `request` and waits for its answer. `announce` emits the request's event. */
-function hold(io: HumanIO, request: PendingRequest, onStop: RequestAnswer, announce: () => void): Promise<RequestAnswer> {
+function hold(
+  io: HumanIO,
+  request: PendingRequest,
+  onStop: RequestAnswer,
+  announce: () => void,
+): Promise<RequestAnswer> {
   persist(io.projectDir, (list) => [...list, request]);
   const answered = new Promise<RequestAnswer>((resolve) => {
     waiting.set(request.id, { io, kind: onStop.kind, resolve, onStop });
@@ -158,9 +163,20 @@ function answeredAtOnce(
   return answers;
 }
 
-function addToReview(projectDir: string, entryId: string | null, stage: StepType, answers: Record<string, string>): void {
+function addToReview(
+  projectDir: string,
+  entryId: string | null,
+  stage: StepType,
+  answers: Record<string, string>,
+): void {
   const at = new Date().toISOString();
-  const items = Object.entries(answers).map(([question, answer]) => ({ question, answer, entryId, stage, at }));
+  const items = Object.entries(answers).map(([question, answer]) => ({
+    question,
+    answer,
+    entryId,
+    stage,
+    at,
+  }));
   mutateState(projectDir, (s) => ({ ...s, reviewList: [...s.reviewList, ...items] }));
   renderQuestionsFile(projectDir);
 }
@@ -176,8 +192,13 @@ const NEW_PROJECT_CLARIFICATION: ReadonlySet<StepType> = new Set([
 ]);
 
 /** The question mode for a session: autoClarification for clarification, else the policy (research R7). */
-export function questionModeFor(step: StepType, autoClarification: boolean, policy: Policy): QuestionMode {
-  if (NEW_PROJECT_CLARIFICATION.has(step)) return autoClarification ? "recommended-then-review" : "wait";
+export function questionModeFor(
+  step: StepType,
+  autoClarification: boolean,
+  policy: Policy,
+): QuestionMode {
+  if (NEW_PROJECT_CLARIFICATION.has(step))
+    return autoClarification ? "recommended-then-review" : "wait";
   return policy.questions;
 }
 
@@ -199,7 +220,10 @@ export async function askQuestions(
   questions: UserInputQuestion[],
   opts?: QuestionOptions,
 ): Promise<Record<string, string>> {
-  const fromBook = takeFromBook(io.projectDir, questions.map((q) => questionKey(q.question)));
+  const fromBook = takeFromBook(
+    io.projectDir,
+    questions.map((q) => questionKey(q.question)),
+  );
   if (fromBook) {
     const answers = Object.fromEntries(questions.map((q, i) => [q.question, fromBook[i]]));
     return answeredAtOnce(io, questions, answers, "answer_book");
@@ -231,7 +255,11 @@ export async function requestToolApproval(
     return { decision: "deny", ...(booked !== "deny" ? { message: booked } : {}) };
   }
   const request = newRequest(entryId, { kind: "tool_approval", ...body });
-  const stop: RequestAnswer = { kind: "tool_approval", decision: "deny", message: "Run stopped by user" };
+  const stop: RequestAnswer = {
+    kind: "tool_approval",
+    decision: "deny",
+    message: "Run stopped by user",
+  };
   const answer = await hold(io, request, stop, () =>
     io.emit({ type: "tool_approval_request", runId: io.runId, requestId: request.id, ...body }),
   );
@@ -326,7 +354,9 @@ export function parkAll(): void {
 function bookItems(request: PendingRequest, answer: RequestAnswer, at: string): AnswerBookItem[] {
   if (request.kind === "question" && answer.kind === "question") {
     return request.questions.flatMap((q) =>
-      q.question in answer.answers ? [{ key: questionKey(q.question), answer: answer.answers[q.question], at }] : [],
+      q.question in answer.answers
+        ? [{ key: questionKey(q.question), answer: answer.answers[q.question], at }]
+        : [],
     );
   }
   if (request.kind === "tool_approval" && answer.kind === "tool_approval") {
@@ -341,7 +371,10 @@ function bookItems(request: PendingRequest, answer: RequestAnswer, at: string): 
  * they go to the answer book, and their requests leave the state. The stage
  * that re-runs asks again and gets the answer from the book.
  */
-export function bookAnswers(projectDir: string, answered: Array<{ request: PendingRequest; answer: RequestAnswer }>): void {
+export function bookAnswers(
+  projectDir: string,
+  answered: Array<{ request: PendingRequest; answer: RequestAnswer }>,
+): void {
   const at = new Date().toISOString();
   const items = answered.flatMap(({ request, answer }) => bookItems(request, answer, at));
   const ids = new Set(answered.map((a) => a.request.id));

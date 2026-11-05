@@ -172,22 +172,26 @@ export function useLoopState(): UseLoopStateResult {
         case "loop_cycle_started":
           setCurrentCycle(event.cycleNumber);
           // A Resume re-opens the entry's cycle: same number, keep its stages.
-          setLoopCycles((prev) => prev.some((c) => c.cycleNumber === event.cycleNumber)
-            ? prev.map((c) => c.cycleNumber === event.cycleNumber ? { ...c, status: "running" as const } : c)
-            : [
-            ...prev,
-            {
-              cycleNumber: event.cycleNumber,
-              featureName: null,
-              specDir: null,
-              decision: null,
-              status: "running",
-              costUsd: 0,
-              stages: [],
-              implementPhases: [],
-              startedAt: new Date().toISOString(),
-            },
-          ]);
+          setLoopCycles((prev) =>
+            prev.some((c) => c.cycleNumber === event.cycleNumber)
+              ? prev.map((c) =>
+                  c.cycleNumber === event.cycleNumber ? { ...c, status: "running" as const } : c,
+                )
+              : [
+                  ...prev,
+                  {
+                    cycleNumber: event.cycleNumber,
+                    featureName: null,
+                    specDir: null,
+                    decision: null,
+                    status: "running",
+                    costUsd: 0,
+                    stages: [],
+                    implementPhases: [],
+                    startedAt: new Date().toISOString(),
+                  },
+                ],
+          );
           break;
 
         case "loop_cycle_completed":

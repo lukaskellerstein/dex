@@ -135,12 +135,18 @@ function beginPrerequisites(ctx: OrchestrationContext, runId: string): Prerequis
     status: "running",
   });
   emit({ type: "step_started", runId, cycleNumber: 0, step: "prerequisites", agentRunId });
-  const emitCheck = (check: PrerequisiteCheck) => emit({ type: "prerequisites_check", runId, check });
+  const emitCheck = (check: PrerequisiteCheck) =>
+    emit({ type: "prerequisites_check", runId, check });
   return { agentRunId, startTime: Date.now(), emitCheck };
 }
 
 /** The run record's agent run, step_completed and prerequisites_completed. */
-function endPrerequisites(ctx: OrchestrationContext, runId: string, step: PrerequisitesStep, allPassed: boolean): void {
+function endPrerequisites(
+  ctx: OrchestrationContext,
+  runId: string,
+  step: PrerequisitesStep,
+  allPassed: boolean,
+): void {
   const { projectDir, emit, rlog } = ctx;
   const durationMs = Date.now() - step.startTime;
   runs.completeAgentRun(projectDir, runId, step.agentRunId, {
@@ -150,7 +156,15 @@ function endPrerequisites(ctx: OrchestrationContext, runId: string, step: Prereq
     inputTokens: 0,
     outputTokens: 0,
   });
-  emit({ type: "step_completed", runId, cycleNumber: 0, step: "prerequisites", agentRunId: step.agentRunId, costUsd: 0, durationMs });
+  emit({
+    type: "step_completed",
+    runId,
+    cycleNumber: 0,
+    step: "prerequisites",
+    agentRunId: step.agentRunId,
+    costUsd: 0,
+    durationMs,
+  });
   emit({ type: "prerequisites_completed", runId });
   rlog.run("INFO", "runPrerequisites: completed", { durationMs, allPassed });
 }
@@ -168,7 +182,8 @@ function isGitRepo(projectDir: string): boolean {
 
 /** Why `.specify/` cannot take SPECIFY_FEATURE_DIRECTORY (research R5), or null when it can. */
 function speckitProblem(projectDir: string): string | null {
-  if (!fs.existsSync(path.join(projectDir, ".specify"))) return ".specify/ is missing — run `specify init` in the project";
+  if (!fs.existsSync(path.join(projectDir, ".specify")))
+    return ".specify/ is missing — run `specify init` in the project";
   const common = path.join(projectDir, ".specify", "scripts", "bash", "common.sh");
   if (!fs.existsSync(common)) return ".specify/scripts/bash/common.sh is missing";
   if (!fs.readFileSync(common, "utf-8").includes("SPECIFY_FEATURE_DIRECTORY")) {
@@ -196,19 +211,34 @@ function trustState(projectDir: string): string {
  * Check-only prerequisites for an existing project (research R12). Returns one
  * line per failed check; empty when all pass. Fixes nothing and asks nothing.
  */
-export async function checkExistingProject(ctx: OrchestrationContext, runId: string): Promise<string[]> {
+export async function checkExistingProject(
+  ctx: OrchestrationContext,
+  runId: string,
+): Promise<string[]> {
   const { projectDir } = ctx;
   const step = beginPrerequisites(ctx, runId);
   const failures: string[] = [];
   const check = (name: PrerequisiteCheckName, problem: string | null, okMessage?: string) => {
     if (problem) failures.push(problem);
-    step.emitCheck(problem ? { name, status: "fail", message: problem } : { name, status: "pass", message: okMessage });
+    step.emitCheck(
+      problem
+        ? { name, status: "fail", message: problem }
+        : { name, status: "pass", message: okMessage },
+    );
   };
-  check("claude_cli", isCommandOnPath("claude") ? null : "Claude Code CLI (`claude`) is not on PATH", trustState(projectDir));
-  check("specify_cli", isCommandOnPath("specify") ? null : "spec-kit CLI (`specify`) is not on PATH");
+  check(
+    "claude_cli",
+    isCommandOnPath("claude") ? null : "Claude Code CLI (`claude`) is not on PATH",
+    trustState(projectDir),
+  );
+  check(
+    "specify_cli",
+    isCommandOnPath("specify") ? null : "spec-kit CLI (`specify`) is not on PATH",
+  );
   check("git_init", isGitRepo(projectDir) ? null : `${projectDir} is not a git repository`);
   check("speckit_init", speckitProblem(projectDir));
-  if (failures.length > 0) ctx.rlog.run("WARN", `checkExistingProject: ${failures.length} check(s) failed`, { failures });
+  if (failures.length > 0)
+    ctx.rlog.run("WARN", `checkExistingProject: ${failures.length} check(s) failed`, { failures });
   endPrerequisites(ctx, runId, step, failures.length === 0);
   return failures;
 }
@@ -234,21 +264,28 @@ async function checkClaudeCli(
 
   while (true) {
     if (ctx.abort.signal.aborted) return false;
-    const answers = await askQuestions({ projectDir: ctx.projectDir, emit: ctx.emit, runId }, null, [
-      {
-        question:
-          "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
-        header: "Missing: Claude CLI",
-        options: [
-          {
-            label: "I've installed it — check again",
-            description: "Re-run the check after you've installed Claude Code",
-          },
-          { label: "Skip this check", description: "Proceed without verifying (not recommended)" },
-        ],
-        multiSelect: false,
-      },
-    ]);
+    const answers = await askQuestions(
+      { projectDir: ctx.projectDir, emit: ctx.emit, runId },
+      null,
+      [
+        {
+          question:
+            "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
+          header: "Missing: Claude CLI",
+          options: [
+            {
+              label: "I've installed it — check again",
+              description: "Re-run the check after you've installed Claude Code",
+            },
+            {
+              label: "Skip this check",
+              description: "Proceed without verifying (not recommended)",
+            },
+          ],
+          multiSelect: false,
+        },
+      ],
+    );
     const answer = Object.values(answers)[0];
     if (answer === "Skip this check") {
       emitCheck({ name: "claude_cli", status: "fixed", message: "Skipped by user" });
@@ -288,24 +325,28 @@ async function checkSpecifyCli(
 
   while (true) {
     if (ctx.abort.signal.aborted) return false;
-    const answers = await askQuestions({ projectDir: ctx.projectDir, emit: ctx.emit, runId }, null, [
-      {
-        question:
-          "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
-        header: "Missing: Spec-Kit CLI",
-        options: [
-          {
-            label: "I've installed it — check again",
-            description: "Re-run the check after you've installed spec-kit",
-          },
-          {
-            label: "Skip this check",
-            description: "Proceed without spec-kit (the loop will likely fail)",
-          },
-        ],
-        multiSelect: false,
-      },
-    ]);
+    const answers = await askQuestions(
+      { projectDir: ctx.projectDir, emit: ctx.emit, runId },
+      null,
+      [
+        {
+          question:
+            "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
+          header: "Missing: Spec-Kit CLI",
+          options: [
+            {
+              label: "I've installed it — check again",
+              description: "Re-run the check after you've installed spec-kit",
+            },
+            {
+              label: "Skip this check",
+              description: "Proceed without spec-kit (the loop will likely fail)",
+            },
+          ],
+          multiSelect: false,
+        },
+      ],
+    );
     const answer = Object.values(answers)[0];
     if (answer === "Skip this check") {
       emitCheck({ name: "specify_cli", status: "fixed", message: "Skipped by user" });
@@ -494,14 +535,18 @@ async function checkGithubRepo(
   }
 
   if (ctx.abort.signal.aborted) return;
-  const repoAnswers = await askQuestions({ projectDir: ctx.projectDir, emit: ctx.emit, runId }, null, [
-    {
-      question: "Enter the name for your new GitHub repository:",
-      header: "Repository Name",
-      options: [{ label: path.basename(ctx.projectDir), description: "Use project folder name" }],
-      multiSelect: false,
-    },
-  ]);
+  const repoAnswers = await askQuestions(
+    { projectDir: ctx.projectDir, emit: ctx.emit, runId },
+    null,
+    [
+      {
+        question: "Enter the name for your new GitHub repository:",
+        header: "Repository Name",
+        options: [{ label: path.basename(ctx.projectDir), description: "Use project folder name" }],
+        multiSelect: false,
+      },
+    ],
+  );
   const repoName = Object.values(repoAnswers)[0];
 
   ctx.rlog.run("INFO", `runPrerequisites: creating GitHub repo '${repoName}'`);

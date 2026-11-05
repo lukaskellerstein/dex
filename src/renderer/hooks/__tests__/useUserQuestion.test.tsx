@@ -107,7 +107,10 @@ describe("useUserQuestion", () => {
     act(() => {
       result.current.answerQuestion("req-1", { Stack: "Node" });
     });
-    expect(answerRequestMock).toHaveBeenCalledWith("req-1", { kind: "question", answers: { Stack: "Node" } });
+    expect(answerRequestMock).toHaveBeenCalledWith("req-1", {
+      kind: "question",
+      answers: { Stack: "Node" },
+    });
     expect(result.current.pendingRequest).toBeNull();
   });
 
@@ -143,7 +146,15 @@ describe("useUserQuestion", () => {
     getRunStateMock.mockResolvedValue({ projectDir: "/p", runId: "r-1" });
     getProjectStateMock.mockResolvedValue({
       pendingRequests: [
-        { id: "p-1", entryId: null, askedAt: "t", kind: "pause", reason: "gate", detail: "", options: [] },
+        {
+          id: "p-1",
+          entryId: null,
+          askedAt: "t",
+          kind: "pause",
+          reason: "gate",
+          detail: "",
+          options: [],
+        },
         {
           id: "req-9",
           entryId: "021-agent-entry",
@@ -160,7 +171,10 @@ describe("useUserQuestion", () => {
     const { result } = renderHook(() => useUserQuestion());
     await waitFor(() => expect(result.current.pendingRequest?.requestId).toBe("req-9"));
     expect(getProjectStateMock).toHaveBeenCalledWith("/p");
-    expect(result.current.pendingRequest).toMatchObject({ kind: "tool_approval", source: "policy" });
+    expect(result.current.pendingRequest).toMatchObject({
+      kind: "tool_approval",
+      source: "policy",
+    });
   });
 
   it("run_started clears both isClarifying and the held request", () => {

@@ -86,14 +86,19 @@ export function initQueue(projectDir: string): string[] {
   const file = queuePath(projectDir);
   if (fs.existsSync(file)) throw new QueueExistsError(file);
   const byId = new Map<string, Folders>();
-  for (const [kind, root] of [["spec", SPECS], ["brief", BRIEFS]] as const) {
+  for (const [kind, root] of [
+    ["spec", SPECS],
+    ["brief", BRIEFS],
+  ] as const) {
     for (const name of subfolders(projectDir, root)) {
       const id = folderId(name);
       byId.set(id, { ...byId.get(id), [kind]: name });
     }
   }
   if (byId.size === 0) {
-    throw new Error(`no feature folders under ${SPECS}/ or ${BRIEFS}/ in ${projectDir} — nothing to queue`);
+    throw new Error(
+      `no feature folders under ${SPECS}/ or ${BRIEFS}/ in ${projectDir} — nothing to queue`,
+    );
   }
   const entries = [...byId.keys()].sort().map((id) => entryFor(projectDir, id, byId.get(id) ?? {}));
   const queue = validateQueue({ version: 3, kind: "existing", entries }, file);

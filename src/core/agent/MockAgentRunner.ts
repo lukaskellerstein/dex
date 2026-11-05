@@ -143,14 +143,25 @@ export class MockAgentRunner implements AgentRunner {
     await sleep(descriptor.delay);
     const aborted = () => ctx.abortController?.signal.aborted ?? false;
     if (descriptor.asks && !aborted()) {
-      await this.ask(descriptor.asks, { ...ctx, entryId, step, autoClarification: ctx.config.autoClarification ?? false });
+      await this.ask(descriptor.asks, {
+        ...ctx,
+        entryId,
+        step,
+        autoClarification: ctx.config.autoClarification ?? false,
+      });
     }
     // A stopped agent leaves nothing behind, like a real session aborted mid-stream.
     const stopped = aborted();
     if (!stopped) {
       // spec-kit writes where SPECIFY_FEATURE_DIRECTORY points (research R5).
-      const tctx = { cycleNumber, featureId: entryId, specDir: ctx.env?.SPECIFY_FEATURE_DIRECTORY ?? specDir, runId };
-      if (step === "specify" && ctx.env?.GIT_BRANCH_NAME) this.switchToFeatureBranch(ctx.env.GIT_BRANCH_NAME);
+      const tctx = {
+        cycleNumber,
+        featureId: entryId,
+        specDir: ctx.env?.SPECIFY_FEATURE_DIRECTORY ?? specDir,
+        runId,
+      };
+      if (step === "specify" && ctx.env?.GIT_BRANCH_NAME)
+        this.switchToFeatureBranch(ctx.env.GIT_BRANCH_NAME);
       if (step === "brief") this.writeBrief(entryId);
       this.applySideEffects(descriptor, tctx);
       if (step === "verify") this.writeVerify(descriptor as VerifyDescriptor, tctx, prompt);
@@ -190,13 +201,22 @@ export class MockAgentRunner implements AgentRunner {
     await sleep(descriptor.delay);
     const aborted = () => ctx.abortController?.signal.aborted ?? false;
     if (descriptor.asks && !aborted()) {
-      await this.ask(descriptor.asks, { ...ctx, entryId, step: "implement", autoClarification: false });
+      await this.ask(descriptor.asks, {
+        ...ctx,
+        entryId,
+        step: "implement",
+        autoClarification: false,
+      });
     }
     const stopped = aborted();
     if (!stopped) {
       this.applySideEffects(descriptor, { cycleNumber: 0, featureId: entryId, specDir, runId });
       if (specDir && descriptor.tick !== false) {
-        this.tickPhase(specDir, taskPhase.tasks.map((t) => t.id), scopeFromPrompt(prompt));
+        this.tickPhase(
+          specDir,
+          taskPhase.tasks.map((t) => t.id),
+          scopeFromPrompt(prompt),
+        );
       }
       this.commitAsAgent("implement", entryId);
     }
@@ -209,7 +229,14 @@ export class MockAgentRunner implements AgentRunner {
   /** Asks the scripted questions the way canUseTool answers AskUserQuestion: the stage's mode decides. */
   private async ask(
     asks: MockQuestion[],
-    c: { runId: string; emit: EmitFn; entryId: string | null; step: StepType; autoClarification: boolean; policy: Policy },
+    c: {
+      runId: string;
+      emit: EmitFn;
+      entryId: string | null;
+      step: StepType;
+      autoClarification: boolean;
+      policy: Policy;
+    },
   ): Promise<void> {
     const questions: UserInputQuestion[] = asks.map((q) => ({
       question: q.question,
@@ -217,10 +244,15 @@ export class MockAgentRunner implements AgentRunner {
       multiSelect: q.multiSelect ?? false,
       options: q.options.map((o) => ({ label: o.label, description: o.description ?? "" })),
     }));
-    await askQuestions({ projectDir: this.projectDir, runId: c.runId, emit: c.emit }, c.entryId, questions, {
-      mode: questionModeFor(c.step, c.autoClarification, c.policy),
-      step: c.step,
-    });
+    await askQuestions(
+      { projectDir: this.projectDir, runId: c.runId, emit: c.emit },
+      c.entryId,
+      questions,
+      {
+        mode: questionModeFor(c.step, c.autoClarification, c.policy),
+        step: c.step,
+      },
+    );
   }
 
   // ── Lookup ──
@@ -237,11 +269,18 @@ export class MockAgentRunner implements AgentRunner {
   /** Emits synthetic agent_steps; the mock persists none (spec 009). */
   private stepEmitter(emit: TaskPhaseContext["emit"]) {
     let index = 0;
-    return (type: AgentStep["type"], content: string, metadata: Record<string, unknown> | null = null) => {
+    return (
+      type: AgentStep["type"],
+      content: string,
+      metadata: Record<string, unknown> | null = null,
+    ) => {
       const s = mkStep(type, index++, content, metadata);
       emit({
         type: "agent_step",
-        agentStep: { ...s, metadata: { ...s.metadata, costUsd: null, inputTokens: null, outputTokens: null } },
+        agentStep: {
+          ...s,
+          metadata: { ...s.metadata, costUsd: null, inputTokens: null, outputTokens: null },
+        },
       });
     };
   }
@@ -327,7 +366,8 @@ export class MockAgentRunner implements AgentRunner {
   /** The brief stage: a short brief with an acceptance section at the entry's `brief` path (queue.json). */
   private writeBrief(entryId: string | null): void {
     const entry = loadQueue(this.projectDir)?.entries.find((e) => e.id === entryId);
-    if (!entry?.brief) throw new Error(`mock brief: queue entry ${entryId ?? "(none)"} has no "brief" path`);
+    if (!entry?.brief)
+      throw new Error(`mock brief: queue entry ${entryId ?? "(none)"} has no "brief" path`);
     const sources = (entry.generate?.sources ?? []).map((s) => `- ${s}`).join("\n");
     const body = `# Brief: ${entry.title}\n\nWritten by the mock brief stage from:\n\n${sources}\n\n## Goal\n\n${entry.description ?? entry.title}\n\n## Acceptance\n\n- ${entry.title} works as the sources describe.\n`;
     const dest = path.join(this.projectDir, entry.brief);
@@ -336,7 +376,8 @@ export class MockAgentRunner implements AgentRunner {
   }
 
   private switchToFeatureBranch(name: string): void {
-    const git = (args: string[]) => execFileSync("git", args, { cwd: this.projectDir, stdio: "pipe" });
+    const git = (args: string[]) =>
+      execFileSync("git", args, { cwd: this.projectDir, stdio: "pipe" });
     try {
       git(["show-ref", "--verify", "--quiet", `refs/heads/${name}`]);
       git(["switch", "--quiet", name]);

@@ -6,14 +6,24 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { CanUseTool, HookCallbackMatcher, HookEvent, Options } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  CanUseTool,
+  HookCallbackMatcher,
+  HookEvent,
+  Options,
+} from "@anthropic-ai/claude-agent-sdk";
 import { questionModeFor } from "../humanInput.js";
 import type { RunLogger } from "../log.js";
 import { parseTasksFile } from "../parser.js";
 import { type Policy, skipsPermissionChecks } from "../policy.js";
 import * as runs from "../runs.js";
 import type { AgentStep, EmitFn, RunConfig, StepType } from "../types.js";
-import { makeCanUseTool, type PermissionDeps, policyEnvFor, preToolUseDecision } from "./permissions.js";
+import {
+  makeCanUseTool,
+  type PermissionDeps,
+  policyEnvFor,
+  preToolUseDecision,
+} from "./permissions.js";
 import {
   estimateCost,
   makeStep,
@@ -80,7 +90,11 @@ class SessionTrace {
     this.model = p.config.model;
   }
 
-  push(type: AgentStep["type"], content: string | null, metadata: Record<string, unknown> | null = null): void {
+  push(
+    type: AgentStep["type"],
+    content: string | null,
+    metadata: Record<string, unknown> | null = null,
+  ): void {
     this.store(makeStep(type, this.sequenceIndex++, content, metadata));
   }
 
@@ -101,10 +115,16 @@ class SessionTrace {
       },
     };
     this.p.emit({ type: "agent_step", agentStep: enriched });
-    runs.appendAgentStep(this.p.config.projectDir, this.p.runId, this.p.trace.slug, this.p.trace.number, {
-      ...enriched,
-      agentRunId: this.p.agentRunId,
-    });
+    runs.appendAgentStep(
+      this.p.config.projectDir,
+      this.p.runId,
+      this.p.trace.slug,
+      this.p.trace.number,
+      {
+        ...enriched,
+        agentRunId: this.p.agentRunId,
+      },
+    );
   }
 }
 
@@ -156,7 +176,10 @@ function permissionDeps(p: SessionParams, isAborted: () => boolean): PermissionD
     io: { projectDir: p.config.projectDir, runId: p.runId, emit: p.emit },
     agentRunId: p.agentRunId,
     entryId: p.entryId,
-    questions: { mode: questionModeFor(p.step, p.config.autoClarification ?? false, p.policy), step: p.step },
+    questions: {
+      mode: questionModeFor(p.step, p.config.autoClarification ?? false, p.policy),
+      step: p.step,
+    },
     isAborted,
     rlog: p.rlog,
   };
@@ -176,7 +199,11 @@ export async function runClaudeSession(p: SessionParams): Promise<SessionResult>
 
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const permissions = permissionDeps(p, isAborted);
-  const options = buildQueryOptions(p, buildHooks(p, trace, permissions), makeCanUseTool(permissions));
+  const options = buildQueryOptions(
+    p,
+    buildHooks(p, trace, permissions),
+    makeCanUseTool(permissions),
+  );
 
   for await (const msg of query({ prompt: p.prompt, options })) {
     if (isAborted()) {
@@ -265,7 +292,9 @@ function recordToolCall(input: Record<string, unknown>, trace: SessionTrace): vo
 function recordToolResult(input: Record<string, unknown>, trace: SessionTrace): void {
   if (input.tool_name === "Skill") {
     const response = input.tool_response ?? input.tool_result ?? "";
-    trace.push("skill_result", stringifyResponse(response), { toolUseId: input.tool_use_id ?? null });
+    trace.push("skill_result", stringifyResponse(response), {
+      toolUseId: input.tool_use_id ?? null,
+    });
     return;
   }
   trace.pushWith((i) => toToolResultStep(input, i));
@@ -289,7 +318,11 @@ function reemitTasksIfWritten(input: Record<string, unknown>, p: SessionParams):
   }
 }
 
-function onSubagentStart(input: Record<string, unknown>, trace: SessionTrace, p: SessionParams): void {
+function onSubagentStart(
+  input: Record<string, unknown>,
+  trace: SessionTrace,
+  p: SessionParams,
+): void {
   const info = toSubagentInfo(input);
   trace.knownSubagents.add(info.subagentId);
   p.rlog.subagentEvent(info.subagentId, "INFO", "SubagentStart", {
@@ -317,7 +350,11 @@ function onSubagentStart(input: Record<string, unknown>, trace: SessionTrace, p:
   trace.activeSubagents.add(info.subagentId);
 }
 
-function onSubagentStop(input: Record<string, unknown>, trace: SessionTrace, p: SessionParams): void {
+function onSubagentStop(
+  input: Record<string, unknown>,
+  trace: SessionTrace,
+  p: SessionParams,
+): void {
   const subagentId = String(input.subagent_id ?? input.agent_id ?? "unknown");
   p.rlog.subagentEvent(subagentId, "INFO", "SubagentStop", { rawInput: input });
   // Before the result step, so the result is not tagged as the subagent's.
@@ -331,7 +368,11 @@ function onSubagentStop(input: Record<string, unknown>, trace: SessionTrace, p: 
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
-function captureSessionId(message: Record<string, unknown>, trace: SessionTrace, p: SessionParams): void {
+function captureSessionId(
+  message: Record<string, unknown>,
+  trace: SessionTrace,
+  p: SessionParams,
+): void {
   if (trace.sessionId || typeof message.session_id !== "string") return;
   trace.sessionId = message.session_id;
   p.rlog.agentRun("INFO", `${p.trace.label}: session_id=${trace.sessionId}`);
@@ -345,7 +386,9 @@ function onInit(message: Record<string, unknown>, trace: SessionTrace, p: Sessio
   const agents = (message.agents as unknown[] | undefined) ?? [];
   const slashCommands = (message.slash_commands as unknown[] | undefined) ?? [];
   const toolNames = ((message.tools as unknown[] | undefined) ?? []).map((t) =>
-    typeof t === "object" && t !== null ? String((t as Record<string, unknown>).name ?? t) : String(t),
+    typeof t === "object" && t !== null
+      ? String((t as Record<string, unknown>).name ?? t)
+      : String(t),
   );
   if (typeof message.model === "string") trace.model = message.model;
 
@@ -357,7 +400,8 @@ function onInit(message: Record<string, unknown>, trace: SessionTrace, p: Sessio
     agentCount: agents.length,
     slashCommandCount: slashCommands.length,
   });
-  if (skills.length === 0) p.rlog.agentRun("WARN", `${p.trace.label}: NO SKILLS available to agent`);
+  if (skills.length === 0)
+    p.rlog.agentRun("WARN", `${p.trace.label}: NO SKILLS available to agent`);
 
   trace.push("debug", null, {
     model: trace.model,
@@ -439,7 +483,10 @@ function onResult(
   }
   const structuredOutput = message.structured_output ?? null;
   if (structuredOutput === null) {
-    p.rlog.agentRun("WARN", `${p.trace.label}: outputFormat requested but structured_output is null`);
+    p.rlog.agentRun(
+      "WARN",
+      `${p.trace.label}: outputFormat requested but structured_output is null`,
+    );
   }
   return { resultText, structuredOutput, subtype };
 }

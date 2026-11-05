@@ -41,7 +41,10 @@ const VALID_CONFIG = {
       verify: { delay: 0 },
     } as Record<string, Record<string, unknown>>,
     "002-b": {
-      verify: { delay: 5, rounds: [{ verdict: "failed", fixTasks: ["fix it"] }, { verdict: "passed" }] },
+      verify: {
+        delay: 5,
+        rounds: [{ verdict: "failed", fixTasks: ["fix it"] }, { verdict: "passed" }],
+      },
     } as Record<string, Record<string, unknown>>,
   },
 };
@@ -122,7 +125,7 @@ test("MockConfig: a verify round needs a passed/failed verdict", () => {
   }
 });
 
-test("stageScript: the entry's own stage wins, else the \"*\" one, else null", () => {
+test('stageScript: the entry\'s own stage wins, else the "*" one, else null', () => {
   const dir = mkProject();
   try {
     writeConfig(dir, JSON.stringify(VALID_CONFIG));

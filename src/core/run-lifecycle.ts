@@ -192,7 +192,10 @@ export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResu
     }));
     clearStaleRequests(config.projectDir);
   } else {
-    await saveState(config.projectDir, createInitialState(config, runId, { kind: rules.kind, runBranch: null }));
+    await saveState(
+      config.projectDir,
+      createInitialState(config, runId, { kind: rules.kind, runBranch: null }),
+    );
   }
 
   emit({ type: "run_started", config, runId, branchName });
@@ -251,7 +254,8 @@ function stateStatusAtEnd(
 ): "completed" | "failed" | "paused" | "keep" {
   if (termination === "paused") return "keep";
   if (termination === "failed") return "failed";
-  if (wasStopped || termination === "user_abort" || termination === "budget_exceeded") return "paused";
+  if (wasStopped || termination === "user_abort" || termination === "budget_exceeded")
+    return "paused";
   return "completed";
 }
 
@@ -302,7 +306,8 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
   if (projectDir && status !== "keep") {
     try {
       const pausedAt = new Date().toISOString();
-      const reason = waitFor ?? (termination === "budget_exceeded" ? "limit_reached" : "user_abort");
+      const reason =
+        waitFor ?? (termination === "budget_exceeded" ? "limit_reached" : "user_abort");
       mutateState(projectDir, (s) =>
         status === "paused" ? { ...s, status, pauseReason: reason, pausedAt } : { ...s, status },
       );
@@ -322,7 +327,14 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
   // compare against: a paused or failed loop resumes on the same branch.
   const finished = termination === undefined || termination === "queue_complete";
   let prUrl: string | null = null;
-  if (openPullRequest && !wasStopped && finished && taskPhasesCompleted > 0 && branchName && baseBranch) {
+  if (
+    openPullRequest &&
+    !wasStopped &&
+    finished &&
+    taskPhasesCompleted > 0 &&
+    branchName &&
+    baseBranch
+  ) {
     rlog.run("INFO", `run: creating PR for branch ${branchName}`);
     prUrl = createPullRequest(
       config.projectDir,

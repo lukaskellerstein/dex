@@ -28,17 +28,32 @@ function run(status: RunRecord["status"], agentRuns: AgentRunRecord[]): RunRecor
 }
 
 const RUNS = [
-  agentRun({ agentRunId: "pre", taskPhaseNumber: 0, taskPhaseName: "loop:prerequisites", specDir: null, costUsd: 0.1 }),
+  agentRun({
+    agentRunId: "pre",
+    taskPhaseNumber: 0,
+    taskPhaseName: "loop:prerequisites",
+    specDir: null,
+    costUsd: 0.1,
+  }),
   agentRun({ agentRunId: "s1", costUsd: 0.5 }),
   agentRun({ agentRunId: "i1", taskPhaseName: "Core", step: "implement", costUsd: 1 }),
-  agentRun({ agentRunId: "s2", taskPhaseNumber: 2, taskPhaseName: "loop:plan", specDir: "specs/002-beta", status: "running", costUsd: 0.25 }),
+  agentRun({
+    agentRunId: "s2",
+    taskPhaseNumber: 2,
+    taskPhaseName: "loop:plan",
+    specDir: "specs/002-beta",
+    status: "running",
+    costUsd: 0.25,
+  }),
 ];
 
 describe("buildLoopStateFromRun", () => {
   it("counts every agent run's cost: a cycle's includes its implement phases, the total includes all", () => {
     const rebuilt = buildLoopStateFromRun(run("completed", RUNS), null);
     expect(rebuilt.preCycleStages.map((s) => s.type)).toEqual(["prerequisites"]);
-    expect(rebuilt.loopCycles.map((c) => [c.cycleNumber, c.costUsd, c.implementPhases.length])).toEqual([
+    expect(
+      rebuilt.loopCycles.map((c) => [c.cycleNumber, c.costUsd, c.implementPhases.length]),
+    ).toEqual([
       [1, 1.5, 1],
       [2, 0.25, 0],
     ]);

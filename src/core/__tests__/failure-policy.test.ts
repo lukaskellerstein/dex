@@ -8,7 +8,13 @@ import { afterEach, beforeEach, test } from "node:test";
 import { countVerifyRounds, type PickerDecision } from "../picker.ts";
 import { DEFAULT_POLICY, type PolicyLimits } from "../policy.ts";
 import { type QueueV3, resolveEntries } from "../queue.ts";
-import { limitCheck, progressCheck, recordStage, runBudgetLeft, verifyRoundsCheck } from "../stages/post-stage.ts";
+import {
+  limitCheck,
+  progressCheck,
+  recordStage,
+  runBudgetLeft,
+  verifyRoundsCheck,
+} from "../stages/post-stage.ts";
 import { createInitialState, loadState, saveState } from "../state.ts";
 import type { RunConfig } from "../types.ts";
 import { rmTmp } from "./helpers/git.ts";
@@ -51,7 +57,13 @@ const config: RunConfig = {
 
 beforeEach(async () => {
   dir = mkTmpProject({});
-  await saveState(dir, createInitialState({ ...config, projectDir: dir }, "run-1", { kind: "new", runBranch: "dex/run" }));
+  await saveState(
+    dir,
+    createInitialState({ ...config, projectDir: dir }, "run-1", {
+      kind: "new",
+      runBranch: "dex/run",
+    }),
+  );
 });
 
 afterEach(() => {
@@ -68,10 +80,17 @@ test("implement counter: +1 without a new checked task, 0 again on progress; pau
   counters = (await loadState(dir))?.counters ?? {};
   assert.deepEqual(progressCheck(last, stageDecision("implement"), counters, LIMITS), {
     reason: "limit_reached",
-    detail: "implement ran 2 times for 001-alpha without checking a new task (limits.maxImplementRunsWithoutProgress: 2)",
+    detail:
+      "implement ran 2 times for 001-alpha without checking a new task (limits.maxImplementRunsWithoutProgress: 2)",
   });
   // A higher limit lets it run again.
-  assert.equal(progressCheck(last, stageDecision("implement"), counters, { ...LIMITS, maxImplementRunsWithoutProgress: 3 }), null);
+  assert.equal(
+    progressCheck(last, stageDecision("implement"), counters, {
+      ...LIMITS,
+      maxImplementRunsWithoutProgress: 3,
+    }),
+    null,
+  );
 
   assert.equal(recordStage(dir, last, 0.5, { checkedBefore: 1, checkedAfter: 2 }), 0);
   assert.equal((await loadState(dir))?.cumulativeCostUsd, 1.5);
@@ -81,7 +100,10 @@ test("verify rounds: at the limit and not done → pause naming the limit; below
   assert.equal(verifyRoundsCheck(stageDecision("implement"), 2, LIMITS), null);
   const guard = verifyRoundsCheck(stageDecision("implement"), 3, LIMITS);
   assert.equal(guard?.reason, "limit_reached");
-  assert.match(guard?.detail ?? "", /^verify failed 3 times for 001-alpha \(limits\.maxVerifyRounds: 3\)/);
+  assert.match(
+    guard?.detail ?? "",
+    /^verify failed 3 times for 001-alpha \(limits\.maxVerifyRounds: 3\)/,
+  );
   assert.equal(verifyRoundsCheck(stageDecision("verify"), 3, LIMITS)?.reason, "limit_reached");
   // Only implement and verify are verify rounds; an entry before them is unaffected.
   assert.equal(verifyRoundsCheck(stageDecision("plan"), 3, LIMITS), null);

@@ -15,7 +15,15 @@ import { rmTmp } from "./helpers/git.ts";
 import { mkExistingProject, writeFile } from "./helpers/loop.ts";
 import { mkTmpProject } from "./helpers/project.ts";
 
-const CONFIG: RunConfig = { projectDir: "", specDir: "", mode: "loop", model: "m", maxIterations: 1, maxTurns: 1, taskPhases: "all" };
+const CONFIG: RunConfig = {
+  projectDir: "",
+  specDir: "",
+  mode: "loop",
+  model: "m",
+  maxIterations: 1,
+  maxTurns: 1,
+  taskPhases: "all",
+};
 
 function agentRun(projectDir: string, runId: string, featureSlug: string, costUsd: number): void {
   const agentRunId = `${featureSlug}-${costUsd}`;
@@ -43,7 +51,13 @@ function agentRun(projectDir: string, runId: string, featureSlug: string, costUs
 test("runSnapshot: state, the queue view with per-entry cost from the run record, no errors, nothing written", async () => {
   const dir = mkExistingProject();
   try {
-    await saveState(dir, createInitialState({ ...CONFIG, projectDir: dir }, "run-1", { kind: "existing", runBranch: null }));
+    await saveState(
+      dir,
+      createInitialState({ ...CONFIG, projectDir: dir }, "run-1", {
+        kind: "existing",
+        runBranch: null,
+      }),
+    );
     runs.startRun(dir, {
       runId: "run-1",
       mode: "loop",

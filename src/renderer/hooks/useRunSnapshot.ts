@@ -8,7 +8,14 @@ import type { RunSnapshot } from "../../core/run-snapshot.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 import { projectService } from "../services/projectService.js";
 
-const BOUNDARIES = new Set(["run_started", "step_started", "step_completed", "paused", "run_completed", "loop_terminated"]);
+const BOUNDARIES = new Set([
+  "run_started",
+  "step_started",
+  "step_completed",
+  "paused",
+  "run_completed",
+  "loop_terminated",
+]);
 
 export interface RunSnapshotApi {
   snapshot: RunSnapshot | null;
