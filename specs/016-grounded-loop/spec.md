@@ -359,7 +359,7 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
 - **A red baseline before `verify` becomes a "restore green" `implement` run**, because the verifier may write only `tasks.md` and cannot fix code (research R7).
 - **"Two such runs" means two runs in a row that each repeat the fingerprint of the run before** (three equal fingerprints), which matches D-016-7's wording. The brief's scenario table says "two runs with the same fingerprint"; FR-044 follows the decision text.
 - **The skip-marker list is a starting set** for Python, TypeScript and Go; it reports, it does not block, so a missed marker costs a line in the digest, not a wrong gate.
-- **The attempt log replaces nothing tracked.** It is not 015's dropped `learnings` stage: it holds this entry's attempts, not general insights. Lasting knowledge goes into the project's docs (017).
+- **The attempt log replaces nothing tracked.** It is not 015's dropped `learnings` stage: it holds this entry's attempts, not general insights. Lasting knowledge goes into the project's docs (018).
 
 ## Out of Scope
 
@@ -369,4 +369,4 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
 - Sharding or parallel test runs.
 - Running in CI: CI stays the project's own; Dex runs locally beside it.
 - An LLM judge as a gate. The verifier can block an entry, never pass one.
-- The project's docs as lasting memory, and a lessons review in the digest (017).
+- The project's docs as lasting memory, and a lessons review in the digest (018).

@@ -234,7 +234,7 @@ header is a stable marker; the mock can script it.
 
 **Alternatives considered**: Detect amendments by a question that names a frozen
 file — rejected: fragile, and it would also catch questions about tests. A new
-tool — rejected: Claude-only (018 removes such interception).
+tool — rejected: Claude-only (019 removes such interception).
 
 ## R11 — Stall detection
 
@@ -292,7 +292,7 @@ stage's prompt gets the newest sections that fit in 8,000 characters (about
 moves to `.dex/evidence/<id>/archive/progress-<ISO>.md`.
 
 **Rationale**: A character budget needs no tokenizer and is close enough for a
-prompt section. The archive keeps history out of every later prompt (017's
+prompt section. The archive keeps history out of every later prompt (018's
 "history is never fed back").
 
 ## R15 — The digest

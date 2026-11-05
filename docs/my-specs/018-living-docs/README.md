@@ -1,12 +1,12 @@
-# 017 — Living docs: the project's documentation is the loop's lasting memory
+# 018 — Living docs: the project's documentation is the loop's lasting memory
 
-> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `017-living-docs`.
+> **Status:** draft v1.0 · 2026-11-05 · the brief for spec-kit. Feature, branch and spec folder: `018-living-docs`.
 >
 > **Builds on** [`015-lean-core`](../015-lean-core/README.md) (queue, picker, policy) and [`016-grounded-loop`](../016-grounded-loop/README.md) (sensors, gates, evidence, digest).
 >
-> **Followed by** [`018-many-projects-any-agent`](../018-many-projects-any-agent/README.md): several projects at once, and Codex and OpenCode next to Claude. Its agents get the project's instructions from this spec's `docs` list (D-018-6).
+> **Followed by** [`019-many-projects-any-agent`](../019-many-projects-any-agent/README.md): several projects at once, and Codex and OpenCode next to Claude. Its agents get the project's instructions from this spec's `docs` list (D-019-6).
 >
-> **Timing:** 017 doesn't block the first real run on a `dex-ecommerce` scratch clone at the end of 016. It should land before that queue reaches its first generated brief, because the `brief` stage reads the docs and the previous entry's digest (D-017-7).
+> **Timing:** 018 doesn't block the first real run on a `dex-ecommerce` scratch clone at the end of 016. It should land before that queue reaches its first generated brief, because the `brief` stage reads the docs and the previous entry's digest (D-018-7).
 
 ## Why
 
@@ -29,7 +29,7 @@ Dex already knows the answer: its own workflow has a feature-docs step that keep
 
 ## What changes
 
-### D-017-1 — The docs are the only lasting memory
+### D-018-1 — The docs are the only lasting memory
 
 There is no learnings store. Delete `appendLearnings`, `LEARNINGS_SCHEMA`, `maxLearningsPerCategory`, the `.claude/rules/learnings.md` migration, and anything 015 left of the learnings stage.
 
@@ -42,7 +42,7 @@ A project's lasting knowledge has two audiences, and both live in the repo:
 
 Claude Code loads the agent docs itself, through `settingSources`, so Dex doesn't inject them. The **personal** auto memory of the human who owns the machine stays out of the loop: 015's policy sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` for every loop agent by default.
 
-### D-017-2 — The policy declares the docs
+### D-018-2 — The policy declares the docs
 
 `policy.json` gains a `docs` list:
 
@@ -60,13 +60,13 @@ Also `docs.lint`, a list of lint commands (terminology, markdown) Dex runs as se
 
 The `read: always` docs should stay short. Together they are what every fresh session reads before it starts, so their size is a cost paid on every stage.
 
-### D-017-3 — Docs are part of done
+### D-018-3 — Docs are part of done
 
 1. **Routing is deterministic.** When an entry's diff, which Dex collected, touches files under a doc's `covers`, Dex lists that doc in the verifier's prompt as "check this doc against the diff". It does this whether or not the doc changed.
 2. **Truth is the verifier's call.** In review mode (016, D-016-5) the verifier reports a doc that no longer matches the code as a **blocking** finding. The rule is "the doc must be true", not "the doc must change", so a diff that leaves a doc correct needs no doc edit.
 3. **The fix goes through the plan.** A blocking doc finding appends a doc task to the fix phase, like any other finding.
 
-### D-017-4 — Drift sensors Dex runs itself
+### D-018-4 — Drift sensors Dex runs itself
 
 These are deterministic and run at the done gate, on every `maintain: true` doc:
 
@@ -79,7 +79,7 @@ These are deterministic and run at the done gate, on every `maintain: true` doc:
 
 Dex does **not** execute commands found in docs. Docs are written by agents, so running their code blocks would execute agent-written commands outside the policy's hooks, which only see agent tool calls. Runbooks are tested through the project's own acceptance commands (016) instead.
 
-### D-017-5 — Lessons become proposed doc edits, approved by the human
+### D-018-5 — Lessons become proposed doc edits, approved by the human
 
 A stage's structured output may include `lessons`: `{text, target, kind, evidenceId?}`.
 
@@ -90,18 +90,18 @@ A stage's structured output may include `lessons`: `{text, target, kind, evidenc
 Dex stores lessons in `.dex/lessons.json` (gitignored), with their provenance (entry, stage, run, evidence, date) and a status: `proposed`, `approved`, `rejected` or `applied`.
 
 - **Review.** The human reviews lessons in a batch, in the digest view or with `dex lessons`. Nothing is auto-approved: unreviewed lessons wait and are counted in every digest.
-- **Applying.** Dex never writes the docs itself (D-015-2). Approved lessons are applied by a `docs` stage (D-017-6), and the agent commits them.
+- **Applying.** Dex never writes the docs itself (D-015-2). Approved lessons are applied by a `docs` stage (D-018-6), and the agent commits them.
 
-### D-017-6 — A `docs` stage applies lessons and writes baselines
+### D-018-6 — A `docs` stage applies lessons and writes baselines
 
 The stage has two modes.
 
 - **Apply.** It runs when approved lessons are pending, on the current entry's branch, before any other stage. The picker gets a new first row: "approved lessons pending → `docs`". The agent writes each lesson into its target, within `maxLines`. It may merge or move text inside a doc to stay within the limit. Removing a fact needs its own approved lesson. Its write scope is the target docs only (016, D-016-6).
 - **Baseline.** A queue entry with `kind: "docs-baseline"` runs this mode once, for an existing project with missing docs. The agent surveys the code and writes the first architecture doc (and a runbook, if asked). The entry is gated on review: the human approves it at the gate before it counts as done. It never runs on its own schedule, because regenerating docs wipes human edits and drifts toward bulk.
 
-`dex docs check` runs the D-017-4 sensors on demand, outside a run.
+`dex docs check` runs the D-018-4 sensors on demand, outside a run.
 
-### D-017-7 — Handoff between entries goes through docs and the digest
+### D-018-7 — Handoff between entries goes through docs and the digest
 
 When the `brief` stage writes the next entry's brief, it reads:
 
@@ -111,7 +111,7 @@ When the `brief` stage writes the next entry's brief, it reads:
 
 That is how what one entry learned reaches the next entry's brief: through reviewed text, not through an agent's private notes.
 
-### D-017-8 — Spec folders are history, never the architecture
+### D-018-8 — Spec folders are history, never the architecture
 
 The verifier and the `brief` stage treat `specs/*` as the record of intent at the time each spec was written. When a spec and the architecture doc disagree, the doc describes the present. A disagreement the code doesn't settle is a question for the human.
 
@@ -137,10 +137,10 @@ After every phase, `npm test` and `npm run typecheck` pass.
 
 0. Confirm 016 as built: sensors, gates, evidence, digest.
 1. Delete the learnings code; add the `docs` policy list and the frozen mapping.
-2. Doc sensors (D-017-4) in the done gate; doc routing to the verifier (D-017-3).
-3. Lessons: the store, the output schema, review in the digest and the CLI (D-017-5).
-4. The `docs` stage in apply and baseline modes; the picker rows (D-017-6).
-5. Handoff into the `brief` stage (D-017-7).
+2. Doc sensors (D-018-4) in the done gate; doc routing to the verifier (D-018-3).
+3. Lessons: the store, the output schema, review in the digest and the CLI (D-018-5).
+4. The `docs` stage in apply and baseline modes; the picker rows (D-018-6).
+5. Handoff into the `brief` stage (D-018-7).
 6. The mock scenarios.
 7. Configure the `dex-ecommerce` scratch clone (Appendix A) and run `dex docs check` there. The first findings are a baseline, not a failure: list them in the digest and fix them as a docs entry, with the owner's approval.
 
@@ -169,7 +169,7 @@ After every phase, `npm test` and `npm run typecheck` pass.
 - Regenerating docs on every run.
 - Generated diagrams.
 - Publishing a docs site.
-- Executing commands found in docs (D-017-4 says why).
+- Executing commands found in docs (D-018-4 says why).
 - Vector search or embeddings over docs.
 - Docs outside the project's `writeRoots`; they stay read-only.
 
@@ -184,7 +184,7 @@ The proposed default is in bold.
 
 ## Appendix A — a dex-ecommerce scratch clone
 
-The clone has no architecture doc yet, so it also exercises the `docs-baseline` mode (D-017-6).
+The clone has no architecture doc yet, so it also exercises the `docs-baseline` mode (D-018-6).
 
 | Doc | Audience | Read | Covers | Notes |
 |---|---|---|---|---|

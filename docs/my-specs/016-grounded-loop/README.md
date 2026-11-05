@@ -11,7 +11,7 @@
 >
 > **First real run:** the first grounded real run, on a scratch clone of `dex-ecommerce`, happens at the end of this spec (Phase 8).
 >
-> **Followed by** [`017-living-docs`](../017-living-docs/README.md): the project's docs become the loop's lasting memory, and the digest gains a lessons review.
+> **Followed by** [`018-living-docs`](../018-living-docs/README.md): the project's docs become the loop's lasting memory, and the digest gains a lessons review.
 
 ## Why
 
@@ -131,7 +131,7 @@ A red check is re-run once (`checks.rerunOnFail`, default 1). If it's green on t
 
 ### D-016-9 — An attempt log the next session reads
 
-Dex keeps `.dex/evidence/<id>/progress.md` (gitignored), written from each stage's structured output: what was tried, what happened, the failing evidence and the open hypotheses. The latest entries, capped at about 2k tokens, are added to the next stage's prompt. This replaces the old `learnings` stage (dropped in 015) with something narrower: a memory of this entry's attempts, not general insights. The log is working memory, cleared when the entry is done (its archive stays in the evidence). Lasting knowledge goes into the project's docs, through human-approved edits ([017](../017-living-docs/README.md)).
+Dex keeps `.dex/evidence/<id>/progress.md` (gitignored), written from each stage's structured output: what was tried, what happened, the failing evidence and the open hypotheses. The latest entries, capped at about 2k tokens, are added to the next stage's prompt. This replaces the old `learnings` stage (dropped in 015) with something narrower: a memory of this entry's attempts, not general insights. The log is working memory, cleared when the entry is done (its archive stays in the evidence). Lasting knowledge goes into the project's docs, through human-approved edits ([018](../018-living-docs/README.md)).
 
 ### D-016-10 — A review digest, against comprehension debt
 
@@ -196,7 +196,7 @@ The mock needs fake sensors (`sh -c 'exit 1'` and similar, switchable per run) s
 - **Change:**
   - `picker.ts`: the `tests` row and the done-gate row;
   - `policy.ts`: per-stage write scopes and per-entry frozen sets;
-  - `stages/main-loop.ts` and `stages/cycle-stages.ts`: the gate calls;
+  - `stages/loop.ts` (015 renamed `stages/main-loop.ts`) and `stages/cycle-stages.ts`: the gate calls;
   - `agent/MockAgentRunner.ts` and `agent/MockConfig.ts`: scenarios and fake sensors;
   - the renderer: evidence per stage in the trace, and a digest view;
   - `cli.ts`: `dex digest <id>`.
