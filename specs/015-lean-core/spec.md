@@ -2,7 +2,7 @@
 
 **Feature Branch**: `015-lean-core`
 **Created**: 2026-11-05
-**Status**: Implemented on the branch (tasks.md: 126 of 126 done; Phase 12 builds the brief's three changes of 2026-11-05). SC-007 is not met; see [Outcomes](#outcomes-as-built).
+**Status**: Implemented on the branch (tasks.md: 126 of 126 done; Phase 12 builds the brief's three changes of 2026-11-05). SC-007 is not met, and the owner accepted that (further cuts go to 016); see [Outcomes](#outcomes-as-built).
 **Input**: User description: "docs/my-specs/015-lean-core/README.md" — the brief, draft v1.0 of 2026-11-04. The brief is the source of truth; this spec restates it as outcomes and requirements. It supersedes the never-numbered `01X-state-reconciliation` brief.
 
 ## Overview
@@ -368,7 +368,7 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
 | SC-004 | Met. The existing-project fixture ends `queue_complete`; the only new branch is the one the mock `specify` made; every new commit is `mock(...)`; exit 0 proves no push was tried. |
 | SC-005 | Met. Policy table cases pass. The live check (T067, `claude-haiku-5-5`) showed a project-settings `ask` rule reaching the approval flow instead of running, once Dex read the SDK's `decisionReasonType: "rule"` and matched compound commands per part (research R6). The approval card has component tests; the live UI check (T106) covered the rest, because the mock makes no tool calls. |
 | SC-006 | Met. `bypassPermissions` appears in `policy.ts` and its test only. |
-| SC-007 | **Not met.** 22,086 lines after the format pass (22,207, or 21.0% below, at the end of the branch, after a dead-code cut, the compound-command check and Phase 12's verify records); 22,086 is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. |
+| SC-007 | **Not met.** 22,086 lines after the format pass (22,207, or 21.0% below, at the end of the branch, after a dead-code cut, the compound-command check and Phase 12's verify records); 22,086 is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. The owner accepted SC-007 as not met on 2026-11-05 (open decision 8); further cuts go to 016. |
 | SC-008 | Met by tests (`failure-policy`, `loop`): two implement runs with no new task, or three failed verify rounds, pause with no further agent run. |
 | SC-009 | **Met** (T112): 2 blocks, one per open entry, exit 0, tree unchanged. It needed one fix: `dex queue init` now sets `baseBranch` after a done entry. |
 | SC-010 | **Met** (T113): `specify` for `002-improvements-1` on `claude-haiku-5-5`, $0.028; no denial, no Dex-made commit, branch or push. |

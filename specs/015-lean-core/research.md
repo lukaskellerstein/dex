@@ -507,8 +507,9 @@ drop is 21.4%, not 25%. The additions came out larger than the ~1,900 estimated:
 the `dex` CLI (`cli.ts` + `cli/`, ~610 lines with the dry run, the terminal
 input and the event printer), the snapshot path (`run-snapshot.ts`,
 `useRunSnapshot`, `QueuePanel`, `PauseCard`) and the approval UI. The brief's
-open decision 8 applies: decide after the real-project check (T112, T113). One
-candidate the owner can weigh: the renderer's event-built stage history
+open decision 8 applied: decide after the real-project check (T112, T113).
+The owner accepted SC-007 as not met on 2026-11-05 (open decision 8); further cuts go to 016. One
+candidate for 016: the renderer's event-built stage history
 (`useLoopState` + `buildLoopStateFromRun`, ~400 lines) could read the run
 record through the snapshot instead.
 

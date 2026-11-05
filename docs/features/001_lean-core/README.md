@@ -376,7 +376,7 @@ Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clon
 | renderer | 15,266 | 11,766 | −3,500 (−23%) |
 | **total** | **28,110** | **22,207** | **−5,903 (−21.0%)** |
 
-The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the real-project check whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
+The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 was decided after the real-project check: The owner accepted SC-007 as not met on 2026-11-05 (open decision 8); further cuts go to 016. One candidate for 016 is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
 
 The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.10 in all:
 
