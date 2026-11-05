@@ -192,7 +192,8 @@
   "enabledPlugins": {
     "dev-tools-plugin@claude-my-marketplace": true,
     "lsp-typescript@claude-my-marketplace": false,
-    "lsp-python@claude-my-marketplace": false
+    "lsp-python@claude-my-marketplace": false,
+    "spex@claude-my-marketplace": true
   },
   "sandbox": {
     "enabled": false,
