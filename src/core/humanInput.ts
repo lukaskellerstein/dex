@@ -236,7 +236,10 @@ function withAmendmentOptions(q: UserInputQuestion): UserInputQuestion {
     ...q,
     multiSelect: false,
     options: [
-      { label: APPROVE_AMENDMENT, description: `The test author changes ${file}; the implementer goes on.` },
+      {
+        label: APPROVE_AMENDMENT,
+        description: `The test author changes ${file}; the implementer goes on.`,
+      },
       { label: REJECT_AMENDMENT, description: "The test stays as it is." },
     ],
   };
@@ -249,7 +252,9 @@ function unreadableAmendments(
 ): Record<string, string> | null {
   const bad = questions.some((q) => isAmendment(q) && (!entryId || !parseAmendment(q.question)));
   if (!bad) return null;
-  return Object.fromEntries(questions.map((q) => [q.question, isAmendment(q) ? UNREADABLE : ASK_APART]));
+  return Object.fromEntries(
+    questions.map((q) => [q.question, isAmendment(q) ? UNREADABLE : ASK_APART]),
+  );
 }
 
 /** Records the human's decision on each amendment, and turns it into the implementer's answer. */
@@ -267,7 +272,12 @@ function settleAmendments(
     if (!isAmendment(q) || !parsed || answer === undefined) continue;
     const approved = answer.trim().toLowerCase().startsWith("approve");
     const status = approved ? "approved" : "rejected";
-    recordAmendment(projectDir, entryId, { ...parsed, status, askedAt, decidedAt: new Date().toISOString() });
+    recordAmendment(projectDir, entryId, {
+      ...parsed,
+      status,
+      askedAt,
+      decidedAt: new Date().toISOString(),
+    });
     out[q.question] = approved
       ? `Approved: the test author will change ${parsed.file}. Go on with the other tasks.`
       : `Rejected: ${parsed.file} stays as it is. Make the code pass it as written.${answer === REJECT_AMENDMENT ? "" : ` The human says: ${answer}`}`;

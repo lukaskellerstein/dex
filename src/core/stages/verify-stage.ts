@@ -114,7 +114,8 @@ function parseFinding(raw: unknown): Finding | null {
 
 /** The review output, or null when it does not have the shape. Unknown fields (a `verdict`) are ignored. */
 export function parseReview(raw: unknown): ReviewOutput | null {
-  if (!isObject(raw) || typeof raw.summary !== "string" || !Array.isArray(raw.findings)) return null;
+  if (!isObject(raw) || typeof raw.summary !== "string" || !Array.isArray(raw.findings))
+    return null;
   const findings = raw.findings.map(parseFinding);
   if (findings.some((f) => f === null)) return null;
   const criteria = (Array.isArray(raw.criteria) ? raw.criteria : []).flatMap((c) =>
@@ -144,7 +145,9 @@ function nextTaskId(phases: TaskPhase[]): string {
 }
 
 /** What the verify prompt states about tasks.md: the round, and where a fix phase goes. */
-export function verifyFacts(tasksMd: string): Pick<VerifyExtras, "round" | "nextPhaseNumber" | "nextTaskId"> {
+export function verifyFacts(
+  tasksMd: string,
+): Pick<VerifyExtras, "round" | "nextPhaseNumber" | "nextTaskId"> {
   const phases = parseTasksMd(tasksMd);
   return {
     round: phases.filter(isFixPhase).length + 1,
@@ -180,7 +183,9 @@ export async function runVerify(
   const { projectDir } = ctx;
   const key = evidenceKey(projectDir, deps.kind, entry);
   if (key === null) {
-    throw new Error(`verify ${entry.id}: cannot key the record (no branch "${entry.branch}" or no ${entry.specDir})`);
+    throw new Error(
+      `verify ${entry.id}: cannot key the record (no branch "${entry.branch}" or no ${entry.specDir})`,
+    );
   }
   const tasksMd = readTasks(projectDir, entry);
   const startSha = headOrNull(projectDir);
@@ -256,7 +261,8 @@ export async function runVerify(
 /** The done gate passed (FR-036, FR-037): the attempt log goes to the archive, and the digest is written. */
 function entryDone(ctx: ReturnType<typeof ctxOrThrow>, runId: string, entry: ResolvedEntry): void {
   const archived = archiveAttempts(ctx.projectDir, entry.id);
-  if (archived) ctx.rlog.run("INFO", `verify: ${entry.id} · archived the attempt log to ${archived}`);
+  if (archived)
+    ctx.rlog.run("INFO", `verify: ${entry.id} · archived the attempt log to ${archived}`);
   const file = publishDigest({ ...ctx, runId }, entry, ctx.policy, { status: "done", why: null });
   ctx.rlog.run("INFO", `verify: ${entry.id} · digest ${file}`);
 }

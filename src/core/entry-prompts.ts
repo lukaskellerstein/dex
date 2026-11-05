@@ -183,7 +183,11 @@ export function buildRestorePrompt(
   return `${restoreBody(entry, specPath, extras)}${attemptsSection(extras.attempts)}`;
 }
 
-function restoreBody(entry: ResolvedEntry, specPath: string, extras: { failing: SensorRun[]; frozen?: string[] }): string {
+function restoreBody(
+  entry: ResolvedEntry,
+  specPath: string,
+  extras: { failing: SensorRun[]; frozen?: string[] },
+): string {
   return `Dex ran this project's checks for ${entry.id} ("${entry.title}"), and the checks below are red. Restore green first.
 
 ${sensorEvidence(extras.failing)}

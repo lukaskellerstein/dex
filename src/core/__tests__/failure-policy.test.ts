@@ -87,7 +87,10 @@ test("implement counter: +1 for a run that fails the progress gate, 0 again on a
       "implement ran 2 times for 001-alpha without passing the progress gate (limits.maxImplementRunsWithoutProgress: 2)",
   });
   // A restore run in place of verify counts too: the limit guards the next verify.
-  assert.equal(progressCheck(last, stageDecision("verify"), counters, LIMITS)?.reason, "limit_reached");
+  assert.equal(
+    progressCheck(last, stageDecision("verify"), counters, LIMITS)?.reason,
+    "limit_reached",
+  );
   // A higher limit lets it run again.
   assert.equal(
     progressCheck(last, stageDecision("implement"), counters, {

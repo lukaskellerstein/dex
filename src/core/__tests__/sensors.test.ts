@@ -92,9 +92,12 @@ test(
 test(
   "runSensor: 500 lines keep only the last 200 in the tail",
   inTmp(async (dir) => {
-    const r = await runSensor(spec("i=1; while [ $i -le 500 ]; do echo line $i; i=$((i+1)); done"), {
-      cwd: dir,
-    });
+    const r = await runSensor(
+      spec("i=1; while [ $i -le 500 ]; do echo line $i; i=$((i+1)); done"),
+      {
+        cwd: dir,
+      },
+    );
     assert.equal(r.tail.length, 200);
     assert.equal(r.tail[0], "line 301");
     assert.equal(r.tail.at(-1), "line 500");

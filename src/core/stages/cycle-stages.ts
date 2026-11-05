@@ -69,7 +69,9 @@ const ATTEMPT_FORMAT = {
 export function parseAttempt(raw: unknown): Attempt | null {
   const r = raw as { summary?: unknown; notes?: unknown } | null;
   if (!r || typeof r.summary !== "string") return null;
-  const notes = Array.isArray(r.notes) ? r.notes.filter((n): n is string => typeof n === "string") : [];
+  const notes = Array.isArray(r.notes)
+    ? r.notes.filter((n): n is string => typeof n === "string")
+    : [];
   return { summary: r.summary, notes };
 }
 
@@ -101,7 +103,12 @@ export async function runImplement(
   const { projectDir, policy } = ctxOrThrow();
   const startSha = headOrNull(projectDir);
   const tasksBefore = readTasks(projectDir, entry);
-  const scope = stageScope(policy, entry, "implement", currentAcceptance(projectDir, entry, policy));
+  const scope = stageScope(
+    policy,
+    entry,
+    "implement",
+    currentAcceptance(projectDir, entry, policy),
+  );
   const frozen = scope?.protect ?? [];
   const r =
     mode.mode === "phase"
@@ -247,4 +254,3 @@ async function runTaskPhase(
     structuredOutput: r.structuredOutput ?? null,
   };
 }
-

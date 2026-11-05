@@ -118,7 +118,10 @@ export const projectService = {
   },
 
   /** The entry's digest (016), or null before Dex wrote one. */
-  getDigest(projectDir: string, entryId: string): Promise<{ markdown: string; path: string } | null> {
+  getDigest(
+    projectDir: string,
+    entryId: string,
+  ): Promise<{ markdown: string; path: string } | null> {
     return call(() => window.dexAPI.getDigest(projectDir, entryId));
   },
 

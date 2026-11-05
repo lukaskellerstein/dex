@@ -276,7 +276,9 @@ test("dex run --dry-run: a sensors section per entry (fast, entry, standing, acc
     policy: {
       checks: {
         fast: [{ name: "unit", command: "node .dex/fake/check.mjs unit", timeoutSec: 30 }],
-        standing: [{ name: "full suite", command: "node .dex/fake/check.mjs suite", timeoutSec: 1200 }],
+        standing: [
+          { name: "full suite", command: "node .dex/fake/check.mjs suite", timeoutSec: 1200 },
+        ],
         rerunOnFail: 1,
       },
     },
@@ -285,9 +287,16 @@ test("dex run --dry-run: a sensors section per entry (fast, entry, standing, acc
     const before = treeHash(dir);
     const t = fakeTerminal();
     assert.equal(await main(["run", dir, "--dry-run"], t.term), 0);
-    const block = t.text().split(/^sensors {2}:\n/m)[1]?.split(/^prompt {3}:/m)[0] ?? "";
+    const block =
+      t
+        .text()
+        .split(/^sensors {2}:\n/m)[1]
+        ?.split(/^prompt {3}:/m)[0] ?? "";
     assert.deepEqual(
-      block.trimEnd().split("\n").map((l) => l.trim().split(/\s{2,}/)),
+      block
+        .trimEnd()
+        .split("\n")
+        .map((l) => l.trim().split(/\s{2,}/)),
       [
         ["fast", "unit", "node .dex/fake/check.mjs unit", "30s"],
         ["fast", "greet unit", "node .dex/fake/check.mjs greet", "60s", "(entry)"],
@@ -297,10 +306,22 @@ test("dex run --dry-run: a sensors section per entry (fast, entry, standing, acc
     );
     assert.deepEqual(treeHash(dir), before, "no sensor ran: .dex/fake/unit still starts with 1");
 
-    writeFile(dir, ".dex/queue.json", JSON.stringify({ ...GROUNDED_QUEUE, entries: [{ ...entry, skip: ["brief", "specify", "clarify", "plan", "tasks"], acceptance: [] }] }));
+    writeFile(
+      dir,
+      ".dex/queue.json",
+      JSON.stringify({
+        ...GROUNDED_QUEUE,
+        entries: [
+          { ...entry, skip: ["brief", "specify", "clarify", "plan", "tasks"], acceptance: [] },
+        ],
+      }),
+    );
     const withTests = fakeTerminal();
     assert.equal(await main(["run", dir, "--dry-run"], withTests.term), 0);
-    assert.match(withTests.text(), /^decision : tests — specs\/900-fixture-a\/acceptance\.json is missing$/m);
+    assert.match(
+      withTests.text(),
+      /^decision : tests — specs\/900-fixture-a\/acceptance\.json is missing$/m,
+    );
     assert.match(withTests.text(), /^ {2}acceptance \(written by the tests stage\)$/m);
   } finally {
     rmTmp(dir);

@@ -176,7 +176,13 @@ function promptFor(
   if (stage === "tests") {
     const { testGlobs, testSupport } = policy;
     const amendment = pendingAmendment(projectDir, entry.id);
-    return buildTestsPrompt(entry, projectDir, { testGlobs, testSupport, lastCrash: null, amendment, attempts });
+    return buildTestsPrompt(entry, projectDir, {
+      testGlobs,
+      testSupport,
+      lastCrash: null,
+      amendment,
+      attempts,
+    });
   }
   if (stage === "verify") {
     const extras = {

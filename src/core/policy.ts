@@ -240,7 +240,9 @@ function checks(v: unknown, fail: Fail): PolicyChecks {
   const raw = v as Record<string, unknown>;
   rejectUnknown(raw, ["fast", "standing", "rerunOnFail"], "checks.", fail);
   const list = (key: "fast" | "standing") =>
-    raw[key] === undefined ? [] : parseSensorSpecs(raw[key], `checks.${key}`, CHECK_TIMEOUT_SEC, fail);
+    raw[key] === undefined
+      ? []
+      : parseSensorSpecs(raw[key], `checks.${key}`, CHECK_TIMEOUT_SEC, fail);
   const rerun = raw.rerunOnFail ?? DEFAULT_POLICY.checks.rerunOnFail;
   if (!Number.isInteger(rerun) || (rerun as number) < 0 || (rerun as number) > 5)
     fail(`"checks.rerunOnFail" must be an integer from 0 to 5`);
@@ -316,7 +318,9 @@ export function parsePolicy(
       : false,
     limits: has("limits") ? limits(r.limits, fail) : { ...DEFAULT_POLICY.limits },
     checks: has("checks") ? checks(r.checks, fail) : { fast: [], standing: [], rerunOnFail: 1 },
-    testGlobs: has("testGlobs") ? globList(r.testGlobs, "testGlobs", fail) : [...DEFAULT_TEST_GLOBS],
+    testGlobs: has("testGlobs")
+      ? globList(r.testGlobs, "testGlobs", fail)
+      : [...DEFAULT_TEST_GLOBS],
     testSupport: has("testSupport")
       ? stringList(r.testSupport, "testSupport", fail)
       : [...DEFAULT_TEST_SUPPORT],

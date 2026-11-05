@@ -102,7 +102,11 @@ export function PauseCard({
         </button>
       )}
       {showDigest && digestDir && request.entryId && (
-        <DigestView projectDir={digestDir} entryId={request.entryId} onClose={() => setShowDigest(false)} />
+        <DigestView
+          projectDir={digestDir}
+          entryId={request.entryId}
+          onClose={() => setShowDigest(false)}
+        />
       )}
       <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
         {request.options.map((option) => {

@@ -5,9 +5,10 @@ Each one runs the real loop, the real sensor runner, the real gates and the real
 records, at zero cost. The sensors are fake but real commands:
 `node .dex/fake/check.mjs <name>` exits with the next code in `.dex/fake/<name>`.
 
-`src/core/__tests__/grounded-scenarios.test.ts` runs each fixture on the
-existing-project fixture (entry `900-fixture-a`) and checks its end against one
-table. That table and this one must name the same files.
+`src/core/__tests__/grounded-scenarios.test.ts` and
+`grounded-protection.test.ts` run each fixture on the existing-project fixture
+(entry `900-fixture-a`). `helpers/grounded.ts` checks each end against one
+table (`ENDS`). That table and this one must name the same files.
 
 ## The files
 

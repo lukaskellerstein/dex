@@ -111,17 +111,28 @@ function tasksDone(projectDir: string, entry: ResolvedEntry): DigestFacts["tasks
     return { done: [], inScope: 0 };
   }
   const scoped = parseTasksMd(md).flatMap((p) => p.tasks.filter((t) => isInScope(entry, p, t)));
-  return { done: scoped.filter((t) => t.status === "done").map((t) => t.id), inScope: scoped.length };
+  return {
+    done: scoped.filter((t) => t.status === "done").map((t) => t.id),
+    inScope: scoped.length,
+  };
 }
 
-function checkRuns(policy: Policy, entry: ResolvedEntry, records: StageRecord[]): DigestFacts["checks"] {
+function checkRuns(
+  policy: Policy,
+  entry: ResolvedEntry,
+  records: StageRecord[],
+): DigestFacts["checks"] {
   const names = [...fastChecksFor(policy, entry), ...policy.checks.standing].map((c) => c.name);
-  const runs = records.filter((r) => r.stage === "baseline" || r.stage === "implement").flatMap((r) => r.runs);
+  const runs = records
+    .filter((r) => r.stage === "baseline" || r.stage === "implement")
+    .flatMap((r) => r.runs);
   return [...new Set(names)].map((name) => ({ name, runs: runs.filter((r) => r.name === name) }));
 }
 
 function acceptanceRuns(records: StageRecord[]): DigestFacts["acceptance"] {
-  const last = records.filter((r) => (r.stage === "verify" || r.stage === "red-first") && r.runs.length > 0).at(-1);
+  const last = records
+    .filter((r) => (r.stage === "verify" || r.stage === "red-first") && r.runs.length > 0)
+    .at(-1);
   return last ? { stage: last.stage, runs: last.runs } : null;
 }
 
@@ -161,7 +172,9 @@ function diffLine(d: RepoDiff): string {
   if (d.files.length === 0) return `${label} (since ${d.since}): no changes`;
   const size = (f: FileDiff) => (f.added ?? 0) + (f.deleted ?? 0);
   const top = [...d.files].sort((a, b) => size(b) - size(a)).slice(0, MAX_FILES);
-  const shown = top.map((f) => (f.added === null ? `${f.path} (binary)` : `${f.path} +${f.added} −${f.deleted}`));
+  const shown = top.map((f) =>
+    f.added === null ? `${f.path} (binary)` : `${f.path} +${f.added} −${f.deleted}`,
+  );
   const more = d.files.length > MAX_FILES ? ` · … ${d.files.length - MAX_FILES} more` : "";
   const n = d.files.length;
   return `${label} (since ${d.since}): ${shown.join(" · ")}${more} · ${n} file${n === 1 ? "" : "s"}`;
@@ -187,20 +200,27 @@ function checkLine(c: DigestFacts["checks"][number]): string {
     redRun++;
   }
   const flaky = c.runs.filter((r) => r.result === "flaky").length;
-  const notes = [redRun > 1 ? `red ${redRun} runs in a row` : "", flaky > 0 ? `flaky ×${flaky}` : ""].filter(Boolean);
+  const notes = [
+    redRun > 1 ? `red ${redRun} runs in a row` : "",
+    flaky > 0 ? `flaky ×${flaky}` : "",
+  ].filter(Boolean);
   return `${c.name} ${mark(last)}${notes.length > 0 ? ` (${notes.join(", ")})` : ""}`;
 }
 
 function checksLine(f: DigestFacts): string {
   const runs = f.checks.filter((c) => c.runs.length > 0).map(checkLine);
-  const none = f.fastDeclared ? [] : ["no fast checks ran (none declared; the progress gate rests on the plan diff alone)"];
+  const none = f.fastDeclared
+    ? []
+    : ["no fast checks ran (none declared; the progress gate rests on the plan diff alone)"];
   const all = [...none, ...runs];
   return `**Checks**: ${all.length > 0 ? all.join(" · ") : "not run yet"}`;
 }
 
 function acceptanceLine(a: DigestFacts["acceptance"]): string {
   if (!a) return "**Acceptance**: not run yet";
-  const runs = a.runs.map((r) => `${r.name} ${mark(r)} (${r.exitCode === null ? r.result : `exit ${r.exitCode}`})`);
+  const runs = a.runs.map(
+    (r) => `${r.name} ${mark(r)} (${r.exitCode === null ? r.result : `exit ${r.exitCode}`})`,
+  );
   return `**Acceptance** (at ${a.stage}): ${runs.join(" · ")}`;
 }
 
@@ -208,11 +228,15 @@ function verifierLines(done: DoneRecord | null): string[] {
   if (!done) return ["**Verifier**: —"];
   if (done.mode === "diagnose") {
     const h = done.hypotheses.length > 0 ? `; hypotheses: ${done.hypotheses.join(" · ")}` : "";
-    return [`**Verifier** (diagnose, done gate ${done.gate}): ${done.summary || "(no summary)"}${h}`];
+    return [
+      `**Verifier** (diagnose, done gate ${done.gate}): ${done.summary || "(no summary)"}${h}`,
+    ];
   }
   const blocking = done.findings.filter((x) => x.severity === "blocking").length;
   const head = `**Verifier** (review, done gate ${done.gate}): ${blocking} blocking, ${done.findings.length - blocking} minor — ${done.summary || "(no summary)"}`;
-  const items = done.findings.map((x) => `- ${x.severity}: ${x.summary}${x.where ? ` (${x.where})` : ""}`);
+  const items = done.findings.map(
+    (x) => `- ${x.severity}: ${x.summary}${x.where ? ` (${x.where})` : ""}`,
+  );
   return items.length > 0 ? [head, "", ...items] : [head];
 }
 
@@ -270,7 +294,10 @@ export function digestPath(projectDir: string, entryId: string): string | null {
 }
 
 /** The digest and its path, for the app (`project:get-digest`); null when there is none. */
-export function readDigest(projectDir: string, entryId: string): { markdown: string; path: string } | null {
+export function readDigest(
+  projectDir: string,
+  entryId: string,
+): { markdown: string; path: string } | null {
   const file = digestPath(projectDir, entryId);
   return file ? { markdown: fs.readFileSync(file, "utf-8"), path: file } : null;
 }

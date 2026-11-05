@@ -122,7 +122,8 @@ export function progress(input: ProgressInput): GateDecision {
   const red = redNames(input.runs);
   const ticked = input.newlyTicked;
   if (ticked.length > 0 && red.length === 0) {
-    const checks = input.runs.length === 0 ? "no fast checks declared" : "every fast check is green";
+    const checks =
+      input.runs.length === 0 ? "no fast checks declared" : "every fast check is green";
     return pass("progress", `${ticked.join(", ")} ticked; ${checks}`);
   }
   if (ticked.length > 0)
@@ -171,7 +172,11 @@ export function redFirst(
           ? `the acceptance command could not run (${run.result})`
           : `the acceptance command crashed (exit ${run.exitCode}, expected one of ${record?.failExitCodes.join(", ")})`);
   if (previousCrash)
-    return pause("red-first", "no_progress", `${why}, for the second time in a row — check the test setup`);
+    return pause(
+      "red-first",
+      "no_progress",
+      `${why}, for the second time in a row — check the test setup`,
+    );
   return fail("red-first", why, "retry-tests");
 }
 
@@ -192,15 +197,24 @@ export function isCrash(gate: GateDecision | null): boolean {
  */
 export function done(acceptance: SensorRun[], findings: Finding[] | null): GateDecision {
   if (acceptance.length === 0) {
-    return fail("done", "no acceptance sensor ran: the entry has no acceptance.json and no queue acceptance", null);
+    return fail(
+      "done",
+      "no acceptance sensor ran: the entry has no acceptance.json and no queue acceptance",
+      null,
+    );
   }
   const red = redNames(acceptance);
   if (red.length > 0) return fail("done", `the acceptance run is red: ${quoted(red)}`, "fix-phase");
-  if (findings === null) return fail("done", "acceptance is green, but the verifier returned no valid review", null);
+  if (findings === null)
+    return fail("done", "acceptance is green, but the verifier returned no valid review", null);
   const blocking = findings.filter((f) => f.severity === "blocking");
   if (blocking.length > 0) {
     const more = blocking.length > 1 ? ` (and ${blocking.length - 1} more)` : "";
-    return fail("done", `acceptance is green, but a blocking finding is open: ${blocking[0].summary}${more}`, "fix-phase");
+    return fail(
+      "done",
+      `acceptance is green, but a blocking finding is open: ${blocking[0].summary}${more}`,
+      "fix-phase",
+    );
   }
   const minor = findings.length;
   return pass(

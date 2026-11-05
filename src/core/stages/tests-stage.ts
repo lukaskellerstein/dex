@@ -98,11 +98,17 @@ export async function runTests(
     prompt: buildTestsPrompt(entry, ctx.projectDir, {
       testGlobs: ctx.policy.testGlobs,
       testSupport: ctx.policy.testSupport,
-      lastCrash: previousCrash && last?.gate ? { reason: last.gate.reason, run: last.runs[0] ?? null } : null,
+      lastCrash:
+        previousCrash && last?.gate
+          ? { reason: last.gate.reason, run: last.runs[0] ?? null }
+          : null,
       amendment,
       attempts: attemptSlice(ctx.projectDir, entry.id),
     }),
-    outputFormat: { type: "json_schema", schema: TESTS_SCHEMA as unknown as Record<string, unknown> },
+    outputFormat: {
+      type: "json_schema",
+      schema: TESTS_SCHEMA as unknown as Record<string, unknown>,
+    },
     runId: deps.runId,
     cycleNumber,
     step: "tests",

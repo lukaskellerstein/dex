@@ -3,7 +3,14 @@
  * Not: Decides nothing and fetches nothing: everything comes from the `gate` step GateTracker built from the events.
  * Deps: GateCard.logic (GateStepMeta), lucide-react.
  */
-import { ChevronDown, ChevronRight, CircleCheck, CirclePause, CircleX, ShieldCheck } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  CircleCheck,
+  CirclePause,
+  CircleX,
+  ShieldCheck,
+} from "lucide-react";
 import { useState } from "react";
 import type { SensorRun } from "../../../core/sensors.js";
 import type { GateStepMeta } from "./GateCard.logic.js";
@@ -41,7 +48,10 @@ function RunRow({ run }: { run: SensorRun }) {
           textAlign: "left",
         }}
       >
-        <Chevron size={12} style={{ color: "var(--foreground-dim)", opacity: run.tail.length === 0 ? 0 : 1 }} />
+        <Chevron
+          size={12}
+          style={{ color: "var(--foreground-dim)", opacity: run.tail.length === 0 ? 0 : 1 }}
+        />
         <span style={{ fontFamily: "var(--font-mono)" }}>{run.name}</span>
         <span
           data-testid="gate-run-result"
@@ -99,7 +109,10 @@ export function GateCard({ meta }: { meta: GateStepMeta }) {
           {decision.outcome}
         </span>
       </div>
-      <div data-testid="gate-reason" style={{ margin: "4px 0", fontSize: "0.78rem", color: "var(--foreground-muted)" }}>
+      <div
+        data-testid="gate-reason"
+        style={{ margin: "4px 0", fontSize: "0.78rem", color: "var(--foreground-muted)" }}
+      >
         {decision.reason}
       </div>
       {runs.map((run, i) => (

@@ -25,7 +25,10 @@ export interface DexAPI {
   /** Fresh state.json + the picker's queue view + validation errors (research R17). */
   getRunSnapshot(projectDir: string): Promise<RunSnapshot>;
   /** The entry's one-page digest (016 FR-038); null before Dex wrote one. */
-  getDigest(projectDir: string, entryId: string): Promise<{ markdown: string; path: string } | null>;
+  getDigest(
+    projectDir: string,
+    entryId: string,
+  ): Promise<{ markdown: string; path: string } | null>;
 
   // App config (global ~/.dex/app-config.json)
   getWelcomeDefaults(): Promise<{ defaultLocation: string; defaultName: string }>;

@@ -29,9 +29,14 @@ function planOf(md: string): { tasks: TaskLine[]; headings: string[] } {
 }
 
 function headingChanges(before: string[], after: string[]): string[] {
-  const out = before.filter((h) => !after.includes(h)).map((h) => `the phase heading "${h}" was changed or removed`);
-  out.push(...after.filter((h) => !before.includes(h)).map((h) => `the phase heading "${h}" was added`));
-  if (out.length === 0 && before.join("\n") !== after.join("\n")) out.push("the phase headings were reordered");
+  const out = before
+    .filter((h) => !after.includes(h))
+    .map((h) => `the phase heading "${h}" was changed or removed`);
+  out.push(
+    ...after.filter((h) => !before.includes(h)).map((h) => `the phase heading "${h}" was added`),
+  );
+  if (out.length === 0 && before.join("\n") !== after.join("\n"))
+    out.push("the phase headings were reordered");
   return out;
 }
 
@@ -49,7 +54,8 @@ export function diffTasks(before: string, after: string): string[] {
     else if (t.done && !now.done) out.push(`${t.id} was re-opened`);
   }
   out.push(...b.tasks.filter((t) => !beforeIds.has(t.id)).map((t) => `${t.id} was added`));
-  const order = (ts: TaskLine[], keep: Set<string>) => ts.map((t) => t.id).filter((id) => keep.has(id));
+  const order = (ts: TaskLine[], keep: Set<string>) =>
+    ts.map((t) => t.id).filter((id) => keep.has(id));
   const common = new Set(a.tasks.map((t) => t.id).filter((id) => byId.has(id)));
   const was = order(a.tasks, common);
   const is = order(b.tasks, common);
@@ -58,7 +64,8 @@ export function diffTasks(before: string, after: string): string[] {
   return [...out, ...headingChanges(a.headings, b.headings)];
 }
 
-const matchesAny = (rel: string, globs: readonly string[]) => globs.some((g) => path.matchesGlob(rel, g));
+const matchesAny = (rel: string, globs: readonly string[]) =>
+  globs.some((g) => path.matchesGlob(rel, g));
 
 /** Frozen tests changed, moved or deleted, and test files deleted or renamed, from `git diff --name-status -M`. */
 export function testFileChanges(
@@ -91,7 +98,8 @@ export function addedLines(diff: string): Array<{ file: string; line: string }> 
       file = line.slice(4).replace(/^b\//, "");
       continue;
     }
-    if (line.startsWith("+") && file && file !== "/dev/null") out.push({ file, line: line.slice(1) });
+    if (line.startsWith("+") && file && file !== "/dev/null")
+      out.push({ file, line: line.slice(1) });
   }
   return out;
 }

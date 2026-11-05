@@ -21,17 +21,26 @@ Some prose the agent may change.
 test("diffTasks: ticking open tasks ([x] or [X]) is allowed; prose and notes are ignored", () => {
   const after = BEFORE.replace("- [ ] T002", "- [x] T002")
     .replace("- [ ] T003", "- [X] T003")
-    .replace("Some prose the agent may change.", "The agent rewrote this note.\n  - note: npm test is slow");
+    .replace(
+      "Some prose the agent may change.",
+      "The agent rewrote this note.\n  - note: npm test is slow",
+    );
   assert.deepEqual(diffTasks(BEFORE, after), []);
 });
 
 for (const [name, after, expected] of [
-  ["a removed task", BEFORE.replace("- [ ] T004 Reject an expired code in src/cart/promo.ts\n", ""), ["T004 was removed"]],
+  [
+    "a removed task",
+    BEFORE.replace("- [ ] T004 Reject an expired code in src/cart/promo.ts\n", ""),
+    ["T004 was removed"],
+  ],
   ["an added task", `${BEFORE}- [ ] T005 Discovered: cache the codes\n`, ["T005 was added"]],
   [
     "a reworded task",
     BEFORE.replace("Reject an expired code", "Accept every code"),
-    ['T004 was reworded: "Reject an expired code in src/cart/promo.ts" → "Accept every code in src/cart/promo.ts"'],
+    [
+      'T004 was reworded: "Reject an expired code in src/cart/promo.ts" → "Accept every code in src/cart/promo.ts"',
+    ],
   ],
   [
     "a reordered task",
@@ -45,7 +54,10 @@ for (const [name, after, expected] of [
   [
     "a changed phase heading",
     BEFORE.replace("## Phase 2: Core", "## Phase 2: Core (descoped)"),
-    ['the phase heading "## Phase 2: Core" was changed or removed', 'the phase heading "## Phase 2: Core (descoped)" was added'],
+    [
+      'the phase heading "## Phase 2: Core" was changed or removed',
+      'the phase heading "## Phase 2: Core (descoped)" was added',
+    ],
   ],
 ] as const) {
   test(`diffTasks: ${name} is a violation that names it`, () => {
@@ -63,14 +75,23 @@ test("testFileChanges: frozen files changed, moved or deleted; test files delete
     "R100\tsrc/a.ts\tsrc/b.ts",
     "",
   ].join("\n");
-  assert.deepEqual(testFileChanges(nameStatus, DEFAULT_TEST_GLOBS, ["tests/acceptance/promo.spec.ts"]), {
-    frozenChanged: ["tests/acceptance/promo.spec.ts"],
-    testsDeletedOrRenamed: ["src/cart/promo.test.ts", "tests/unit/old.test.ts → tests/unit/new.test.ts"],
-  });
-  assert.deepEqual(testFileChanges("D\ttests/acceptance/promo.spec.ts\n", [], ["tests/acceptance/promo.spec.ts"]), {
-    frozenChanged: ["tests/acceptance/promo.spec.ts"],
-    testsDeletedOrRenamed: [],
-  });
+  assert.deepEqual(
+    testFileChanges(nameStatus, DEFAULT_TEST_GLOBS, ["tests/acceptance/promo.spec.ts"]),
+    {
+      frozenChanged: ["tests/acceptance/promo.spec.ts"],
+      testsDeletedOrRenamed: [
+        "src/cart/promo.test.ts",
+        "tests/unit/old.test.ts → tests/unit/new.test.ts",
+      ],
+    },
+  );
+  assert.deepEqual(
+    testFileChanges("D\ttests/acceptance/promo.spec.ts\n", [], ["tests/acceptance/promo.spec.ts"]),
+    {
+      frozenChanged: ["tests/acceptance/promo.spec.ts"],
+      testsDeletedOrRenamed: [],
+    },
+  );
 });
 
 const DIFF = `diff --git a/tests/cart.spec.ts b/tests/cart.spec.ts
@@ -88,8 +109,13 @@ diff --git a/src/list.ts b/src/list.ts
 
 test("addedLines + skipMarkers: new markers in test files only", () => {
   const added = addedLines(DIFF);
-  assert.deepEqual(added.map((a) => a.file), ["tests/cart.spec.ts", "src/list.ts"]);
-  assert.deepEqual(skipMarkers(added, DEFAULT_TEST_GLOBS), ['tests/cart.spec.ts: test.skip("applies a code", () => {});']);
+  assert.deepEqual(
+    added.map((a) => a.file),
+    ["tests/cart.spec.ts", "src/list.ts"],
+  );
+  assert.deepEqual(skipMarkers(added, DEFAULT_TEST_GLOBS), [
+    'tests/cart.spec.ts: test.skip("applies a code", () => {});',
+  ]);
 });
 
 for (const marker of [
@@ -101,7 +127,7 @@ for (const marker of [
   "  xdescribe('x', () => {})",
   "  it.todo('x')",
   "  test.fixme('x', async () => {})",
-  "\tt.Skip(\"later\")",
+  '\tt.Skip("later")',
   "@pytest.mark.xfail",
 ]) {
   test(`skipMarkers: finds ${marker.trim()}`, () => {

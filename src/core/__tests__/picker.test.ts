@@ -520,7 +520,10 @@ function recordRedFirst(dir: string, gate: GateDecision): void {
   });
 }
 
-function pickWithRedFirst(files: Record<string, string>, gate: GateDecision | null): PickerDecision {
+function pickWithRedFirst(
+  files: Record<string, string>,
+  gate: GateDecision | null,
+): PickerDecision {
   const dir = mkTmpProject(files);
   try {
     if (gate) recordRedFirst(dir, gate);
@@ -562,7 +565,11 @@ test("picker R4: a crash recorded for another acceptance.json does not send it b
   try {
     recordRedFirst(dir, CRASH);
     writeFiles(dir, acceptanceFiles("001-a", { failExitCodes: [1, 2] }));
-    assertStage(pickNext({ projectDir: dir, queue: newQueue([A]), runBranch: null }), "001-a", "implement");
+    assertStage(
+      pickNext({ projectDir: dir, queue: newQueue([A]), runBranch: null }),
+      "001-a",
+      "implement",
+    );
   } finally {
     rmTmp(dir);
   }

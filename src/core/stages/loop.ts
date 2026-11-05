@@ -66,7 +66,9 @@ async function dispatch(
   if (stage === "implement") return implementStage(deps, entry, d.taskPhase ?? 1, cycleNumber);
   if (stage === "tests") return runTests(deps, entry, cycleNumber);
   if (stage === "verify") {
-    return (await restoreBeforeVerify(deps, entry, cycleNumber)) ?? runVerify(deps, entry, cycleNumber);
+    return (
+      (await restoreBeforeVerify(deps, entry, cycleNumber)) ?? runVerify(deps, entry, cycleNumber)
+    );
   }
   const r = await runStage({
     config: deps.config,
@@ -163,7 +165,12 @@ function pause(ctx: OrchestrationContext, runId: string, at: PauseAt | null, gua
   ctx.emit({ type: "paused", runId, reason: guard.reason, detail: guard.detail });
 }
 
-function writePauseDigest(ctx: OrchestrationContext, runId: string, at: PauseAt, guard: Guard): void {
+function writePauseDigest(
+  ctx: OrchestrationContext,
+  runId: string,
+  at: PauseAt,
+  guard: Guard,
+): void {
   const where = at.stage ? ` at ${at.stage}` : "";
   try {
     publishDigest({ ...ctx, runId }, at.entry, ctx.policy, {
@@ -172,7 +179,10 @@ function writePauseDigest(ctx: OrchestrationContext, runId: string, at: PauseAt,
     });
   } catch (err) {
     // The digest is for the owner; a failure to write it must not hide the pause.
-    ctx.rlog.run("ERROR", `loop: digest for ${at.entry.id} failed: ${err instanceof Error ? err.message : String(err)}`);
+    ctx.rlog.run(
+      "ERROR",
+      `loop: digest for ${at.entry.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

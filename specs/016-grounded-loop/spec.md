@@ -2,7 +2,7 @@
 
 **Feature Branch**: `016-grounded-loop`
 **Created**: 2026-11-05
-**Status**: Implemented under the mock (2026-11-05). The first real run (SC-004) and the owner's sign-off (SC-009) are pending — see Outcomes (as built).
+**Status**: Implemented under the mock (2026-11-05). The first real run (SC-004) is pending — see Outcomes (as built).
 **Input**: User description: "docs/my-specs/016-grounded-loop/README.md" — the brief, draft v1.0 of 2026-11-05. The brief is the source of truth; this spec restates it as outcomes and requirements. It builds on [015-lean-core](../015-lean-core/spec.md) (the queue, the picker, the policy, the evidence records and the `dex run` CLI), amends 015's picker table (D-015-1) and `verify` stage (D-015-5), and replaces 015's failure counter (D-015-7).
 
 ## Overview
@@ -331,14 +331,14 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
 | Criterion | Outcome |
 |---|---|
 | SC-001 | Met. `gates.test.ts` is table-driven: one case per row of the gates table, plus flaky checks, the fingerprint and the stall; `policy.test.ts` holds the scope table for every stage. No agent starts. |
-| SC-002 | Met, 9 of 9. `grounded-scenarios.test.ts` checks every fixture in `fixtures/mock/grounded/` against one table of ends (`ENDS`), and fails if a fixture has no row. The table also holds `happy-path`, `test-amendment` and `tests-crash` (R20), plus two variants (a deleted test file, a new skip marker). Every run costs $0. |
+| SC-002 | Met, 9 of 9. `grounded-scenarios.test.ts` and `grounded-protection.test.ts` check every fixture in `fixtures/mock/grounded/` against one table of ends (`ENDS`), and fails if a fixture has no row. The table also holds `happy-path`, `test-amendment` and `tests-crash` (R20), plus two variants (a deleted test file, a new skip marker). Every run costs $0. |
 | SC-003 | Met on a scratch clone (T087): three entries, each `clarify` → `tests` → red-first (`pass`) → `verify` (diagnose) → `implement` (fix phase) → `verify` (review) → done; `queue_complete`, $0.00, a digest per entry, `git status` empty. The clone's tasks were all ticked, so `implement` ran as the fix phase. |
-| SC-004 | **Not run yet.** It needs the real agent, so it waits for the owner's sign-off (SC-009) and the owner's go, because it costs money (T090). The dry run (T089) shows that the next real stage of `003-promo-codes` is `specify`, not `tests`. |
+| SC-004 | **Not met yet.** The owner approved the real run. Its first stage, `specify` on `003-promo-codes`, failed at $0.00 with `Invalid API key`: the session's `ANTHROPIC_API_KEY` wins over the machine's login, and the API rejects it (research § Phase 9, T090). The next real stage is `specify`, not `tests` (T089). |
 | SC-005 | Met by tests: `picker.test.ts` sends a done entry back to `verify` after a commit on its branch (existing project) and after a change in its spec folder (new project). `verify` runs the acceptance commands again every time. |
 | SC-006 | Met (T092): every `structuredOutput` read in `src/core` is listed in research § Final checks with why it cannot pass a gate. `gates.done` has no verdict parameter. |
 | SC-007 | Met by the scenarios: a verifier that says `passed` on red acceptance (`verifier-passes-red`), a frozen-test edit (`edits-frozen-test`), a reworded task (`rewords-task`) and ticks with red checks (`ticks-while-red`) all end as the evidence says, not as the agent says. |
 | SC-008 | Met by tests: `digest.test.ts` checks every FR-037 section; the `rewords-task` scenario finds the digest written before the `paused` event; `dex digest` and `project:get-digest` read it. On the clone, every entry got a done digest. |
-| SC-009 | **Half met** (T089): on a scratch clone, the dry run lists each open entry's sensors and runs nothing (exit 0). The clone has no checks to declare yet (no `package.json`, no runner), so only the acceptance line shows. The owner's sign-off is pending. |
+| SC-009 | Met (T089): on a scratch clone, the dry run lists each open entry's sensors and runs nothing (exit 0). The clone has no checks to declare yet (no `package.json`, no runner), so only the acceptance line shows. The owner signed off on 2026-11-05. |
 | SC-010 | Met. `npm test`, `npm run typecheck` and `check:size` passed at every phase gate. At the end: 393 core tests, 68 renderer tests, no file over 600 lines. |
 
 ## Assumptions

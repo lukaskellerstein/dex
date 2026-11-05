@@ -40,7 +40,13 @@ const ATTEMPT: AttemptEntry = {
   summary: "Added the promo-code lookup; the expiry check is not wired yet.",
   notes: ["`src/cart/promo.ts` needs the clock from `src/lib/time.ts` to test expiry."],
   gate: "progress fail — unit is red",
-  failing: [red("unit", ["> vitest run", "FAIL src/cart/promo.test.ts > rejects an expired code", "  at x"])],
+  failing: [
+    red("unit", [
+      "> vitest run",
+      "FAIL src/cart/promo.test.ts > rejects an expired code",
+      "  at x",
+    ]),
+  ],
 };
 
 test("formatAttempt: the contract's section — time, stage, phase, agent, notes, gate, failing first lines", () => {
@@ -56,7 +62,15 @@ test("formatAttempt: the contract's section — time, stage, phase, agent, notes
       "",
     ].join("\n"),
   );
-  const bare = formatAttempt({ ...ATTEMPT, stage: "tests", taskPhase: null, summary: null, notes: [], gate: null, failing: [] });
+  const bare = formatAttempt({
+    ...ATTEMPT,
+    stage: "tests",
+    taskPhase: null,
+    summary: null,
+    notes: [],
+    gate: null,
+    failing: [],
+  });
   assert.equal(bare, "## 2026-11-12T09:41:07Z · tests\n\n**Agent**: (no summary)\n");
 });
 
@@ -71,7 +85,12 @@ test("appendAttempt: one section per stage, oldest first; the folder ignores its
   const dir = mkTmpProject({});
   try {
     appendAttempt(dir, ID, ATTEMPT);
-    appendAttempt(dir, ID, { ...ATTEMPT, at: "2026-11-12T10:00:00.000Z", taskPhase: 3, failing: [] });
+    appendAttempt(dir, ID, {
+      ...ATTEMPT,
+      at: "2026-11-12T10:00:00.000Z",
+      taskPhase: 3,
+      failing: [],
+    });
     const md = fs.readFileSync(path.join(dir, LOG), "utf-8");
     assert.equal(md.match(/^## /gm)?.length, 2);
     assert.ok(md.indexOf("phase 2") < md.indexOf("phase 3"));
@@ -86,7 +105,12 @@ test("attemptSlice: the newest sections that fit the budget, whole, oldest of th
   try {
     assert.equal(attemptSlice(dir, ID), "", "no log yet");
     for (let i = 1; i <= 5; i++) {
-      appendAttempt(dir, ID, { ...ATTEMPT, taskPhase: i, summary: `run ${i} ${"x".repeat(2400)}`, failing: [] });
+      appendAttempt(dir, ID, {
+        ...ATTEMPT,
+        taskPhase: i,
+        summary: `run ${i} ${"x".repeat(2400)}`,
+        failing: [],
+      });
     }
     const slice = attemptSlice(dir, ID);
     assert.ok(slice.length <= 8000);
@@ -95,7 +119,11 @@ test("attemptSlice: the newest sections that fit the budget, whole, oldest of th
       ["3", "4", "5"],
     );
     assert.ok(slice.endsWith("\n"), "never a cut section");
-    assert.equal(attemptSlice(dir, ID, 100), "", "one section over the budget is left out, not cut");
+    assert.equal(
+      attemptSlice(dir, ID, 100),
+      "",
+      "one section over the budget is left out, not cut",
+    );
   } finally {
     rmTmp(dir);
   }
@@ -104,7 +132,11 @@ test("attemptSlice: the newest sections that fit the budget, whole, oldest of th
 test("archiveAttempts: moves the log to archive/progress-<ISO>.md; the next slice is empty", () => {
   const dir = mkTmpProject({});
   try {
-    assert.equal(archiveAttempts(dir, ID, new Date("2026-11-12T11:00:00.000Z")), null, "nothing to archive");
+    assert.equal(
+      archiveAttempts(dir, ID, new Date("2026-11-12T11:00:00.000Z")),
+      null,
+      "nothing to archive",
+    );
     appendAttempt(dir, ID, ATTEMPT);
     const moved = archiveAttempts(dir, ID, new Date("2026-11-12T11:00:00.000Z"));
     assert.equal(moved, `.dex/evidence/${ID}/archive/progress-2026-11-12T11-00-00Z.md`);

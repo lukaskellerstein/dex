@@ -316,7 +316,10 @@ function validateRounds(file: string, where: string, rounds: unknown): void {
 /** `findings` and `hypotheses`, on the verify descriptor or one of its rounds (016 R16). */
 function validateVerifyOutput(file: string, where: string, d: Record<string, unknown>): void {
   const { findings, hypotheses } = d;
-  if (hypotheses !== undefined && !(Array.isArray(hypotheses) && hypotheses.every((h) => typeof h === "string"))) {
+  if (
+    hypotheses !== undefined &&
+    !(Array.isArray(hypotheses) && hypotheses.every((h) => typeof h === "string"))
+  ) {
     throw new MockConfigInvalidError(file, `${where}.hypotheses must be an array of strings`);
   }
   if (findings === undefined) return;
@@ -364,7 +367,10 @@ function validateStepDescriptor(file: string, where: string, desc: unknown): voi
     throw new MockConfigInvalidError(file, `${where}.tick must be a boolean`);
   }
   const del = desc.deletes;
-  if (del !== undefined && !(Array.isArray(del) && del.every((p) => typeof p === "string" && p !== ""))) {
+  if (
+    del !== undefined &&
+    !(Array.isArray(del) && del.every((p) => typeof p === "string" && p !== ""))
+  ) {
     throw new MockConfigInvalidError(file, `${where}.deletes must be an array of non-empty paths`);
   }
   if (desc.asks !== undefined) validateAsks(file, `${where}.asks`, desc.asks);

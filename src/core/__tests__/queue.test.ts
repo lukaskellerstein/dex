@@ -126,7 +126,10 @@ test("queue: entry acceptance and checks validate and resolve with default timeo
   assert.deepEqual(entry.checks, [
     { name: "cart unit", command: "npm test -- src/cart", timeoutSec: 90 },
   ]);
-  assertInvalid(q([{ id: "a", title: "A", acceptance: {} }]), /entries\[0\].*"acceptance" must be a list/);
+  assertInvalid(
+    q([{ id: "a", title: "A", acceptance: {} }]),
+    /entries\[0\].*"acceptance" must be a list/,
+  );
   assertInvalid(
     q([
       {

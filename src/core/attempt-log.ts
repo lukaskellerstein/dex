@@ -43,11 +43,17 @@ export function firstErrorLine(tail: string[]): string {
 /** One section, in the contract's format, ending in a newline. */
 export function formatAttempt(e: AttemptEntry): string {
   const phase = e.taskPhase === null ? "" : ` · phase ${e.taskPhase}`;
-  const lines = [`## ${toSecond(e.at)} · ${e.stage}${phase}`, "", `**Agent**: ${e.summary?.trim() || "(no summary)"}`];
+  const lines = [
+    `## ${toSecond(e.at)} · ${e.stage}${phase}`,
+    "",
+    `**Agent**: ${e.summary?.trim() || "(no summary)"}`,
+  ];
   if (e.notes.length > 0) lines.push(`**Notes**: ${e.notes.join(" · ")}`);
   if (e.gate) lines.push(`**Gate**: ${e.gate}`);
   if (e.failing.length > 0) {
-    lines.push(`**Failing**: ${e.failing.map((r) => `${r.name} — \`${firstErrorLine(r.tail)}\``).join(" · ")}`);
+    lines.push(
+      `**Failing**: ${e.failing.map((r) => `${r.name} — \`${firstErrorLine(r.tail)}\``).join(" · ")}`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
@@ -87,12 +93,19 @@ export function attemptSlice(projectDir: string, entryId: string, budget = ATTEM
 }
 
 /** Moves the log to `archive/progress-<ISO>.md` (FR-036). Returns its project-relative path, or null with no log. */
-export function archiveAttempts(projectDir: string, entryId: string, now = new Date()): string | null {
+export function archiveAttempts(
+  projectDir: string,
+  entryId: string,
+  now = new Date(),
+): string | null {
   const file = logPath(projectDir, entryId);
   if (!fs.existsSync(file)) return null;
   const archive = path.join(path.dirname(file), "archive");
   fs.mkdirSync(archive, { recursive: true });
-  const dest = path.join(archive, `progress-${toSecond(now.toISOString()).replaceAll(":", "-")}.md`);
+  const dest = path.join(
+    archive,
+    `progress-${toSecond(now.toISOString()).replaceAll(":", "-")}.md`,
+  );
   fs.renameSync(file, dest);
   return path.relative(projectDir, dest);
 }

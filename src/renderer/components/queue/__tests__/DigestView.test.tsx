@@ -23,9 +23,13 @@ afterEach(() => {
 describe("DigestMarkdown", () => {
   it("renders the title, bold section labels and the findings list, as text only", () => {
     render(<DigestMarkdown markdown={`${PAGE}\n\n<img src=x onerror=alert(1)>`} />);
-    expect(screen.getByRole("heading").textContent).toBe("003-promo — paused at implement: plan_changed");
+    expect(screen.getByRole("heading").textContent).toBe(
+      "003-promo — paused at implement: plan_changed",
+    );
     expect(screen.getByText("Why").tagName).toBe("STRONG");
-    expect(screen.getByRole("listitem").textContent).toBe("blocking: empty name greets (src/greet.ts:3)");
+    expect(screen.getByRole("listitem").textContent).toBe(
+      "blocking: empty name greets (src/greet.ts:3)",
+    );
     expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeTruthy();
     expect(document.querySelector("img")).toBeNull();
   });
@@ -46,6 +50,8 @@ describe("DigestView", () => {
   it("says so when there is no digest yet", async () => {
     getDigest.mockResolvedValue(null);
     render(<DigestView projectDir="/p" entryId="003-promo" onClose={() => {}} />);
-    expect((await screen.findByTestId("digest-none")).textContent).toBe("No digest for 003-promo yet.");
+    expect((await screen.findByTestId("digest-none")).textContent).toBe(
+      "No digest for 003-promo yet.",
+    );
   });
 });

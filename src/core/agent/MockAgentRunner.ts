@@ -93,9 +93,13 @@ interface VerifyPromptFacts {
 function parseVerifyPrompt(prompt: string): VerifyPromptFacts {
   const phase = /^## Phase (\d+): Verify fixes V(\d+)\s*$/m.exec(prompt);
   const task = /^- \[ \] (T\d+) /m.exec(prompt)?.[1];
-  const mode = /— (diagnose|review) mode\./.exec(prompt)?.[1] as VerifyPromptFacts["mode"] | undefined;
+  const mode = /— (diagnose|review) mode\./.exec(prompt)?.[1] as
+    | VerifyPromptFacts["mode"]
+    | undefined;
   if (!phase || !task || !mode) {
-    throw new Error("mock verify: the prompt lacks the mode, the fix-phase header or the first fix task id");
+    throw new Error(
+      "mock verify: the prompt lacks the mode, the fix-phase header or the first fix task id",
+    );
   }
   return { round: Number(phase[2]), phaseNumber: Number(phase[1]), firstTaskId: task, mode };
 }
@@ -373,7 +377,12 @@ export class MockAgentRunner implements AgentRunner {
     }
   }
 
-  private allowed(guard: WriteGuard, dest: string, toolName: string, input: Record<string, unknown>): boolean {
+  private allowed(
+    guard: WriteGuard,
+    dest: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ): boolean {
     if (dest.startsWith(path.join(this.projectDir, ".dex", "fake") + path.sep)) return true;
     const call = { toolName, input };
     const d = decideToolUse(guard.policy, call, policyEnvFor(this.projectDir), guard.scope);
@@ -430,7 +439,11 @@ export class MockAgentRunner implements AgentRunner {
     const output =
       facts.mode === "review"
         ? { verdict: round.verdict, summary, criteria: [], findings }
-        : { verdict: round.verdict, summary, hypotheses: round.hypotheses ?? descriptor.hypotheses ?? [] };
+        : {
+            verdict: round.verdict,
+            summary,
+            hypotheses: round.hypotheses ?? descriptor.hypotheses ?? [],
+          };
     if (facts.mode === "review" && !findings.some((f) => f.severity === "blocking")) return output;
     this.appendFixPhase(round, ctx, facts);
     return output;

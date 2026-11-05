@@ -18,7 +18,11 @@ const run = (name: string, result: SensorRun["result"], tail: string[] = []): Se
   tail,
 });
 
-const decision = (gate: GateDecision["gate"], outcome: GateDecision["outcome"], reason: string): GateDecision => ({
+const decision = (
+  gate: GateDecision["gate"],
+  outcome: GateDecision["outcome"],
+  reason: string,
+): GateDecision => ({
   gate,
   outcome,
   reason,
@@ -79,14 +83,22 @@ describe("GateCard", () => {
     expect(screen.getByTestId("gate-card").textContent).toMatch(/progress gate/);
     expect(screen.getByTestId("gate-outcome").textContent).toBe("fail");
     expect(screen.getByTestId("gate-reason").textContent).toBe("1 fast check is red: unit");
-    expect(screen.getAllByTestId("gate-run-result").map((e) => e.textContent)).toEqual(["fail", "pass"]);
+    expect(screen.getAllByTestId("gate-run-result").map((e) => e.textContent)).toEqual([
+      "fail",
+      "pass",
+    ]);
     expect(screen.queryByTestId("gate-run-tail")).toBeNull();
     fireEvent.click(screen.getByText("unit"));
     expect(screen.getByTestId("gate-run-tail").textContent).toMatch(/rejects an expired code/);
   });
 
   it("a pause shows as a pause", () => {
-    const meta = { entryId: "e", decision: decision("red-first", "pause", "the tests pass"), runs: [], evidenceFile: "" };
+    const meta = {
+      entryId: "e",
+      decision: decision("red-first", "pause", "the tests pass"),
+      runs: [],
+      evidenceFile: "",
+    };
     render(<GateCard meta={meta} />);
     expect(screen.getByTestId("gate-outcome").textContent).toBe("pause");
   });

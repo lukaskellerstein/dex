@@ -74,7 +74,9 @@ function covers(raw: unknown): AcceptanceRecord["covers"] {
     throw new AcceptanceInvalidError(`"covers" must be a non-empty list of {test, criterion}`);
   return raw.map((c, i) => {
     if (!isObject(c) || !nonEmpty(c.test) || !nonEmpty(c.criterion))
-      throw new AcceptanceInvalidError(`"covers[${i}]" must have a non-empty "test" and "criterion"`);
+      throw new AcceptanceInvalidError(
+        `"covers[${i}]" must have a non-empty "test" and "criterion"`,
+      );
     return { test: c.test, criterion: c.criterion };
   });
 }
@@ -123,25 +125,39 @@ export type AcceptanceRead =
  * The entry's frozen test set (FR-012, FR-014): the recorded test files, and
  * the record itself, so no agent but the test author changes what the gates run.
  */
-export function frozenTestSet(entry: Pick<ResolvedEntry, "specDir">, record: AcceptanceRecord | null): string[] {
+export function frozenTestSet(
+  entry: Pick<ResolvedEntry, "specDir">,
+  record: AcceptanceRecord | null,
+): string[] {
   return record ? [...record.files, acceptancePath(entry)] : [];
 }
 
 /** The entry's valid acceptance record in the working tree now, or null. */
-export function currentAcceptance(projectDir: string, entry: ResolvedEntry, policy: Policy): AcceptanceRecord | null {
+export function currentAcceptance(
+  projectDir: string,
+  entry: ResolvedEntry,
+  policy: Policy,
+): AcceptanceRecord | null {
   const read = readAcceptance(workingTree(projectDir), entry, policy);
   return read.kind === "ok" ? read.record : null;
 }
 
 /** The entry's acceptance.json, read and validated in its own tree. */
-export function readAcceptance(tree: TreeReader, entry: ResolvedEntry, policy: Policy): AcceptanceRead {
+export function readAcceptance(
+  tree: TreeReader,
+  entry: ResolvedEntry,
+  policy: Policy,
+): AcceptanceRead {
   const text = tree.read(acceptancePath(entry));
   if (text === null) return { kind: "missing" };
   const hash = acceptanceHash(text);
   try {
     return { kind: "ok", hash, record: parseAcceptance(JSON.parse(text), policy, tree) };
   } catch (err) {
-    const message = err instanceof SyntaxError ? `acceptance.json: not valid JSON (${err.message})` : (err as Error).message;
+    const message =
+      err instanceof SyntaxError
+        ? `acceptance.json: not valid JSON (${err.message})`
+        : (err as Error).message;
     return { kind: "invalid", hash, message };
   }
 }

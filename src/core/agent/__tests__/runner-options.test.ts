@@ -186,13 +186,22 @@ test("preToolUseDecision and canUseTool: the stage scope denies with rule scope 
   };
   const d = { ...deps("/tmp/project", events), scope };
   const input = { file_path: "tests/acceptance/recs.spec.ts", old_string: "a", new_string: "b" };
-  const hook = preToolUseDecision(d, "Edit", input) as { hookSpecificOutput?: Record<string, unknown> };
+  const hook = preToolUseDecision(d, "Edit", input) as {
+    hookSpecificOutput?: Record<string, unknown>;
+  };
   assert.equal(hook.hookSpecificOutput?.permissionDecision, "deny");
-  assert.match(String(hook.hookSpecificOutput?.permissionDecisionReason), /frozen acceptance test of 004/);
+  assert.match(
+    String(hook.hookSpecificOutput?.permissionDecisionReason),
+    /frozen acceptance test of 004/,
+  );
   assert.equal(events[0]?.type === "policy_denied" && events[0].rule, "scope");
   const r = await makeCanUseTool(d)("Edit", input, SDK_OPTIONS);
   assert.equal(r?.behavior, "deny");
-  assert.deepEqual(preToolUseDecision({ ...d, scope: undefined }, "Edit", input), {}, "no scope, no deny");
+  assert.deepEqual(
+    preToolUseDecision({ ...d, scope: undefined }, "Edit", input),
+    {},
+    "no scope, no deny",
+  );
 });
 
 const SDK_OPTIONS = { signal: new AbortController().signal, toolUseID: "tu-1", requestId: "rq-1" };

@@ -109,7 +109,12 @@ for (const [name, input, expected] of [
   ],
   [
     "restore: flaky counts as green",
-    prog({ mode: "restore", newlyTicked: [], redAtBaseline: ["unit"], runs: [run("unit", "flaky")] }),
+    prog({
+      mode: "restore",
+      newlyTicked: [],
+      redAtBaseline: ["unit"],
+      runs: [run("unit", "flaky")],
+    }),
     ["pass", null, null],
   ],
   [
@@ -151,7 +156,11 @@ test("fingerprint: a different first error line or diff hash changes it", () => 
   const base = fingerprint([run("unit", "fail", ["", "  E1", "more"])], "d");
   assert.notEqual(fingerprint([run("unit", "fail", ["E2"])], "d"), base);
   assert.notEqual(fingerprint([run("unit", "fail", ["E1"])], "other"), base);
-  assert.equal(fingerprint([run("unit", "fail", ["E1", "other line"])], "d"), base, "first non-empty line");
+  assert.equal(
+    fingerprint([run("unit", "fail", ["E1", "other line"])], "d"),
+    base,
+    "first non-empty line",
+  );
 });
 
 test("fingerprint: flaky and passing checks are left out", () => {
@@ -278,7 +287,11 @@ const minor: Finding = { severity: "minor", summary: "wording", criterion: null,
 
 test("done: every acceptance run green and no blocking finding → pass", () => {
   assert.deepEqual(outcome(done([accRun(0, "pass")], [])), ["pass", null, null]);
-  assert.deepEqual(outcome(done([accRun(0, "flaky"), run("api", "pass")], [])), ["pass", null, null]);
+  assert.deepEqual(outcome(done([accRun(0, "flaky"), run("api", "pass")], [])), [
+    "pass",
+    null,
+    null,
+  ]);
 });
 
 test("done: one red acceptance run → fail, next fix-phase", () => {

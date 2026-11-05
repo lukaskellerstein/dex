@@ -165,7 +165,10 @@ test("MockConfig: deletes load as paths; anything else throws naming the stage",
     for (const bad of ["x.md", [""], [3]]) {
       ok.entries["*"].specify.deletes = bad;
       writeConfig(dir, JSON.stringify(ok));
-      assert.throws(() => loadMockConfig(dir), /specify\.deletes must be an array of non-empty paths/);
+      assert.throws(
+        () => loadMockConfig(dir),
+        /specify\.deletes must be an array of non-empty paths/,
+      );
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -231,8 +234,17 @@ test("MockConfig: verify findings and hypotheses load, on the descriptor or a ro
     assert.deepEqual(v?.hypotheses, ["the route is missing"]);
     assert.equal(v?.rounds?.[0].findings?.[0].severity, "blocking");
     for (const [verify, msg] of [
-      [{ delay: 0, findings: [{ severity: "critical", summary: "x" }] }, /verify\.findings\[0\] needs a severity/],
-      [{ delay: 0, rounds: [{ verdict: "passed", findings: [{ severity: "minor", summary: "" }] }] }, /rounds\[0\]\.findings\[0\]/],
+      [
+        { delay: 0, findings: [{ severity: "critical", summary: "x" }] },
+        /verify\.findings\[0\] needs a severity/,
+      ],
+      [
+        {
+          delay: 0,
+          rounds: [{ verdict: "passed", findings: [{ severity: "minor", summary: "" }] }],
+        },
+        /rounds\[0\]\.findings\[0\]/,
+      ],
       [{ delay: 0, hypotheses: [1] }, /verify\.hypotheses must be an array of strings/],
     ] as const) {
       const bad = structuredClone(VALID_CONFIG);

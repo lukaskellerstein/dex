@@ -49,7 +49,11 @@ test("parseReview: a malformed output is null", () => {
   ]) {
     assert.equal(parseReview(bad), null, JSON.stringify(bad));
   }
-  assert.deepEqual(parseReview({ summary: "ok", findings: [] })?.criteria, [], "criteria may be missing");
+  assert.deepEqual(
+    parseReview({ summary: "ok", findings: [] })?.criteria,
+    [],
+    "criteria may be missing",
+  );
 });
 
 test("parseDiagnose: the R13 shape; a verdict field is ignored; malformed → null", () => {
@@ -57,7 +61,12 @@ test("parseDiagnose: the R13 shape; a verdict field is ignored; malformed → nu
     parseDiagnose({ verdict: "passed", summary: "red", hypotheses: ["the route is missing"] }),
     { summary: "red", hypotheses: ["the route is missing"] },
   );
-  for (const bad of [null, { summary: "x" }, { summary: "x", hypotheses: [1] }, { hypotheses: [] }]) {
+  for (const bad of [
+    null,
+    { summary: "x" },
+    { summary: "x", hypotheses: [1] },
+    { hypotheses: [] },
+  ]) {
     assert.equal(parseDiagnose(bad), null, JSON.stringify(bad));
   }
 });
@@ -65,11 +74,15 @@ test("parseDiagnose: the R13 shape; a verdict field is ignored; malformed → nu
 test("schemas: neither has a verdict field (FR-005, SC-006)", () => {
   assert.equal("verdict" in REVIEW_SCHEMA.properties, false);
   assert.equal("verdict" in DIAGNOSE_SCHEMA.properties, false);
-  assert.deepEqual(REVIEW_SCHEMA.properties.findings.items.properties.severity.enum, ["blocking", "minor"]);
+  assert.deepEqual(REVIEW_SCHEMA.properties.findings.items.properties.severity.enum, [
+    "blocking",
+    "minor",
+  ]);
 });
 
 test("verifyFacts: the round, the next phase number and the next task id", () => {
-  const tasks = "## Phase 1: Core\n\n- [X] T001 a\n- [X] T009 b\n\n## Phase 2: Verify fixes V1\n\n- [X] T010 fix\n";
+  const tasks =
+    "## Phase 1: Core\n\n- [X] T001 a\n- [X] T009 b\n\n## Phase 2: Verify fixes V1\n\n- [X] T010 fix\n";
   assert.deepEqual(verifyFacts(tasks), { round: 2, nextPhaseNumber: 3, nextTaskId: "T011" });
 });
 

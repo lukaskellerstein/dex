@@ -249,7 +249,11 @@ for (const [name, raw, message] of [
     /"checks\.rerunOnFail" must be an integer from 0 to 5/,
   ],
   ["an empty testGlobs", { testGlobs: [] }, /"testGlobs" must not be empty/],
-  ["a non-boolean verify.browser", { verify: { browser: "yes" } }, /"verify\.browser" must be a boolean/],
+  [
+    "a non-boolean verify.browser",
+    { verify: { browser: "yes" } },
+    /"verify\.browser" must be a boolean/,
+  ],
 ] as const) {
   test(`parsePolicy: ${name} is a PolicyInvalidError`, () => {
     assert.throws(
@@ -416,7 +420,12 @@ for (const [stage, toolName, input, expected] of [
   ["implement", "Bash", { command: `echo '' > ./${FROZEN_TEST}` }, "scope"],
   ["implement", "Bash", { command: `npm test && unlink "${FROZEN_TEST}"` }, "scope"],
   ["implement", "Bash", { command: `npx playwright test ${FROZEN_TEST}` }, "none"],
-  ["implement", "Write", { file_path: "specs/003-promo-codes/acceptance.json", content: "{}" }, "scope"],
+  [
+    "implement",
+    "Write",
+    { file_path: "specs/003-promo-codes/acceptance.json", content: "{}" },
+    "scope",
+  ],
   ["implement", "Write", { file_path: "src/cart/promo.ts", content: "x" }, "none"],
   ["verify", "Edit", edit("specs/003-promo-codes/tasks.md"), "none"],
   ["verify", "Edit", edit("src/cart/promo.ts"), "scope"],
@@ -446,15 +455,25 @@ test("stage scope: a policy deny is checked first; the scope reasons name the fi
 
 test("stageScope: one per stage of R9, amend mode included; none for the other stages", () => {
   const tests = stageScope(policy, PROMO, "tests", null);
-  assert.deepEqual(tests?.writeOnly, [...policy.testGlobs, ...policy.testSupport, "specs/003-promo-codes/**"]);
+  assert.deepEqual(tests?.writeOnly, [
+    ...policy.testGlobs,
+    ...policy.testSupport,
+    "specs/003-promo-codes/**",
+  ]);
   assert.deepEqual(tests?.protect, []);
   const amend = stageScope(policy, PROMO, "tests", ACC_RECORD, FROZEN_TEST);
   assert.deepEqual(amend?.writeOnly, [FROZEN_TEST, "specs/003-promo-codes/**"]);
   const impl = stageScope(policy, PROMO, "implement", ACC_RECORD);
   assert.equal(impl?.writeOnly, null);
   assert.deepEqual(impl?.protect, [FROZEN_TEST, "specs/003-promo-codes/acceptance.json"]);
-  assert.deepEqual(stageScope(policy, PROMO, "verify", ACC_RECORD)?.writeOnly, ["specs/003-promo-codes/tasks.md"]);
-  assert.deepEqual(stageScope(policy, PROMO, "implement", null)?.protect, [], "no record yet, nothing frozen");
+  assert.deepEqual(stageScope(policy, PROMO, "verify", ACC_RECORD)?.writeOnly, [
+    "specs/003-promo-codes/tasks.md",
+  ]);
+  assert.deepEqual(
+    stageScope(policy, PROMO, "implement", null)?.protect,
+    [],
+    "no record yet, nothing frozen",
+  );
   for (const stage of ["brief", "specify", "clarify", "plan", "tasks"] as const) {
     assert.equal(stageScope(policy, PROMO, stage, ACC_RECORD), null, stage);
   }

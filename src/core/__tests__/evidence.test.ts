@@ -218,7 +218,11 @@ test("amendments: the first approved one is pending until applied; rejected ones
     recordAmendment(dir, "003-promo", item("tests/c.spec.ts", "approved"));
     assert.equal(pendingAmendment(dir, "003-promo")?.file, "tests/b.spec.ts");
     markAmendmentApplied(dir, "003-promo", "tests/a.spec.ts");
-    assert.equal(pendingAmendment(dir, "003-promo")?.file, "tests/b.spec.ts", "a rejected one is not applied");
+    assert.equal(
+      pendingAmendment(dir, "003-promo")?.file,
+      "tests/b.spec.ts",
+      "a rejected one is not applied",
+    );
     markAmendmentApplied(dir, "003-promo", "tests/b.spec.ts");
     assert.equal(pendingAmendment(dir, "003-promo")?.file, "tests/c.spec.ts");
     const file = path.join(dir, ".dex/evidence/003-promo/amendments.json");

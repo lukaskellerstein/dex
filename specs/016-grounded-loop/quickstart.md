@@ -12,8 +12,9 @@ npm run typecheck    # all three tsconfigs; not a bare tsc --noEmit
 
 - `src/core/__tests__/gates.test.ts` is table-driven: one case per row of the
   gates table, plus flaky, the fingerprint and each stage's write scope.
-- `src/core/__tests__/grounded-scenarios.test.ts` runs every fixture in
-  `fixtures/mock/grounded/` under the mock and checks the end in
+- `src/core/__tests__/grounded-scenarios.test.ts` and
+  `grounded-protection.test.ts` run every fixture in `fixtures/mock/grounded/`
+  under the mock and check the end in
   [contracts/mock-config.md](contracts/mock-config.md).
 
 ## 2. A mock loop on dex-ecommerce (SC-003, SC-005, SC-008)

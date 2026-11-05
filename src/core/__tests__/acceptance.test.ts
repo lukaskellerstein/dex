@@ -83,7 +83,14 @@ test("validateEntrySensors: every clash is reported; assertEntrySensors refuses 
     ...QUEUE,
     entries: [
       { id: "a", title: "A", checks: [{ name: "unit", command: "x" }] },
-      { id: "b", title: "B", checks: [{ name: "types", command: "y" }, { name: "ok", command: "z" }] },
+      {
+        id: "b",
+        title: "B",
+        checks: [
+          { name: "types", command: "y" },
+          { name: "ok", command: "z" },
+        ],
+      },
     ],
   };
   assert.deepEqual(validateEntrySensors(queue, POLICY), [
@@ -93,7 +100,8 @@ test("validateEntrySensors: every clash is reported; assertEntrySensors refuses 
   assert.deepEqual(validateEntrySensors(QUEUE, POLICY), []);
   assert.throws(
     () => assertEntrySensors(queue, POLICY, ".dex/queue.json"),
-    (err: unknown) => err instanceof QueueInvalidError && /"a".*"unit".*"b".*"types"/.test(err.message),
+    (err: unknown) =>
+      err instanceof QueueInvalidError && /"a".*"unit".*"b".*"types"/.test(err.message),
   );
 });
 
@@ -123,7 +131,10 @@ test("parseAcceptance: each broken record names the field", () => {
     [{ ...VALID, command: undefined }, /"command" must be a non-empty string/],
     [{ ...VALID, files: undefined }, /"files" must be a non-empty list/],
     [{ ...VALID, covers: undefined }, /"covers" must be a non-empty list/],
-    [{ ...VALID, covers: [{ test: "x" }] }, /"covers\[0\]" must have a non-empty "test" and "criterion"/],
+    [
+      { ...VALID, covers: [{ test: "x" }] },
+      /"covers\[0\]" must have a non-empty "test" and "criterion"/,
+    ],
     [{ ...VALID, failExitCodes: [1, 0] }, /"failExitCodes" must be a non-empty list of non-zero/],
     [{ ...VALID, files: ["tests/acceptance/missing.spec.ts"] }, /missing\.spec\.ts does not exist/],
     [{ ...VALID, files: ["src/catalog.ts"] }, /src\/catalog\.ts matches no testGlobs pattern/],

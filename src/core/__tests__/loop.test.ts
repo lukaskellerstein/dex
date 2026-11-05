@@ -372,7 +372,10 @@ test("loop: a write to a committed frozen file is denied (policy_denied, rule fr
     const denied = events.filter((e) => e.type === "policy_denied");
     assert.equal(denied.length, 1);
     assert.equal(denied[0].type === "policy_denied" && denied[0].rule, "frozen");
-    assert.match(denied[0].type === "policy_denied" ? denied[0].subject : "", /docs\/thresholds\.md$/);
+    assert.match(
+      denied[0].type === "policy_denied" ? denied[0].subject : "",
+      /docs\/thresholds\.md$/,
+    );
     assert.equal(fs.readFileSync(path.join(dir, "docs/thresholds.md"), "utf8"), "p99 < 300ms\n");
     assert.equal(fs.readFileSync(path.join(dir, "docs/claim-new.md"), "utf8"), "a new claim\n");
     assert.equal(termination(events), "queue_complete");

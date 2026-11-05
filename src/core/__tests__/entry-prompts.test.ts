@@ -26,7 +26,10 @@ test("implement prompt: failures go to `notes`, tasks.md keeps its plan, frozen 
   assert.doesNotMatch(p, /write the error under the task/);
   assert.match(p, /say so in your structured output's `notes`/);
   assert.match(p, /no new, removed, reworded or reordered task and no changed phase heading/);
-  assert.match(p, /tests\/acceptance\/003-promo\/expired\.spec\.ts, specs\/003-promo\/acceptance\.json\. Never edit, move or delete them/);
+  assert.match(
+    p,
+    /tests\/acceptance\/003-promo\/expired\.spec\.ts, specs\/003-promo\/acceptance\.json\. Never edit, move or delete them/,
+  );
   assert.match(p, /header "Test amendment", question "Amend <path>: <reason>"/);
   const none = buildImplementPrompt(ENTRY, "/p", { phase: PHASE, goalPath: null });
   assert.doesNotMatch(none, /Test amendment/, "nothing frozen yet, no amendment rule");
@@ -47,7 +50,10 @@ test("tests prompt, amend mode: one file and its reason, no red-first, no new re
   });
   assert.match(p, /- File: \/p\/tests\/acceptance\/003-promo\/expired\.spec\.ts/);
   assert.match(p, /- Reason: the contract says 422, not 410/);
-  assert.match(p, /Write only \/p\/tests\/acceptance\/003-promo\/expired\.spec\.ts and files in \/p\/specs\/003-promo/);
+  assert.match(
+    p,
+    /Write only \/p\/tests\/acceptance\/003-promo\/expired\.spec\.ts and files in \/p\/specs\/003-promo/,
+  );
   assert.doesNotMatch(p, /## Record them/);
   assert.doesNotMatch(p, /must fail now/);
 });

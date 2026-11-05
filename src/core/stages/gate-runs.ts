@@ -128,7 +128,10 @@ export function writeGateRecord(
       decision: rec.gate,
       evidenceFile: file,
     });
-    ctx.rlog.run("INFO", `gate: ${rec.entryId} · ${rec.gate.gate} ${rec.gate.outcome} — ${rec.gate.reason}`);
+    ctx.rlog.run(
+      "INFO",
+      `gate: ${rec.entryId} · ${rec.gate.gate} ${rec.gate.outcome} — ${rec.gate.reason}`,
+    );
   }
   return written;
 }
@@ -175,10 +178,17 @@ export async function baselineGate(
   ];
   if (specs.length === 0) return { decision: baseline([]), runs: [] };
   const names = new Set(specs.map((s) => s.name));
-  const reused = reusable(readStageRecords(ctx.projectDir, entry.id), treeStamp(ctx.projectDir), specs);
+  const reused = reusable(
+    readStageRecords(ctx.projectDir, entry.id),
+    treeStamp(ctx.projectDir),
+    specs,
+  );
   if (reused) {
     const runs = reused.runs.filter((r) => names.has(r.name));
-    ctx.rlog.run("INFO", `gate: ${entry.id} · baseline reuses ${reused.stage}-${reused.n} (same tree)`);
+    ctx.rlog.run(
+      "INFO",
+      `gate: ${entry.id} · baseline reuses ${reused.stage}-${reused.n} (same tree)`,
+    );
     return { decision: baseline(runs), runs };
   }
   const runs = await runChecks(ctx, runId, entry, "baseline", null, specs);
@@ -205,7 +215,9 @@ export async function baselineGate(
 /** In-scope task ids that are done after the run and were not done before it. */
 export function newlyTicked(entry: ResolvedEntry, before: string, after: string): string[] {
   const doneBefore = new Set(
-    parseTasksMd(before).flatMap((p) => p.tasks.filter((t) => t.status === "done").map((t) => t.id)),
+    parseTasksMd(before).flatMap((p) =>
+      p.tasks.filter((t) => t.status === "done").map((t) => t.id),
+    ),
   );
   return parseTasksMd(after).flatMap((p) =>
     p.tasks
@@ -224,7 +236,11 @@ interface ProgressContext {
 }
 
 /** What the run did to the tests since its start commit (FR-027, FR-028); nothing without a commit. */
-function testChangesOf(projectDir: string, impl: ImplementResult, testGlobs: string[]): TestChangesRecord {
+function testChangesOf(
+  projectDir: string,
+  impl: ImplementResult,
+  testGlobs: string[],
+): TestChangesRecord {
   if (!impl.startSha) return { frozenChanged: [], testsDeletedOrRenamed: [], skipMarkers: [] };
   const files = testFileChanges(nameStatusSince(projectDir, impl.startSha), testGlobs, impl.frozen);
   const markers = skipMarkers(addedLines(diffSince(projectDir, impl.startSha)), testGlobs);
@@ -238,7 +254,14 @@ export async function progressGate(
   pc: ProgressContext,
 ): Promise<{ decision: GateDecision; record: StageRecord | null }> {
   const ctx = ctxOrThrow();
-  const runs = await runChecks(ctx, pc.runId, entry, "implement", impl.agentRunId, fastChecksFor(ctx.policy, entry));
+  const runs = await runChecks(
+    ctx,
+    pc.runId,
+    entry,
+    "implement",
+    impl.agentRunId,
+    fastChecksFor(ctx.policy, entry),
+  );
   const ticked = newlyTicked(entry, impl.tasksBefore, impl.tasksAfter);
   const violations = diffTasks(impl.tasksBefore, impl.tasksAfter);
   const testChanges = testChangesOf(ctx.projectDir, impl, ctx.policy.testGlobs);
@@ -351,7 +374,9 @@ export async function restoreBeforeVerify(
     return { cost: 0, limitHit: null, ran: "verify", progressPassed: null, guard: null };
   const flaky = flakyCheck(readStageRecords(ctx.projectDir, entry.id), base.runs);
   if (base.decision.outcome === "pass") {
-    return flaky ? { cost: 0, limitHit: null, ran: "verify", progressPassed: null, guard: flaky } : null;
+    return flaky
+      ? { cost: 0, limitHit: null, ran: "verify", progressPassed: null, guard: flaky }
+      : null;
   }
   const failing = base.runs.filter((r) => !isGreen(r));
   return gatedImplement(deps, entry, { mode: "restore", failing }, base, cycleNumber);

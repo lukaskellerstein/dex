@@ -551,7 +551,27 @@ What it tells the owner before the sign-off:
 - No sensor but the acceptance command will run, and that command does not
   exist until the `tests` stage writes `acceptance.json`.
 - `budget/stage=none`: no stage has a cost cap.
-- The owner's sign-off is pending (T089). T090 and T091 wait for it.
+- The owner signed off on 2026-11-05 (T089).
+
+### The first real stage (T090)
+
+2026-11-05. On the T088 clone: `.dex/dex-config.json` set to
+`{"agent": "claude"}`, then the queue, the policy and the config committed in
+the clone (`cc809e5`). `dex run <clone> --once` on `claude-opus-4-6` (Dex's
+fixed default, `LOOP_DEFAULTS`):
+
+```text
+→ 003-promo-codes · specify: specs/003-promo-codes/spec.md is missing
+   ▸ specify
+✗ 003-promo-codes · specify failed: Claude Code returned an error result: Invalid API key · Fix external API key
+■ failed · $0.00
+```
+
+- The session's environment sets `ANTHROPIC_API_KEY`, and the SDK passes it
+  to the spawned Claude Code, so it wins over the login on the machine. The API
+  rejects the key. This is the environment, not Dex.
+- The run cost nothing and left the clone clean (`main`, one commit ahead of
+  its scratch `origin`). SC-004 is still open.
 
 ## Final checks
 
@@ -583,11 +603,15 @@ T002; `tsc` 0 findings.
   (`organizeImports`), 2 regexes with adjacent spaces in `cli.test.ts`, 2
   unused `biome-ignore` comments in `DigestView.tsx` (this repo turns
   `noArrayIndexKey` off).
-- 016 leaves 44 `format` findings in `src/` (lines over 100 characters and
-  similar). Each is a safe fix, but `nvim-tools --fix-all` skips a file with
-  uncommitted changes, and every 016 file is uncommitted. They need
-  `--fix-all --force`, or a commit first, then `--fix-all`. That is the
-  owner's call.
+- 016 left 44 `format` findings in `src/` (lines over 100 characters and
+  similar). The fixer skips files with uncommitted changes, so the owner chose
+  to commit first (`da1d91f`). Then `nvim-tools --fix` on exactly those 44
+  files fixed all of them; the baseline files were not touched.
+- The format pass made `grounded-scenarios.test.ts` 656 lines, over the 600
+  limit. The harness and the `ENDS` table moved to
+  `src/core/__tests__/helpers/grounded.ts`, and the US4 and US5 scenarios to
+  `grounded-protection.test.ts` (280 and 269 lines). The same 19 tests pass.
+- After both: only the 6 baseline findings remain; `tsc` ok.
 
 ### Size (T096)
 

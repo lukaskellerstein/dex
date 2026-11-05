@@ -34,7 +34,9 @@ export function stageScope(
     case "tests":
       return {
         ...base,
-        writeOnly: amendFile ? [amendFile, specGlob] : [...policy.testGlobs, ...policy.testSupport, specGlob],
+        writeOnly: amendFile
+          ? [amendFile, specGlob]
+          : [...policy.testGlobs, ...policy.testSupport, specGlob],
         protect: [],
       };
     case "implement":
@@ -60,10 +62,15 @@ function bashTargets(command: string, env: PolicyEnv): string[] {
   const out: string[] = [];
   for (const segment of command.split(/&&|\|\||[;|\n]/)) {
     for (const m of segment.matchAll(/>{1,2}\s*([^\s;&|]+)/g)) out.push(unquote(m[1]));
-    const tokens = segment.replace(/>{1,2}\s*[^\s;&|]+/g, " ").trim().split(/\s+/).map(unquote);
+    const tokens = segment
+      .replace(/>{1,2}\s*[^\s;&|]+/g, " ")
+      .trim()
+      .split(/\s+/)
+      .map(unquote);
     const verb = tokens[0] === "git" ? tokens[1] : tokens[0];
     const args = tokens.slice(tokens[0] === "git" ? 2 : 1);
-    const destructive = tokens[0] === "git" ? verb === "rm" || verb === "mv" : DESTRUCTIVE.test(verb ?? "");
+    const destructive =
+      tokens[0] === "git" ? verb === "rm" || verb === "mv" : DESTRUCTIVE.test(verb ?? "");
     if (destructive) out.push(...args.filter((a) => !a.startsWith("-")));
   }
   return out.map((t) => path.resolve(env.projectDir, t));

@@ -118,7 +118,7 @@ src/renderer/components/
 └── loop/PauseCard.tsx                # CHANGE  digest link
 
 fixtures/mock/grounded/  # NEW  fake-check.mjs, policy.json, one config per D-016-11 scenario
-src/core/__tests__/      # NEW  sensors, gates, plan-diff, acceptance, tree-stamp, attempt-log, digest, entry-prompts, verify-stage, grounded-scenarios (scope cases are in policy.test.ts)
+src/core/__tests__/      # NEW  sensors, gates, plan-diff, acceptance, tree-stamp, attempt-log, digest, entry-prompts, verify-stage, grounded-scenarios and grounded-protection over helpers/grounded.ts (scope cases are in policy.test.ts)
 ```
 
 **Structure Decision**: The existing three-layer layout stays. Pure decisions

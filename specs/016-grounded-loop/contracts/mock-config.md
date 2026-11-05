@@ -66,7 +66,9 @@ mock config per scenario:
 | `skip-tests-no-acceptance.json` | `skip: ["tests"]`, no `acceptance` | pause `invalid_input` |
 | `happy-path.json` | tests → red-first → implement → done | entry done, digest written |
 
-`src/core/__tests__/grounded-scenarios.test.ts` holds the same table (`ENDS`)
-and checks the end of every scenario run against it. A fixture without a row
-fails the suite. `fixtures/mock/grounded/README.md` repeats the table for a
+`src/core/__tests__/helpers/grounded.ts` holds the same table (`ENDS`), and its
+`scenario()` checks the end of every run against it. The runs are in
+`grounded-scenarios.test.ts` (the table check, US1–US3) and
+`grounded-protection.test.ts` (US4, US5). A fixture without a row fails the
+suite. `fixtures/mock/grounded/README.md` repeats the table for a
 human who copies a fixture into a dex-ecommerce clone.
