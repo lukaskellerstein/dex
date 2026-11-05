@@ -112,10 +112,11 @@ function implementStage(entry: ResolvedEntry, phases: TaskPhase[]): Outcome | nu
 function verifyStage(entry: ResolvedEntry, tasks: string, evidence: Evidence): Outcome {
   const { record, key } = evidence;
   if (!record) return stage("verify", `no verify record in .dex/evidence/${entry.id}/`);
+  const bySpec = record.key.startsWith("spec:");
   if (key === null || record.key !== key) {
     return stage(
       "verify",
-      record.key.startsWith("spec:")
+      bySpec
         ? `${entry.specDir} changed since the last verify`
         : `branch "${entry.branch}" has commits since the last verify`,
     );
@@ -124,7 +125,8 @@ function verifyStage(entry: ResolvedEntry, tasks: string, evidence: Evidence): O
     return stage("verify", "the last verify checked a different tasks.md");
   }
   if (record.verdict !== "passed") return stage("verify", "the last verify failed");
-  return { kind: "done", reason: "verify passed for the current commit and tasks.md" };
+  const what = bySpec ? `the current ${entry.specDir}` : "the current commit and tasks.md";
+  return { kind: "done", reason: `verify passed for ${what}` };
 }
 
 /** D-015-1 for one entry over one tree. `evidence` is read only when the entry reaches verify. */
