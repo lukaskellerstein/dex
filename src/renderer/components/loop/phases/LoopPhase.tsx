@@ -15,7 +15,6 @@ interface LoopPhaseProps {
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   debugBadge?: React.ReactNode;
-  pathStagesByCycle?: ReadonlyMap<number, ReadonlySet<StepType>>;
   latestAction?: LatestAction | null;
 }
 
@@ -30,7 +29,6 @@ export function LoopPhase({
   onImplPhaseClick,
   onSelectSpec,
   debugBadge,
-  pathStagesByCycle,
   latestAction,
 }: LoopPhaseProps) {
   return (
@@ -80,7 +78,6 @@ export function LoopPhase({
           onStageClick={onStageClick}
           onImplPhaseClick={onImplPhaseClick}
           onSelectSpec={onSelectSpec}
-          pathStagesByCycle={pathStagesByCycle}
           latestAction={latestAction}
         />
       </div>

@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { dialog, ipcMain } from "electron";
 import { parseTasksFile } from "../../core/parser.js";
+import { runSnapshot } from "../../core/run-snapshot.js";
 
 function expandTilde(p: string): string {
   if (p === "~") return os.homedir();
@@ -81,6 +82,9 @@ export function registerProjectHandlers(): void {
       return { path: resolved };
     },
   );
+
+  // The queue and status views read this on every stage boundary (research R17).
+  ipcMain.handle("project:get-run-snapshot", (_event, projectDir: string) => runSnapshot(projectDir));
 
   ipcMain.handle("project:path-exists", (_event, targetPath: string): boolean => {
     try {

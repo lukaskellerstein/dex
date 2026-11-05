@@ -8,20 +8,23 @@ import crypto from "node:crypto";
 import path from "node:path";
 import type { AgentRunner } from "./agent/AgentRunner.js";
 import { createAgentRunner } from "./agent/index.js";
-import { commitCheckpoint, ensureDexGitignore } from "./checkpoints.js";
 import { createContext, type OrchestrationContext, type RunState } from "./context.js";
 import { loadDexConfig } from "./dexConfig.js";
 import { createBranch, createPullRequest, getCurrentBranch } from "./git.js";
+import { clearStaleRequests, waitingFor } from "./humanInput.js";
 import { fallbackLog as log, RunLogger } from "./log.js";
+import { loadPolicy, type Policy, type QueueKind } from "./policy.js";
+import { loadQueue, type QueueV3 } from "./queue.js";
 import * as runs from "./runs.js";
 import {
   acquireStateLock,
   createInitialState,
+  ensureRuntimeIgnore,
   loadState,
+  mutateState,
   saveState,
-  updateState,
 } from "./state.js";
-import type { EmitFn, RunConfig } from "./types.js";
+import type { EmitFn, RunConfig, TerminationReason } from "./types.js";
 
 // ── Mutable bridge state (single source of truth for the live run) ──────────
 
@@ -47,46 +50,74 @@ export interface InitResult {
   ctx: OrchestrationContext;
   branchName: string;
   baseBranch: string;
+  /** True when a v2 run state was found and this run continues it. */
+  resumed: boolean;
+}
+
+interface ProjectRules {
+  queue: QueueV3 | null;
+  kind: QueueKind;
+  policy: Policy;
+}
+
+/**
+ * The queue, its kind and the project's policy. An invalid queue or policy, or
+ * a refused one, emits `error` with the file and the reason and returns null:
+ * Dex refuses to start (FR-014).
+ */
+function readProjectRules(config: RunConfig, emit: EmitFn): ProjectRules | null {
+  try {
+    const queue = loadQueue(config.projectDir);
+    const kind = queue?.kind ?? (config.mode === "loop" ? "new" : "existing");
+    return { queue, kind, policy: loadPolicy(config.projectDir, kind) };
+  } catch (err) {
+    emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
 }
 
 // ── initRun ────────────────────────────────────────────────────────────────
 
 export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResult | null> {
+  const rules = readProjectRules(config, emit);
+  if (!rules) return null;
   // Reconcile any prior runs left "running" by a previous crash.
   try {
     runs.reconcileCrashedRuns(config.projectDir);
   } catch (e) {
     log("WARN", "reconcileCrashedRuns failed", { error: (e as Error).message });
   }
-  // Idempotent — re-runs every start to pick up new runtime-cache entries
-  // for projects that were initialized before a given entry was added.
-  try {
-    ensureDexGitignore(config.projectDir);
-  } catch (e) {
-    log("WARN", "ensureDexGitignore failed", { error: (e as Error).message });
+  // An existing project gets .dex/.gitignore from `dex queue init`; Dex writes
+  // nothing there during a run, and a new file would make the tree dirty.
+  if (rules.kind === "new") {
+    try {
+      ensureRuntimeIgnore(config.projectDir);
+    } catch (e) {
+      log("WARN", "ensureRuntimeIgnore failed", { error: (e as Error).message });
+    }
   }
   runtimeState.abortController = new AbortController();
 
   // Branch resolution. Loop mode defers branch creation until after
-  // prerequisites (which may init git); resume keeps the current branch.
+  // prerequisites (which may init git); resume keeps the current branch, and
+  // build mode makes a branch only for a project Dex created (FR-007).
   let baseBranch = "";
   let branchName = "";
-  if (config.resume) {
+  if (config.resume || (config.mode !== "loop" && rules.kind === "existing")) {
     branchName = getCurrentBranch(config.projectDir);
   } else if (config.mode !== "loop") {
     baseBranch = getCurrentBranch(config.projectDir);
     branchName = createBranch(config.projectDir);
   }
 
-  // Resume preserves the previous runId so phase traces stay associated.
-  let runId: string = crypto.randomUUID();
-  if (config.resume) {
-    const prev = await loadState(config.projectDir);
-    if (prev?.runId) runId = prev.runId;
-  }
+  // Resume preserves the previous runId so phase traces stay associated. A
+  // state file of another version reads as absent: the run starts fresh.
+  const prev = config.resume ? await loadState(config.projectDir) : null;
+  const resumed = prev !== null;
+  const runId: string = prev?.runId ?? crypto.randomUUID();
 
   const rlog = new RunLogger(path.basename(config.projectDir), runId);
-  rlog.run("INFO", `run: ${config.resume ? "resuming" : "starting"} orchestrator`, {
+  rlog.run("INFO", `run: ${resumed ? "resuming" : "starting"} orchestrator`, {
     mode: config.mode,
     model: config.model,
     specDir: config.specDir,
@@ -103,9 +134,9 @@ export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResu
   // fired in the renderer (so isRunning=true), but no further progress is
   // possible. Recreating with the same runId preserves audit-trail continuity
   // for the renderer.
-  const runRecordExists = config.resume ? runs.readRun(config.projectDir, runId) !== null : false;
-  if (!config.resume || !runRecordExists) {
-    if (config.resume) {
+  const runRecordExists = resumed ? runs.readRun(config.projectDir, runId) !== null : false;
+  if (!resumed || !runRecordExists) {
+    if (resumed) {
       rlog.run("WARN", `run: resume runId=${runId} has no run record on disk — recreating`);
     }
     runs.startRun(config.projectDir, {
@@ -123,8 +154,7 @@ export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResu
           : path.join(config.projectDir, config.descriptionFile)
         : null,
       fullPlanPath: null,
-      maxLoopCycles: config.maxLoopCycles ?? null,
-      maxBudgetUsd: config.maxBudgetUsd ?? null,
+      maxBudgetUsd: rules.policy.limits.maxBudgetUsdPerRun ?? null,
     });
   }
 
@@ -150,9 +180,19 @@ export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResu
     return null;
   }
 
-  if (!config.resume) {
-    const initialState = createInitialState(config, runId, branchName, baseBranch);
-    await saveState(config.projectDir, initialState);
+  if (resumed) {
+    // Resume is the answer to every pause, and no agent waits yet: drop every
+    // pending request and run the picker again.
+    mutateState(config.projectDir, (s) => ({
+      ...s,
+      status: "running",
+      pauseReason: undefined,
+      pauseDetail: undefined,
+      pausedAt: null,
+    }));
+    clearStaleRequests(config.projectDir);
+  } else {
+    await saveState(config.projectDir, createInitialState(config, runId, { kind: rules.kind, runBranch: null }));
   }
 
   emit({ type: "run_started", config, runId, branchName });
@@ -178,10 +218,12 @@ export async function initRun(config: RunConfig, emit: EmitFn): Promise<InitResu
     },
     emit,
     rlog,
+    kind: rules.kind,
+    policy: rules.policy,
   });
   runtimeState.currentContext = ctx;
 
-  return { runId, rlog, ctx, branchName, baseBranch };
+  return { runId, rlog, ctx, branchName, baseBranch, resumed };
 }
 
 // ── finalizeRun ────────────────────────────────────────────────────────────
@@ -196,6 +238,21 @@ export interface FinalizeArgs {
   taskPhasesCompleted: number;
   totalCost: number;
   runStart: number;
+  /** How the loop ended; absent in build mode. */
+  termination?: TerminationReason;
+  /** `policy.openPullRequest`: push and open a PR for a finished run (FR-011, off by default). */
+  openPullRequest: boolean;
+}
+
+/** The run state a finished run leaves behind. A loop pause already wrote its own reason. */
+function stateStatusAtEnd(
+  termination: TerminationReason | undefined,
+  wasStopped: boolean,
+): "completed" | "failed" | "paused" | "keep" {
+  if (termination === "paused") return "keep";
+  if (termination === "failed") return "failed";
+  if (wasStopped || termination === "user_abort" || termination === "budget_exceeded") return "paused";
+  return "completed";
 }
 
 export async function finalizeRun(args: FinalizeArgs): Promise<void> {
@@ -209,8 +266,14 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
     taskPhasesCompleted,
     totalCost,
     runStart,
+    termination,
+    openPullRequest,
   } = args;
-  const wasStopped = runtimeState.abortController?.signal.aborted ?? false;
+  // A run that pauses because no human can answer (`dex run` without a TTY)
+  // is not a Stop: its record says paused, and the state names what it waits for.
+  const signal = runtimeState.abortController?.signal;
+  const waitFor = waitingFor(signal);
+  const wasStopped = (signal?.aborted ?? false) && waitFor === null;
 
   // Drop ctx + bridge aliases.
   runtimeState.currentContext = null;
@@ -219,75 +282,33 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
   runtimeState.currentRunner = null;
 
   const totalDuration = Date.now() - runStart;
-  const finalStatus = wasStopped ? "stopped" : "completed";
+  const status = stateStatusAtEnd(termination, wasStopped);
+  // The run record tells a finished run from a resumable one (the renderer's history view reads it).
+  const recordStatus = wasStopped
+    ? "stopped"
+    : status === "keep" || status === "paused"
+      ? "paused"
+      : status;
   runs.completeRun(
     config.projectDir,
     runId,
-    finalStatus,
+    recordStatus,
     totalCost,
     totalDuration,
     taskPhasesCompleted,
   );
 
-  // Update state file: paused if stopped, completed otherwise.
-  if (runtimeState.activeProjectDir) {
+  const projectDir = runtimeState.activeProjectDir;
+  if (projectDir && status !== "keep") {
     try {
-      if (wasStopped) {
-        // Preserve pauseReason if step_mode already set it; else user_abort.
-        const existing = await loadState(runtimeState.activeProjectDir);
-        const reason: "user_abort" | "step_mode" | "budget" | "failure" =
-          existing?.pauseReason === "step_mode" ? "step_mode" : "user_abort";
-        await updateState(runtimeState.activeProjectDir, {
-          status: "paused",
-          pauseReason: reason,
-          pausedAt: new Date().toISOString(),
-          cumulativeCostUsd: totalCost,
-        });
-        emit({ type: "paused", runId, reason });
-      } else {
-        await updateState(runtimeState.activeProjectDir, { status: "completed" });
-      }
+      const pausedAt = new Date().toISOString();
+      const reason = waitFor ?? (termination === "budget_exceeded" ? "limit_reached" : "user_abort");
+      mutateState(projectDir, (s) =>
+        status === "paused" ? { ...s, status, pauseReason: reason, pausedAt } : { ...s, status },
+      );
+      if (status === "paused") emit({ type: "paused", runId, reason });
     } catch {
       // non-fatal — state write failure shouldn't crash cleanup
-    }
-  }
-
-  // Final completion checkpoint. The terminal write to .dex/runs/<runId>.json
-  // happens in runs.completeRun() above — without this commit the working tree
-  // stays dirty after a successful run, so any subsequent jumpTo() trips the
-  // dirty-tree guard and pops the "Uncommitted changes" modal. Only emitted
-  // for clean completion; stopped/aborted runs intentionally leave the tree
-  // dirty so the user can inspect.
-  //
-  // Skip when the run made no progress (errored before any phase ran). Without
-  // this guard, a fast-fail run (missing goal file, resume on a stale branch,
-  // etc.) commits a "[checkpoint:completion:0] [feature:-]" commit on whatever
-  // branch HEAD happens to be — including main — leaving an orphan checkpoint
-  // in the tree that has to be hand-rolled back. The skeleton runs/<runId>.json
-  // stays in the working tree as untracked dirt; the next legitimate phase
-  // commit picks it up cleanly.
-  if (!wasStopped && runtimeState.activeProjectDir) {
-    try {
-      const finalState = await loadState(config.projectDir);
-      const cycle = finalState?.cyclesCompleted ?? 0;
-      const specDir = finalState?.currentSpecDir ?? null;
-      const madeProgress =
-        taskPhasesCompleted > 0 || cycle > 0 || (finalState?.lastCompletedStep ?? null) !== null;
-      if (!madeProgress) {
-        rlog.run("INFO", "run: skipping completion checkpoint — no progress to commit");
-      } else {
-        const sha = commitCheckpoint(config.projectDir, "completion", cycle, specDir);
-        // Intentional: do NOT write state.lastCommit here. The commit already
-        // captured state.json (with lastCommit = prior stage's sha); writing
-        // the completion sha now would re-dirty the working tree that this
-        // very commit was added to clean up. checkGitDrift() forwards
-        // lastCommit to HEAD on next load — see state.ts:482-498.
-        rlog.run("INFO", `run: completion checkpoint committed`, { sha, cycle });
-      }
-    } catch (e) {
-      rlog.run("WARN", "run: completion checkpoint commit failed", {
-        error: (e as Error).message,
-      });
     }
   }
 
@@ -297,8 +318,11 @@ export async function finalizeRun(args: FinalizeArgs): Promise<void> {
   }
   runtimeState.activeProjectDir = null;
 
+  // A PR only when the policy asks for one, for a finished run with a base to
+  // compare against: a paused or failed loop resumes on the same branch.
+  const finished = termination === undefined || termination === "queue_complete";
   let prUrl: string | null = null;
-  if (!wasStopped && taskPhasesCompleted > 0 && branchName) {
+  if (openPullRequest && !wasStopped && finished && taskPhasesCompleted > 0 && branchName && baseBranch) {
     rlog.run("INFO", `run: creating PR for branch ${branchName}`);
     prUrl = createPullRequest(
       config.projectDir,

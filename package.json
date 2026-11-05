@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Electron desktop app that orchestrates fresh Claude Code instances per spec-kit phase",
   "main": "dist/main/index.js",
+  "bin": {
+    "dex": "dist/core/cli.js"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -15,10 +18,7 @@
     "check:size": "bash scripts/check-size.sh"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.45",
-    "d3-selection": "^3.0.0",
-    "d3-shape": "^3.2.0",
-    "d3-zoom": "^3.0.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.318",
     "electron": "^41.2.1",
     "gsap": "^3.12.5",
     "lucide-react": "^0.460.0",
@@ -28,9 +28,6 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/d3-selection": "^3.0.10",
-    "@types/d3-shape": "^3.1.6",
-    "@types/d3-zoom": "^3.0.8",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

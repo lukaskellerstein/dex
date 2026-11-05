@@ -11,7 +11,7 @@
 # for a test fixture.
 set -euo pipefail
 
-TARGET=/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
+TARGET="$HOME/Projects/Github/lukaskellerstein/dex-ecommerce"
 DEX_THRESHOLD=$(($(date +%s) - 7 * 24 * 60 * 60))
 DRY_RUN=false
 

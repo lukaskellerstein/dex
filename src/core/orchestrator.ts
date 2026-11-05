@@ -1,41 +1,34 @@
 /**
- * What: Coordinator surface — public `run()` dispatcher routing to runBuild / runLoop, the loop-mode body (createContext → prerequisites → clarification → manifest extraction → mainLoop), the named exports the IPC layer + extracted stage modules consume (getRunState, getActiveContext, listSpecDirs, isSpecComplete, runStage, runPhase, runBuild, RunTaskState, buildPrompt, AbortError, submitUserAnswer), and stopRun.
- * Not: Does not own setup / teardown — those live in run-lifecycle.ts (initRun, finalizeRun, runtimeState bag). Does not own per-stage execution — runStage and runPhase are re-exports from stages/. Does not own the autonomous loop itself — runMainLoop in stages/main-loop.ts.
- * Deps: run-lifecycle (initRun, finalizeRun, runtimeState), stages/{run-stage, run-phase, build, main-loop, prerequisites, clarification, manifest-extraction}, state.* (resume reconciliation).
+ * What: Coordinator surface — `run()` routes to build mode or the loop. The loop body: for a new project, prerequisites → run branch → clarification → queue extraction → the queue loop; for an existing project (hand-written queue), check-only prerequisites → the queue loop, with no goal, clarification or branch of Dex's own. A new project's Resume skips prerequisites and runs the queue loop again — there is no reconcile step. Also the named exports IPC and the stage modules use (getRunState, getActiveContext, listSpecDirs, isSpecComplete, runStage, runPhase, runBuild, RunTaskState, AbortError) and stopRun.
+ * Not: Does not own setup / teardown (run-lifecycle.ts) or per-stage execution (stages/). Does not decide what runs next — the picker does, inside stages/loop.ts.
+ * Deps: run-lifecycle, stages/{run-stage, run-phase, build, loop, prerequisites, clarification, manifest-extraction}, queue.loadQueue, state, humanInput.cancelAll.
  */
 
-import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { OrchestrationContext, RunState } from "./context.js";
 import { createBranch, getCurrentBranch } from "./git.js";
 import { deriveGoalPaths } from "./goal-paths.js";
+import { cancelAll, type HeldKind, parkAll, WaitingForHuman } from "./humanInput.js";
+import type { RunLogger } from "./log.js";
 import { parseTasksFile } from "./parser.js";
+import { loadQueue, type QueueV3, resolveEntries } from "./queue.js";
 import { finalizeRun, initRun, runtimeState } from "./run-lifecycle.js";
 import * as runs from "./runs.js";
 import { runBuild } from "./stages/build.js";
 import { runClarificationPhase } from "./stages/clarification.js";
-import { runMainLoop } from "./stages/main-loop.js";
+import { type LoopResult, runQueueLoop } from "./stages/loop.js";
 import { ensureManifest } from "./stages/manifest-extraction.js";
-import { runPrerequisites as runPrerequisitesPhase } from "./stages/prerequisites.js";
-import { buildPrompt, RunTaskState, runPhase } from "./stages/run-phase.js";
+import { checkExistingProject, runPrerequisites as runPrerequisitesPhase } from "./stages/prerequisites.js";
+import { RunTaskState, runPhase } from "./stages/run-phase.js";
 import { runStage } from "./stages/run-stage.js";
-import {
-  clearState,
-  detectStaleState,
-  loadState,
-  reconcileState,
-  resolveWorkingTreeConflict,
-  updateState,
-} from "./state.js";
-import type { EmitFn, RunConfig } from "./types.js";
-import { submitUserAnswer } from "./userInput.js";
+import { loadState, updateState } from "./state.js";
+import type { EmitFn, RunConfig, TerminationReason } from "./types.js";
 
-// Re-exports for IPC + stage modules. Keeps "./orchestrator.js" as the single
-// import point for external consumers — extracted modules can move freely
-// without churning all call sites.
-export { buildPrompt, RunTaskState, runBuild, runPhase, runStage, submitUserAnswer };
+// Re-exports for IPC + stage modules: "./orchestrator.js" stays the single
+// import point, so extracted modules can move without churning call sites.
+export { RunTaskState, runBuild, runPhase, runStage };
 
 /** Sentinel error thrown when abort is detected between stages to skip remaining work. */
 export class AbortError extends Error {
@@ -47,25 +40,17 @@ export class AbortError extends Error {
 
 // ── Public read-only accessors over runtimeState ────────────────────────────
 
-/**
- * Returns the live RunState if a run is active, or null otherwise. Used by
- * IPC for `dexAPI.getRunState()` so the renderer can recover after refresh.
- */
+/** The live RunState while a run is active, else null (renderer recovery after refresh). */
 export function getRunState(): RunState | null {
   return runtimeState.currentContext?.state ?? null;
 }
 
-/**
- * Returns the live OrchestrationContext, or null when no run is in flight.
- * Used by extracted stage modules (run-stage, run-phase, build) that need
- * runner / state / abort / projectDir without threading ctx through every
- * function signature.
- */
+/** The live OrchestrationContext, or null when no run is in flight. */
 export function getActiveContext(): OrchestrationContext | null {
   return runtimeState.currentContext;
 }
 
-// ── Spec discovery (used by IPC + build/loop runners) ───────────────────────
+// ── Spec discovery (used by IPC + build mode) ───────────────────────────────
 
 export function listSpecDirs(projectDir: string): string[] {
   const candidates = [path.join(projectDir, "specs"), path.join(projectDir, ".specify", "specs")];
@@ -91,20 +76,21 @@ export function isSpecComplete(projectDir: string, specDir: string): boolean {
 
 export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
   const init = await initRun(config, emit);
-  if (!init) return; // lock failure already surfaced via emit
+  if (!init) return; // lock or queue failure already surfaced via emit
 
-  const { runId, rlog, ctx } = init;
+  const { runId, rlog, ctx, resumed } = init;
   let { branchName, baseBranch } = init;
   let taskPhasesCompleted = 0;
   let totalCost = 0;
+  let termination: TerminationReason | undefined;
   const runStart = Date.now();
 
   try {
     if (config.mode === "loop") {
-      const result = await runLoop(config, emit, runId, rlog);
-      taskPhasesCompleted = result.taskPhasesCompleted;
-      totalCost = result.totalCost;
-      // Branch was created inside runLoop after prerequisites
+      const result = await runLoop(ctx, { config, runId, rlog, resumed });
+      taskPhasesCompleted = result.stagesRun;
+      totalCost = result.cost;
+      termination = result.termination.reason;
       baseBranch = result.baseBranch;
       branchName = result.branchName;
     } else {
@@ -113,9 +99,16 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       totalCost = result.totalCost;
     }
   } catch (err) {
-    // AbortError is expected when the user stops a run — not a real error.
-    if (!(err instanceof AbortError)) throw err;
+    // An error after Stop is the stop unwinding (stages throw their own abort
+    // errors), not a failure.
+    if (err instanceof AbortError || ctx.abort.signal.aborted) {
+      termination = "user_abort";
+    } else {
+      termination = "failed";
+      throw err;
+    }
   } finally {
+    cancelAll();
     await finalizeRun({
       config,
       emit,
@@ -126,65 +119,31 @@ export async function run(config: RunConfig, emit: EmitFn): Promise<void> {
       taskPhasesCompleted,
       totalCost,
       runStart,
+      termination,
+      openPullRequest: ctx.policy.openPullRequest,
     });
   }
 }
 
-// ── Loop Mode Runner ───────────────────────────────────────────────────────
+// ── Loop mode ──────────────────────────────────────────────────────────────
 
 /**
- * Resolve the loop's goal file. Precedence:
- *   1. config.descriptionFile (resolved against projectDir if relative)
- *   2. state.json's persisted `config.descriptionFile` — committed alongside
- *      step checkpoints (014 fork-resume reconciliation), so a Timeline jump
- *      restores the goal that was active at the fork point. Critical for
- *      preventing cross-goal contamination when prior runs used different
- *      goals.
- *   3. <projectDir>/GOAL.md
- *   4. The descriptionFile of the most recent prior run record on disk —
- *      last-resort safety net when state.json is absent (fresh project, no
- *      prior run on this branch).
- *
- * Throws a clear error listing all probed paths if nothing resolves.
+ * The new project's goal file. Precedence: config.descriptionFile, the goal
+ * the run started with (state.json), `<projectDir>/GOAL.md`, the most recent
+ * run record's goal. Throws listing every probed path when none exists.
  */
-function resolveGoalPath(config: RunConfig, rlog: import("./log.js").RunLogger): string {
+async function resolveGoalPath(config: RunConfig, rlog: RunLogger): Promise<string> {
   const tried: string[] = [];
-
-  if (config.descriptionFile) {
-    const explicit = path.isAbsolute(config.descriptionFile)
-      ? config.descriptionFile
-      : path.join(config.projectDir, config.descriptionFile);
-    tried.push(explicit);
-    if (fs.existsSync(explicit)) return explicit;
-  }
-
-  // state.json now travels with the branch (post-014). Prefer its persisted
-  // descriptionFile over GOAL.md / prior runs so fork-resume picks up the
-  // correct goal even when other goals exist in the repo. Mirrors the raw
-  // read pattern in src/renderer/hooks/useLoopStartForm.ts.
-  const stateFile = path.join(config.projectDir, ".dex", "state.json");
-  if (fs.existsSync(stateFile)) {
-    try {
-      const persisted = JSON.parse(fs.readFileSync(stateFile, "utf-8"))?.config?.descriptionFile;
-      if (typeof persisted === "string" && persisted.length > 0) {
-        const abs = path.isAbsolute(persisted)
-          ? persisted
-          : path.join(config.projectDir, persisted);
-        tried.push(abs);
-        if (fs.existsSync(abs)) {
-          rlog.run("INFO", "runLoop: using goal from state.json", { goal: abs });
-          return abs;
-        }
-      }
-    } catch {
-      // malformed state.json — fall through to remaining fallbacks
-    }
-  }
-
-  const defaultGoal = path.join(config.projectDir, "GOAL.md");
-  tried.push(defaultGoal);
-  if (fs.existsSync(defaultGoal)) return defaultGoal;
-
+  const probe = (p: string | undefined) => {
+    if (!p) return null;
+    const abs = path.isAbsolute(p) ? p : path.join(config.projectDir, p);
+    tried.push(abs);
+    return fs.existsSync(abs) ? abs : null;
+  };
+  const persisted = (await loadState(config.projectDir))?.config.descriptionFile;
+  const found =
+    probe(config.descriptionFile) ?? probe(persisted) ?? probe(path.join(config.projectDir, "GOAL.md"));
+  if (found) return found;
   const recovered = runs
     .listRuns(config.projectDir)
     .map((r) => r.descriptionFile)
@@ -193,215 +152,176 @@ function resolveGoalPath(config: RunConfig, rlog: import("./log.js").RunLogger):
     rlog.run("INFO", "runLoop: recovered goal file from prior run record", { recovered });
     return recovered;
   }
-
   throw new Error(
     `Loop mode requires a goal file. Probed: ${tried.join(", ")}. ` +
-      `Set config.descriptionFile, place GOAL.md in ${config.projectDir}, ` +
-      `or run again on a project with prior run history.`,
+      `Set config.descriptionFile or place GOAL.md in ${config.projectDir}.`,
   );
 }
 
-async function runLoop(
-  config: RunConfig,
-  emit: EmitFn,
-  runId: string,
-  rlog: import("./log.js").RunLogger,
-): Promise<{
-  taskPhasesCompleted: number;
-  totalCost: number;
-  baseBranch: string;
-  branchName: string;
-}> {
-  const goalPath = resolveGoalPath(config, rlog);
+interface LoopRun {
+  config: RunConfig;
+  runId: string;
+  rlog: RunLogger;
+  resumed: boolean;
+}
+
+type LoopOutcome = LoopResult & { baseBranch: string; branchName: string };
+
+function abortedBeforeLoop(ctx: OrchestrationContext, runId: string): LoopOutcome {
+  const termination = {
+    reason: "user_abort" as const,
+    cyclesCompleted: 0,
+    totalCostUsd: 0,
+    totalDurationMs: 0,
+    featuresCompleted: [],
+    featuresSkipped: [],
+  };
+  ctx.emit({ type: "loop_terminated", runId, termination });
+  return { termination, cost: 0, stagesRun: 0, baseBranch: "", branchName: "" };
+}
+
+/** Synthetic prerequisite events on Resume, so the UI stepper shows them done. */
+function emitResumedPrerequisites(ctx: OrchestrationContext, runId: string): void {
+  const agentRunId = crypto.randomUUID();
+  ctx.emit({ type: "prerequisites_started", runId });
+  ctx.emit({ type: "step_started", runId, cycleNumber: 0, step: "prerequisites", agentRunId });
+  ctx.emit({
+    type: "step_completed",
+    runId,
+    cycleNumber: 0,
+    step: "prerequisites",
+    agentRunId,
+    costUsd: 0,
+    durationMs: 0,
+  });
+  ctx.emit({ type: "prerequisites_completed", runId });
+}
+
+/**
+ * Prerequisites and the run branch, once per new project. Dex never switches
+ * a new project's branch, so on Resume the run branch is the checkout — after
+ * a checkpoint reset that is the `attempt-*` branch, not the original one.
+ */
+async function prepareNewProject(
+  ctx: OrchestrationContext,
+  run: LoopRun,
+): Promise<{ baseBranch: string; branchName: string } | null> {
+  const { config, runId, rlog } = run;
+  if (run.resumed) {
+    emitResumedPrerequisites(ctx, runId);
+    const branchName = getCurrentBranch(config.projectDir);
+    const previous = (await loadState(config.projectDir))?.runBranch;
+    if (previous !== branchName) await updateState(config.projectDir, { runBranch: branchName });
+    rlog.run("INFO", `runLoop: resuming on ${branchName}`, { previousRunBranch: previous ?? null });
+    return { baseBranch: "", branchName };
+  }
+  await runPrerequisitesPhase(ctx, runId);
+  if (ctx.abort.signal.aborted) return null;
+  const baseBranch = getCurrentBranch(config.projectDir);
+  const branchName = createBranch(config.projectDir);
+  await updateState(config.projectDir, { runBranch: branchName });
+  rlog.run("INFO", `runLoop: created branch ${branchName} from ${baseBranch}`);
+  return { baseBranch, branchName };
+}
+
+async function runNewProject(
+  ctx: OrchestrationContext,
+  run: LoopRun,
+  existing: QueueV3 | null,
+): Promise<LoopOutcome> {
+  const { config, runId, rlog } = run;
+  const goalPath = await resolveGoalPath(config, rlog);
   const goalPaths = deriveGoalPaths(goalPath);
+  const branches = await prepareNewProject(ctx, run);
+  if (!branches) return abortedBeforeLoop(ctx, runId);
 
-  // Detect stale state from a different branch or completed run.
-  if (config.resume) {
-    const staleCheck = await detectStaleState(config.projectDir);
-    if (staleCheck === "stale" || staleCheck === "completed") {
-      rlog.run(
-        "INFO",
-        `runLoop: stale state detected (${staleCheck}) — clearing and starting fresh`,
-      );
-      await clearState(config.projectDir);
-      config = { ...config, resume: false };
-    } else if (staleCheck === "none") {
-      rlog.run("INFO", "runLoop: no state file found — starting fresh");
-      config = { ...config, resume: false };
-    }
-  }
-
-  const clarifiedPath = goalPaths.clarified;
-  let fullPlanPath = "";
-  let cumulativeCost = 0;
-  let cyclesCompleted = 0;
-  const featuresCompleted: string[] = [];
-  const featuresSkipped: string[] = [];
-
-  // ── Resume context from state file ──
-  let resumeSpecDir: string | null = null;
-  let resumeLastStage: string | null = null;
-  if (config.resume) {
-    let savedState = await resolveWorkingTreeConflict(config.projectDir);
-    if (!savedState) savedState = await loadState(config.projectDir);
-    if (savedState) {
-      const reconciliation = await reconcileState(config.projectDir, savedState, emit, runId);
-      if (Object.keys(reconciliation.statePatches).length > 0) {
-        await updateState(config.projectDir, reconciliation.statePatches);
-      }
-      for (const w of reconciliation.warnings) {
-        rlog.run("WARN", `runLoop: reconciliation: ${w}`);
-      }
-      resumeSpecDir = savedState.currentSpecDir;
-      resumeLastStage = savedState.lastCompletedStep;
-      cumulativeCost = savedState.cumulativeCostUsd;
-      cyclesCompleted = savedState.cyclesCompleted;
-      featuresCompleted.push(...savedState.featuresCompleted);
-      featuresSkipped.push(...savedState.featuresSkipped);
-      fullPlanPath = savedState.fullPlanPath ?? "";
-      // Failure counts stay on disk in state.failureCounts; main-loop reads
-      // them from there when it needs to evaluate the threshold gates.
-
-      if (reconciliation.resumeFrom.specDir) {
-        resumeSpecDir = reconciliation.resumeFrom.specDir;
-      }
-      rlog.run("INFO", "runLoop: resuming from state file", {
-        resumeSpecDir,
-        resumeLastStage,
-        cumulativeCost,
-        cyclesCompleted,
-        drift: reconciliation.driftSummary,
-      });
-    }
-  }
-
-  const isResume = !!config.resume;
-
-  // ── Phase 0: Prerequisites (skip on resume) ──
-  if (!isResume) {
-    const ctx = runtimeState.currentContext;
-    if (!ctx) throw new Error("runLoop: prerequisites needs currentContext but it's null");
-    await runPrerequisitesPhase(ctx, runId);
-    if (runtimeState.abortController?.signal.aborted) {
-      emit({
-        type: "loop_terminated",
-        runId,
-        termination: {
-          reason: "user_abort",
-          cyclesCompleted: 0,
-          totalCostUsd: 0,
-          totalDurationMs: 0,
-          featuresCompleted: [],
-          featuresSkipped: [],
-        },
-      });
-      return { taskPhasesCompleted: 0, totalCost: 0, baseBranch: "", branchName: "" };
-    }
-  } else {
-    rlog.run("INFO", "runLoop: skipping prerequisites (resume)");
-    // Synthetic events so the UI can reconstruct the stepper.
-    emit({ type: "prerequisites_started", runId });
-    const prereqTraceId = crypto.randomUUID();
-    emit({
-      type: "step_started",
-      runId,
-      cycleNumber: 0,
-      step: "prerequisites",
-      agentRunId: prereqTraceId,
-    });
-    emit({
-      type: "step_completed",
-      runId,
-      cycleNumber: 0,
-      step: "prerequisites",
-      agentRunId: prereqTraceId,
-      costUsd: 0,
-      durationMs: 0,
-    });
-    emit({ type: "prerequisites_completed", runId });
-  }
-
-  // ── Branch creation (skip on resume — stay on current branch) ──
-  let baseBranch: string;
-  let branchName: string;
-  if (isResume) {
-    branchName = getCurrentBranch(config.projectDir);
-    try {
-      execSync("git rev-parse --verify main", { cwd: config.projectDir, stdio: "ignore" });
-      baseBranch = "main";
-    } catch {
-      baseBranch = "master";
-    }
-    rlog.run("INFO", `runLoop: resuming on branch ${branchName}, baseBranch=${baseBranch}`);
-  } else {
-    baseBranch = getCurrentBranch(config.projectDir);
-    branchName = createBranch(config.projectDir);
-    rlog.run("INFO", `runLoop: created branch ${branchName} from ${baseBranch}`);
-    if (runtimeState.activeProjectDir) {
-      await updateState(runtimeState.activeProjectDir, { baseBranch });
-    }
-  }
-
-  // ── Phase A: Multi-Domain Clarification (stages/clarification.ts) ──
-  const ctxForClarify = runtimeState.currentContext;
-  if (!ctxForClarify) throw new Error("runLoop: clarification needs currentContext but it's null");
-  {
-    const existingSpecsAtStart = listSpecDirs(config.projectDir);
-    const result = await runClarificationPhase(ctxForClarify, {
-      config,
-      runId,
-      goalPath,
-      clarifiedPath,
-      productDomainPath: goalPaths.productDomain,
-      technicalDomainPath: goalPaths.technicalDomain,
-      existingSpecsAtStart,
-      seedCumulativeCost: cumulativeCost,
-    });
-    fullPlanPath = result.fullPlanPath;
-    cumulativeCost = result.cumulativeCost;
-  }
-
-  // ── Manifest Extraction (stages/manifest-extraction.ts) ──
-  {
-    const result = await ensureManifest(ctxForClarify, {
-      config,
-      runId,
-      fullPlanPath,
-      rlog,
-      seedCumulativeCost: cumulativeCost,
-    });
-    cumulativeCost = result.cumulativeCost;
-  }
-
-  // ── Phase B: Autonomous Loop (stages/main-loop.ts) ──
-  const mainLoopResult = await runMainLoop(ctxForClarify, {
+  const clarified = await runClarificationPhase(ctx, {
     config,
     runId,
-    fullPlanPath,
-    cyclesCompletedSeed: cyclesCompleted,
-    cumulativeCostSeed: cumulativeCost,
-    featuresCompletedSeed: featuresCompleted,
-    featuresSkippedSeed: featuresSkipped,
-    resumeSpecDir,
-    resumeLastStage,
+    goalPath,
+    clarifiedPath: goalPaths.clarified,
+    productDomainPath: goalPaths.productDomain,
+    technicalDomainPath: goalPaths.technicalDomain,
+    queueExists: existing !== null,
+    seedCumulativeCost: 0,
   });
-  cyclesCompleted = mainLoopResult.cyclesCompleted;
-  cumulativeCost = mainLoopResult.cumulativeCost;
+  if (ctx.abort.signal.aborted) return { ...abortedBeforeLoop(ctx, runId), ...branches };
+  const { queue, cost } = await ensureManifest(ctx, {
+    config,
+    runId,
+    fullPlanPath: clarified.fullPlanPath,
+  });
+  await updateState(config.projectDir, {
+    cumulativeCostUsd: ((await loadState(config.projectDir))?.cumulativeCostUsd ?? 0) + clarified.cumulativeCost + cost,
+  });
+  const goalForAgents = fs.existsSync(clarified.fullPlanPath) ? clarified.fullPlanPath : goalPath;
+  const result = await runQueueLoop(ctx, {
+    config,
+    runId,
+    kind: "new",
+    goalPath: goalForAgents,
+    queue,
+    runBranch: branches.branchName,
+  });
+  return { ...result, cost: result.cost + clarified.cumulativeCost + cost, ...branches };
+}
 
-  return {
-    taskPhasesCompleted: cyclesCompleted,
-    totalCost: cumulativeCost,
-    baseBranch,
-    branchName,
-  };
+async function runLoop(ctx: OrchestrationContext, run: LoopRun): Promise<LoopOutcome> {
+  const queue = loadQueue(run.config.projectDir);
+  if (queue?.kind !== "existing") return runNewProject(ctx, run, queue);
+  return runExistingProject(ctx, run, queue);
+}
+
+/**
+ * The branch the run ended on and its queue base — what an opt-in pull
+ * request would compare. No base when the branch is no entry's own.
+ */
+function endBranches(projectDir: string, queue: QueueV3): { baseBranch: string; branchName: string } {
+  const branchName = getCurrentBranch(projectDir);
+  const entry = resolveEntries(queue, branchName, null).find((e) => e.branch === branchName);
+  const baseBranch = entry && entry.baseBranch !== branchName ? entry.baseBranch : "";
+  return { baseBranch, branchName };
+}
+
+/**
+ * An existing project (FR-007): check-only prerequisites, then the queue. Dex
+ * creates no branch, runs no clarification and makes no commit; the agents
+ * commit and spec-kit makes the feature branches.
+ */
+async function runExistingProject(ctx: OrchestrationContext, run: LoopRun, queue: QueueV3): Promise<LoopOutcome> {
+  const { config, runId, rlog } = run;
+  rlog.run("INFO", `runLoop: existing project, ${queue.entries.length} queue entries`);
+  const failures = await checkExistingProject(ctx, runId);
+  const startGuard =
+    failures.length > 0 ? { reason: "preflight_failed" as const, detail: `prerequisites failed: ${failures.join("; ")}` } : null;
+  const result = await runQueueLoop(ctx, {
+    config,
+    runId,
+    kind: "existing",
+    goalPath: null,
+    queue,
+    runBranch: null,
+    startGuard,
+  });
+  return { ...result, ...endBranches(config.projectDir, queue) };
 }
 
 // ── Stop ───────────────────────────────────────────────────────────────────
 
-export function stopRun(): void {
-  // Read the abort handle from currentContext when available, falling back to
-  // the runtimeState alias for the brief window before/after a run lifecycle.
+/**
+ * No human can answer the request that just arrived (`dex run` without a
+ * TTY): park every held request, end the stage, and let the run pause with
+ * what it waits for (contracts/cli.md § Human input on the terminal).
+ */
+export function pauseForHuman(waitFor: HeldKind): void {
   const abort = runtimeState.currentContext?.abort ?? runtimeState.abortController;
+  parkAll();
+  abort?.abort(new WaitingForHuman(waitFor));
+}
+
+export function stopRun(): void {
+  const abort = runtimeState.currentContext?.abort ?? runtimeState.abortController;
+  cancelAll();
   if (abort) {
     console.log("[stopRun] abort signal sent to orchestrator");
     abort.abort();

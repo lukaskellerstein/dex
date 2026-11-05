@@ -1,8 +1,9 @@
 /**
- * What: Typed wrapper over window.dexAPI project + appConfig surface — openProject, listSpecs, parseSpec, readFile/writeFile, pickFolder, pickGoalFile, createProject, openProjectPath, pathExists, getWelcomeDefaults.
+ * What: Typed wrapper over window.dexAPI project + appConfig surface — openProject, listSpecs, parseSpec, readFile/writeFile, pickFolder, pickGoalFile, createProject, openProjectPath, pathExists, getRunSnapshot, getWelcomeDefaults.
  * Not: Does not own project state — that lives in useProject. Does not handle history/runs reads — that's historyService.
  * Deps: window.dexAPI project methods, TaskPhase from core/types.
  */
+import type { RunSnapshot } from "../../core/run-snapshot.js";
 import type { TaskPhase } from "../../core/types.js";
 
 export type ProjectErrorCode =
@@ -110,6 +111,10 @@ export const projectService = {
 
   pathExists(targetPath: string): Promise<boolean> {
     return call(() => window.dexAPI.pathExists(targetPath));
+  },
+
+  getRunSnapshot(projectDir: string): Promise<RunSnapshot> {
+    return call(() => window.dexAPI.getRunSnapshot(projectDir));
   },
 
   getWelcomeDefaults(): Promise<{ defaultLocation: string; defaultName: string }> {

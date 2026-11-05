@@ -12,8 +12,10 @@ import type { RunLogger } from "../log.js";
 // itself; both sides export only functions/classes so ESM init is safe.
 import { isSpecComplete, listSpecDirs, RunTaskState, runPhase } from "../orchestrator.js";
 import { parseTasksFile } from "../parser.js";
+import { hasOpenScopedTask } from "../queue.js";
 import * as runs from "../runs.js";
 import type { EmitFn, RunConfig } from "../types.js";
+import { buildEntry } from "./run-phase.js";
 
 export async function runBuild(
   ctx: OrchestrationContext,
@@ -55,6 +57,8 @@ export async function runBuild(
 
     const initialPhases = parseTasksFile(config.projectDir, specDir);
     const runTaskState = new RunTaskState(initialPhases);
+    // A queued spec folder keeps its entry's `tasks` scope in build mode too.
+    const entry = buildEntry(specConfig);
 
     let iteration = 0;
     let specFailed = false;
@@ -62,7 +66,9 @@ export async function runBuild(
     while (iteration < config.maxIterations) {
       if (abort.signal.aborted) break;
 
-      const targetPhases = runTaskState.getIncompletePhases(config.taskPhases);
+      const targetPhases = runTaskState
+        .getIncompletePhases(config.taskPhases)
+        .filter((p) => hasOpenScopedTask(entry, p));
 
       const phase = targetPhases[0];
       if (!phase) break;
@@ -96,7 +102,6 @@ export async function runBuild(
           runId,
           emit,
           rlog,
-          runTaskState,
         );
 
         runs.completeAgentRun(config.projectDir, runId, agentRunId, {

@@ -5,7 +5,7 @@ const REASON_CONFIG: Record<
   string,
   { label: string; heading: string; icon: React.ReactNode; color: string }
 > = {
-  gaps_complete: {
+  queue_complete: {
     heading: "All Features Implemented",
     label: "The loop completed successfully — all planned features were implemented.",
     icon: <CheckCircle size={28} style={{ color: "var(--status-success)" }} />,
@@ -256,7 +256,7 @@ export function CompletionPhase({ termination }: CompletionPhaseProps) {
         >
           Next:
         </span>
-        {termination.reason === "gaps_complete"
+        {termination.reason === "queue_complete"
           ? "All features are implemented. Review the code and create a PR."
           : "Review completed features and decide whether to continue with another loop."}
       </div>

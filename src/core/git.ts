@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -57,7 +57,63 @@ export function getCommittedFileContent(
   }
 }
 
-// commitCheckpoint moved to src/core/checkpoints/commit.ts as part of 011-A0.
+/**
+ * git with an argument list — no shell, so branch names and paths from
+ * queue.json cannot inject commands. Output is not trimmed: porcelain status
+ * lines start with a space.
+ */
+function gitArgs(args: string[], cwd: string): string {
+  return execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+/** True when the local branch `name` exists. */
+export function branchExists(projectDir: string, name: string): boolean {
+  try {
+    gitArgs(["show-ref", "--verify", "--quiet", `refs/heads/${name}`], projectDir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `git switch <name>`. Throws (with git's stderr) when git refuses, for example on a dirty tree. */
+export function switchBranch(projectDir: string, name: string): void {
+  gitArgs(["switch", "--quiet", name], projectDir);
+}
+
+/** `git status --porcelain=v1 --untracked-files=normal`, one line per changed path. */
+export function statusPorcelain(projectDir: string): string[] {
+  return gitArgs(["status", "--porcelain=v1", "--untracked-files=normal"], projectDir)
+    .split("\n")
+    .filter(Boolean);
+}
+
+/** True when `absPath` is a file committed at HEAD (the policy's frozen check). */
+export function isTrackedAtHead(projectDir: string, absPath: string): boolean {
+  const rel = path.relative(projectDir, absPath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
+  try {
+    gitArgs(["cat-file", "-e", `HEAD:./${rel.split(path.sep).join("/")}`], projectDir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Files matching `globs` that were modified, deleted or renamed since `sha` —
+ * in commits up to HEAD or in the working tree (research R13). A file created
+ * after `sha` does not count: frozen means "once committed".
+ */
+export function frozenChangesSince(projectDir: string, sha: string, globs: string[]): string[] {
+  if (globs.length === 0) return [];
+  const pathspecs = globs.map((g) => `:(glob)${g}`);
+  const diff = (...range: string[]) =>
+    gitArgs(["diff", "--name-only", "--diff-filter=MDR", ...range, "--", ...pathspecs], projectDir)
+      .split("\n")
+      .filter(Boolean);
+  return [...new Set([...diff(sha, "HEAD"), ...diff(sha)])].sort();
+}
 
 export function createBranch(projectDir: string): string {
   const date = new Date().toISOString().slice(0, 10);

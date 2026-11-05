@@ -11,25 +11,22 @@ export interface RunConfig {
   taskPhases: number[] | "all";
   runAllSpecs?: boolean;
 
-  // Loop-mode fields (only relevant when mode === "loop")
+  // Loop-mode fields (only relevant when mode === "loop"). Budgets, turns and
+  // retry counts are the project's: `.dex/policy.json` limits (research R9).
   descriptionFile?: string;
-  maxLoopCycles?: number;
-  maxBudgetUsd?: number;
   autoClarification?: boolean;
 
   // Resume: set to true to resume from .dex/state.json
   resume?: boolean;
 
-  // Structured outputs configuration
-  maxVerifyRetries?: number; // default: 1 — fix-reverify attempts per cycle
-  maxLearningsPerCategory?: number; // default: 20 — cap per category in learnings.md
-
-  // Step mode: when true, orchestrator pauses after every step awaiting
-  // user Keep/Try again/Try N ways decision. Distinct from user_abort.
-  stepMode?: boolean;
+  // `dex run --once`: run one stage (one task phase for implement), then stop.
+  once?: boolean;
 
   // Agent backend override. When set, wins over .dex/dex-config.json's
   // `agent` field. Must match a name `createAgentRunner` knows about
   // ("claude", "mock"; later "codex", "copilot").
   agent?: string;
 }
+
+/** The loop settings `dex run` uses: the same values the app's run buttons use (App.tsx). */
+export const LOOP_DEFAULTS = { model: "claude-opus-4-6", maxIterations: 50, maxTurns: 75 } as const;

@@ -27,7 +27,6 @@ function CycleTimelineItem({
   onSelectSpec,
   specSummaries,
   isLast,
-  pathStages,
   latestAction,
 }: {
   cycle: UiLoopCycle;
@@ -41,7 +40,6 @@ function CycleTimelineItem({
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   specSummaries: SpecSummary[];
-  pathStages?: ReadonlySet<StepType>;
   latestAction?: LatestAction | null;
 }) {
   const isCycleRunning = cycle.status === "running" && isRunning;
@@ -279,13 +277,11 @@ function CycleTimelineItem({
                 padding: "1px 5px",
                 borderRadius: "var(--radius)",
                 background:
-                  cycle.decision === "GAPS_COMPLETE"
+                  cycle.decision === "done"
                     ? "color-mix(in srgb, var(--status-success) 15%, transparent)"
                     : "var(--surface)",
                 color:
-                  cycle.decision === "GAPS_COMPLETE"
-                    ? "var(--status-success)"
-                    : "var(--foreground-dim)",
+                  cycle.decision === "done" ? "var(--status-success)" : "var(--foreground-dim)",
                 flexShrink: 0,
                 textTransform: "lowercase",
               }}
@@ -327,7 +323,6 @@ function CycleTimelineItem({
             isActiveCycle={isActive}
             isRunning={isRunning}
             isPausedCycle={!isRunning && cycle.status === "running"}
-            decision={cycle.decision}
             specSummary={specSummaries.find(
               (s) =>
                 cycle.specDir &&
@@ -338,7 +333,6 @@ function CycleTimelineItem({
             onStageClick={onStageClick}
             onImplPhaseClick={onImplPhaseClick}
             onSelectSpec={onSelectSpec}
-            pathStages={pathStages}
             latestAction={isActive ? latestAction : null}
           />
         )}
@@ -356,8 +350,6 @@ export interface CycleTimelineProps {
   onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
-  /** 010 — per-cycle map of stages whose step-commits live on the active path. */
-  pathStagesByCycle?: ReadonlyMap<number, ReadonlySet<StepType>>;
   /** Latest "interesting" agent step in the running stage — used for the live indicator. */
   latestAction?: LatestAction | null;
 }
@@ -371,7 +363,6 @@ export function CycleTimeline({
   onStageClick,
   onImplPhaseClick,
   onSelectSpec,
-  pathStagesByCycle,
   latestAction,
 }: CycleTimelineProps) {
   // Active cycle expanded by default, completed ones collapsed
@@ -451,7 +442,6 @@ export function CycleTimeline({
           onImplPhaseClick={onImplPhaseClick}
           onSelectSpec={onSelectSpec}
           specSummaries={specSummaries}
-          pathStages={pathStagesByCycle?.get(cycle.cycleNumber)}
           latestAction={currentCycle === cycle.cycleNumber ? latestAction : null}
         />
       ))}

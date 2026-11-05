@@ -1,0 +1,313 @@
+import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
+import test from "node:test";
+import { describeQueue, type PickerDecision, pickNext, tasksHash } from "../picker.ts";
+import type { QueueEntry, QueueV3 } from "../queue.ts";
+import { commitFile, mkTmpRepo, rmTmp } from "./helpers/git.ts";
+import { mkTmpProject, writeFiles } from "./helpers/project.ts";
+
+// ── Fixtures ──
+
+const SPEC_CLARIFIED = "# Spec\n\n## Clarifications\n\n### Session 2026-11-05\n\n- Q: a → A: b\n";
+
+type TaskRow = [id: string, done: boolean];
+function tasksMd(phases: Array<[name: string, rows: TaskRow[]]>): string {
+  return phases
+    .map(
+      ([name, rows], i) =>
+        `## Phase ${i + 1}: ${name}\n\n${rows.map(([id, done]) => `- [${done ? "X" : " "}] ${id} do ${id}`).join("\n")}\n`,
+    )
+    .join("\n");
+}
+
+function verifyMd(verdict: "passed" | "failed", hash: string): string {
+  return `# Verification\n\n**Verdict**: ${verdict}\n**Tasks-SHA256**: ${hash}\n**Checked**: 2026-11-05T10:00:00Z\n`;
+}
+
+const ALL_DONE = tasksMd([["Setup", [["T001", true], ["T002", true]]]]);
+
+/** Every artefact for `id`, verified against its own tasks.md. */
+function doneEntryFiles(id: string): Record<string, string> {
+  return {
+    [`specs/${id}/spec.md`]: SPEC_CLARIFIED,
+    [`specs/${id}/plan.md`]: "# Plan\n",
+    [`specs/${id}/tasks.md`]: ALL_DONE,
+    [`specs/${id}/verify.md`]: verifyMd("passed", tasksHash(ALL_DONE)),
+  };
+}
+
+function newQueue(entries: QueueEntry[]): QueueV3 {
+  return { version: 3, kind: "new", entries };
+}
+
+function pickIn(files: Record<string, string>, queue: QueueV3): PickerDecision {
+  const dir = mkTmpProject(files);
+  try {
+    return pickNext({ projectDir: dir, queue, runBranch: null });
+  } finally {
+    rmTmp(dir);
+  }
+}
+
+function assertStage(d: PickerDecision, entryId: string, stage: string, taskPhase?: number): void {
+  assert.equal(d.kind, "stage", `expected a stage, got ${JSON.stringify(d)}`);
+  if (d.kind !== "stage") return;
+  assert.equal(d.entry.id, entryId);
+  assert.equal(d.stage, stage);
+  if (taskPhase !== undefined) assert.equal(d.taskPhase, taskPhase);
+  assert.ok(d.reason.length > 0, "a decision carries its reason");
+}
+
+function assertPause(d: PickerDecision, entryId: string, pattern: RegExp): void {
+  assert.equal(d.kind, "pause", `expected a pause, got ${JSON.stringify(d)}`);
+  if (d.kind !== "pause") return;
+  assert.equal(d.entry.id, entryId);
+  assert.equal(d.reason, "invalid_input");
+  assert.match(d.detail, pattern);
+}
+
+const A = { id: "001-a", title: "A" };
+const B = { id: "002-b", title: "B" };
+
+// ── T037: one fixture per D-015-1 row ──
+
+test("picker: brief missing and the entry has generate → brief", () => {
+  const e = { ...A, brief: "docs/001-a.md", generate: { sources: ["GOAL.md"] } };
+  assertStage(pickIn({ "GOAL.md": "goal\n" }, newQueue([e])), "001-a", "brief");
+});
+
+test("picker: no spec folder → specify", () => {
+  assertStage(pickIn({}, newQueue([A])), "001-a", "specify");
+});
+
+test("picker: spec folder without spec.md → specify", () => {
+  assertStage(pickIn({ "specs/001-a/notes.md": "x\n" }, newQueue([A])), "001-a", "specify");
+});
+
+test("picker: spec.md without ## Clarifications → clarify", () => {
+  const files = { "specs/001-a/spec.md": "# Spec\n\n## Requirements\n" };
+  assertStage(pickIn(files, newQueue([A])), "001-a", "clarify");
+});
+
+test("picker: no plan.md → plan", () => {
+  const files = { "specs/001-a/spec.md": SPEC_CLARIFIED };
+  assertStage(pickIn(files, newQueue([A])), "001-a", "plan");
+});
+
+test("picker: no tasks.md → tasks", () => {
+  const files = { "specs/001-a/spec.md": SPEC_CLARIFIED, "specs/001-a/plan.md": "# Plan\n" };
+  assertStage(pickIn(files, newQueue([A])), "001-a", "tasks");
+});
+
+test("picker: an unchecked task → implement on the first phase that has one", () => {
+  const files = {
+    "specs/001-a/spec.md": SPEC_CLARIFIED,
+    "specs/001-a/plan.md": "# Plan\n",
+    "specs/001-a/tasks.md": tasksMd([
+      ["Setup", [["T001", true], ["T002", true]]],
+      ["Core", [["T003", true], ["T004", false]]],
+      ["Polish", [["T005", false]]],
+    ]),
+  };
+  assertStage(pickIn(files, newQueue([A])), "001-a", "implement", 2);
+});
+
+test("picker: every task checked and no verify.md → verify", () => {
+  const files = { ...doneEntryFiles("001-a") };
+  delete files["specs/001-a/verify.md"];
+  assertStage(pickIn(files, newQueue([A])), "001-a", "verify");
+});
+
+test("picker: verify.md for a different tasks.md → verify", () => {
+  const files = {
+    ...doneEntryFiles("001-a"),
+    "specs/001-a/verify.md": verifyMd("passed", "0".repeat(64)),
+  };
+  assertStage(pickIn(files, newQueue([A])), "001-a", "verify");
+});
+
+test("picker: verify.md that failed for the current tasks.md → verify again", () => {
+  const files = {
+    ...doneEntryFiles("001-a"),
+    "specs/001-a/verify.md": verifyMd("failed", tasksHash(ALL_DONE)),
+  };
+  assertStage(pickIn(files, newQueue([A])), "001-a", "verify");
+});
+
+test("picker: verify passed for the current tasks.md → done, the next entry is picked", () => {
+  assertStage(pickIn(doneEntryFiles("001-a"), newQueue([A, B])), "002-b", "specify");
+});
+
+test("picker: every entry done or skipped → complete", () => {
+  const d = pickIn(doneEntryFiles("001-a"), newQueue([A, { ...B, status: "skipped" }]));
+  assert.deepEqual(d, { kind: "complete" });
+});
+
+test("picker: [X] and [x] both count as checked", () => {
+  const lower = ALL_DONE.replaceAll("[X]", "[x]");
+  const files = {
+    ...doneEntryFiles("001-a"),
+    "specs/001-a/tasks.md": lower,
+    "specs/001-a/verify.md": verifyMd("passed", tasksHash(lower)),
+  };
+  assert.deepEqual(pickIn(files, newQueue([A])), { kind: "complete" });
+});
+
+// ── T038: skip, human status, task scope, bad input, existing projects ──
+
+test("picker: skip treats the listed stages as done", () => {
+  const e = { ...A, skip: ["specify", "clarify", "plan"] as QueueEntry["skip"] };
+  assertStage(pickIn({}, newQueue([e])), "001-a", "tasks");
+  const noVerify = { ...A, skip: ["verify"] as QueueEntry["skip"] };
+  const files = { ...doneEntryFiles("001-a") };
+  delete files["specs/001-a/verify.md"];
+  assert.deepEqual(pickIn(files, newQueue([noVerify])), { kind: "complete" });
+});
+
+test("picker: human status done or skipped passes over the entry without reading files", () => {
+  const d = pickIn({}, newQueue([{ ...A, status: "done" }, { ...B, status: "skipped" }]));
+  assert.deepEqual(d, { kind: "complete" });
+});
+
+test("picker: out-of-scope unchecked tasks do not block verify", () => {
+  const tasks = tasksMd([
+    ["Core", [["T001", true], ["T002", false]]],
+    ["Later", [["T003", false]]],
+  ]);
+  const files = {
+    "specs/001-a/spec.md": SPEC_CLARIFIED,
+    "specs/001-a/plan.md": "# Plan\n",
+    "specs/001-a/tasks.md": tasks,
+  };
+  assertStage(pickIn(files, newQueue([{ ...A, tasks: ["T001"] }])), "001-a", "verify");
+  assertStage(pickIn(files, newQueue([{ ...A, tasks: ["T001-T002"] }])), "001-a", "implement", 1);
+});
+
+test("picker: a fix phase is in scope even with a task filter", () => {
+  const tasks = `${tasksMd([["Core", [["T001", true], ["T002", false]]]])}\n## Phase 2: Verify fixes V1\n\n- [ ] T003 fix it\n`;
+  const files = {
+    "specs/001-a/spec.md": SPEC_CLARIFIED,
+    "specs/001-a/plan.md": "# Plan\n",
+    "specs/001-a/tasks.md": tasks,
+  };
+  assertStage(pickIn(files, newQueue([{ ...A, tasks: ["T001"] }])), "001-a", "implement", 2);
+});
+
+test("picker: task ids that tasks.md does not have → pause invalid_input", () => {
+  const files = {
+    "specs/001-a/spec.md": SPEC_CLARIFIED,
+    "specs/001-a/plan.md": "# Plan\n",
+    "specs/001-a/tasks.md": ALL_DONE,
+  };
+  assertPause(pickIn(files, newQueue([{ ...A, tasks: ["T001", "T900-T901"] }])), "001-a", /T900, T901/);
+});
+
+test("picker: a brief path that is missing, with no generate → pause invalid_input", () => {
+  assertPause(pickIn({}, newQueue([{ ...A, brief: "docs/a.md" }])), "001-a", /docs\/a\.md/);
+});
+
+test("picker: an existing brief goes straight to specify", () => {
+  const e = { ...A, brief: "docs/a.md", generate: { sources: ["GOAL.md"] } };
+  assertStage(pickIn({ "docs/a.md": "# Brief\n" }, newQueue([e])), "001-a", "specify");
+});
+
+test("picker: existing project reads an entry's own branch while another is checked out", () => {
+  const dir = mkTmpRepo();
+  try {
+    // 020 is finished on its own branch; 021 has a brief on main and no branch yet.
+    execSync("git switch -q -c 020-onion", { cwd: dir });
+    for (const [rel, content] of Object.entries(doneEntryFiles("020-onion"))) {
+      commitFile(dir, rel, content, `add ${rel}`);
+    }
+    execSync("git switch -q main", { cwd: dir });
+    commitFile(dir, "docs/021.md", "# Brief\n", "brief 021");
+
+    const queue: QueueV3 = {
+      version: 3,
+      kind: "existing",
+      entries: [
+        { id: "020-onion", title: "Onion" },
+        { id: "021-agent", title: "Agent", brief: "docs/021.md", baseBranch: "main" },
+      ],
+    };
+    const d = pickNext({ projectDir: dir, queue, runBranch: null });
+    assertStage(d, "021-agent", "specify");
+
+    const view = describeQueue({ projectDir: dir, queue, runBranch: null });
+    assert.deepEqual(
+      view.entries.map((e) => [e.id, e.status, e.nextStage]),
+      [
+        ["020-onion", "done", null],
+        ["021-agent", "active", "specify"],
+      ],
+    );
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("picker: existing project with the entry branch missing reads the base branch", () => {
+  const dir = mkTmpRepo();
+  try {
+    execSync("git switch -q -c develop", { cwd: dir });
+    commitFile(dir, "docs/a.md", "# Brief\n", "brief on develop");
+    execSync("git switch -q main", { cwd: dir });
+    const queue: QueueV3 = {
+      version: 3,
+      kind: "existing",
+      entries: [{ id: "001-a", title: "A", brief: "docs/a.md", baseBranch: "develop" }],
+    };
+    // The brief lives only on develop. Read from main it would be "missing".
+    assertStage(pickNext({ projectDir: dir, queue, runBranch: null }), "001-a", "specify");
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("picker: base branch has work past specify but the entry branch is missing → pause", () => {
+  const dir = mkTmpRepo();
+  try {
+    commitFile(dir, "specs/001-a/spec.md", SPEC_CLARIFIED, "spec on main");
+    const queue: QueueV3 = { version: 3, kind: "existing", entries: [{ id: "001-a", title: "A" }] };
+    assertPause(pickNext({ projectDir: dir, queue, runBranch: null }), "001-a", /branch "001-a"/);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("picker: the working tree counts for the current branch (uncommitted ticks)", () => {
+  const dir = mkTmpRepo();
+  try {
+    execSync("git switch -q -c 001-a", { cwd: dir });
+    const pending = tasksMd([["Core", [["T001", false]]]]);
+    commitFile(dir, "specs/001-a/spec.md", SPEC_CLARIFIED, "spec");
+    commitFile(dir, "specs/001-a/plan.md", "# Plan\n", "plan");
+    commitFile(dir, "specs/001-a/tasks.md", pending, "tasks");
+    writeFiles(dir, { "specs/001-a/tasks.md": pending.replace("[ ]", "[X]") });
+    const queue: QueueV3 = { version: 3, kind: "existing", entries: [{ id: "001-a", title: "A" }] };
+    assertStage(pickNext({ projectDir: dir, queue, runBranch: null }), "001-a", "verify");
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("describeQueue: statuses and next stages for every entry, read-only", () => {
+  const files = { ...doneEntryFiles("001-a"), "specs/002-b/spec.md": "# Spec\n" };
+  const dir = mkTmpProject(files);
+  try {
+    const queue = newQueue([A, B, { id: "003-c", title: "C" }, { id: "004-d", title: "D", status: "skipped" }]);
+    const view = describeQueue({ projectDir: dir, queue, runBranch: null }, { "002-b": 1.5 });
+    assert.equal(view.kind, "new");
+    assert.deepEqual(
+      view.entries.map((e) => [e.id, e.status, e.nextStage, e.costUsd]),
+      [
+        ["001-a", "done", null, 0],
+        ["002-b", "active", "clarify", 1.5],
+        ["003-c", "pending", "specify", 0],
+        ["004-d", "skipped", null, 0],
+      ],
+    );
+  } finally {
+    rmTmp(dir);
+  }
+});

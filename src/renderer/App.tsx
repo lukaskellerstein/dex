@@ -2,19 +2,13 @@ import { Bug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RunConfig, SubagentInfo, TaskPhase } from "../core/types.js";
 import { AppRouter, type View } from "./AppRouter.js";
-import { CheckpointsEnvelope } from "./components/checkpoints/CheckpointsEnvelope.js";
-import { useTimeline } from "./components/checkpoints/hooks/useTimeline.js";
-import { TimelineView } from "./components/checkpoints/TimelineView.js";
 import { AppShell } from "./components/layout/AppShell.js";
-import { type TopTab, TopTabBar } from "./components/layout/TopTabBar.js";
 import { ClarificationPanel } from "./components/loop/ClarificationPanel.js";
-import { LoopDashboard } from "./components/loop/LoopDashboard.js";
-import { LoopStartPanel } from "./components/loop/LoopStartPanel.js";
 import { CopyBadge } from "./components/shared/CopyBadge.js";
 import type { WelcomeNextView } from "./components/welcome/WelcomeScreen.js";
 import { useOrchestrator } from "./hooks/useOrchestrator.js";
 import { useProject } from "./hooks/useProject.js";
-import { checkpointService } from "./services/checkpointService.js";
+import { startActionFor } from "./hooks/useRunSnapshot.js";
 import { orchestratorService } from "./services/orchestratorService.js";
 
 interface DebugContext {
@@ -31,13 +25,6 @@ interface DebugContext {
   view: string;
   isRunning: boolean;
   viewingHistorical: boolean;
-  branch: string | null;
-  // 008 checkpoint fields
-  // TODO(post-013): rename to currentRunBranch — value is the current run branch
-  // (dex/* or selected-*), never attempt-*. Deferred per 013-cleanup-2.
-  currentAttemptBranch: string | null;
-  lastCheckpointTag: string | null;
-  candidateSha: string | null;
 }
 
 // Mirrors core/runs.ts `slugForTaskPhaseName` — duplicated here because core/runs
@@ -66,13 +53,9 @@ function buildDebugPayload(ctx: DebugContext): string {
   add("SpecDir:", ctx.specDir);
   add("TaskPhase:", ctx.phase);
   add("ProjectDir:", ctx.projectDir);
-  add("Branch:", ctx.branch);
   add("View:", ctx.view);
   add("IsRunning:", ctx.isRunning);
   add("ViewHistory:", ctx.viewingHistorical);
-  add("CurrentAttemptBranch:", ctx.currentAttemptBranch);
-  add("LastCheckpointTag:", ctx.lastCheckpointTag);
-  add("CandidateSha:", ctx.candidateSha);
   // Resolved log paths — primary keys for jumping straight from "weird UI" to "right log file"
   if (ctx.runId && ctx.projectDir) {
     const proj = projectName(ctx.projectDir);
@@ -104,7 +87,6 @@ export default function App() {
   const project = useProject();
   const orchestrator = useOrchestrator();
   const [currentView, setCurrentView] = useState<View>("overview");
-  const [topTab, setTopTab] = useState<TopTab>("timeline");
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
 
   // Derive selectedSubagent from live data so completedAt updates propagate
@@ -224,21 +206,6 @@ export default function App() {
     }
   }, [orchestrator.loopTermination, orchestrator.isRunning]);
 
-  // 014/test-003 — After a Timeline click-to-jump fork, the HEAD moves to a
-  // step-commit on a `selected-*` branch. state.json on disk is restored
-  // automatically (tracked since 014) but the renderer's in-memory loop
-  // cycles array is stale from the prior run's tip. Rehydrate from the
-  // latest run record so the Steps tab reflects the orchestrator state at
-  // the fork point instead of regressing to the kickoff form.
-  useEffect(() => {
-    const unsub = orchestratorService.subscribeEvents((evt) => {
-      if (evt.type === "head_changed" && project.projectDir) {
-        void orchestrator.loadRunHistory(project.projectDir);
-      }
-    });
-    return unsub;
-  }, [project.projectDir, orchestrator.loadRunHistory]);
-
   // Auto-switch to loop dashboard when loop starts running
   useEffect(() => {
     if (orchestrator.isRunning && orchestrator.mode === "loop") {
@@ -298,24 +265,15 @@ export default function App() {
   const handleStart = async (partial: Partial<RunConfig>) => {
     const projectDir = partial.projectDir ?? project.projectDir!;
 
-    // If we have loop history (paused loop), resume in loop mode
-    const hasLoopHistory =
-      orchestrator.loopCycles.length > 0 || orchestrator.preCycleStages.length > 0;
-    if (hasLoopHistory || orchestrator.mode === "loop") {
-      // 010 — sync state.json from HEAD's step-commit before resuming so the
-      // orchestrator continues from wherever the user navigated to in the
-      // Timeline, not from where state.json was last frozen by the previous
-      // run. No-op when HEAD isn't on a step-commit.
-      try {
-        await checkpointService.syncStateFromHead(projectDir);
-      } catch (err) {
-        console.warn("[app] syncStateFromHead before resume failed:", err);
-      }
-      handleStartLoop({ resume: true });
+    // The snapshot says what Start means (research R17): Resume, the queue loop, or build mode.
+    const action = startActionFor(project.snapshot, project.aggregate.unfinishedSpecs);
+    if (action === "resume" || action === "start-loop") {
+      handleStartLoop(action === "resume" ? { resume: true } : {});
       return;
     }
+    if (action !== "build") return;
 
-    // Default: run all unfinished specs in build mode
+    // No queue: run all unfinished specs in build mode
     const firstUnfinished = project.specSummaries.find((s) => s.doneTasks < s.totalTasks);
     if (!firstUnfinished) return;
 
@@ -363,39 +321,6 @@ export default function App() {
     ],
   );
 
-  // 008 checkpoint tracking for DEBUG badge
-  const [checkpointDebug, setCheckpointDebug] = useState<{
-    currentAttemptBranch: string | null;
-    lastCheckpointTag: string | null;
-    candidateSha: string | null;
-  }>({
-    currentAttemptBranch: null,
-    lastCheckpointTag: null,
-    candidateSha: null,
-  });
-  useEffect(() => {
-    const off = orchestratorService.subscribeEvents((raw) => {
-      const e = raw as unknown as {
-        type?: string;
-        checkpointTag?: string;
-        candidateSha?: string;
-        attemptBranch?: string;
-      };
-      if (e.type === "step_candidate") {
-        setCheckpointDebug((prev) => ({
-          currentAttemptBranch: e.attemptBranch ?? prev.currentAttemptBranch,
-          lastCheckpointTag: e.checkpointTag ?? prev.lastCheckpointTag,
-          candidateSha: e.candidateSha ?? prev.candidateSha,
-        }));
-      }
-    });
-    return off;
-  }, []);
-
-  // Timeline snapshot only used here for the live git branch — cheap (cached in
-  // useTimeline, refreshed on orchestrator events).
-  const { snapshot: timelineSnapshot } = useTimeline(project.projectDir);
-
   const debugContext = useMemo<DebugContext>(
     () => ({
       runId: orchestrator.currentRunId,
@@ -413,10 +338,6 @@ export default function App() {
       view: currentView,
       isRunning: orchestrator.isRunning,
       viewingHistorical: orchestrator.viewingHistorical,
-      branch: timelineSnapshot.currentBranch || null,
-      currentAttemptBranch: checkpointDebug.currentAttemptBranch,
-      lastCheckpointTag: checkpointDebug.lastCheckpointTag,
-      candidateSha: checkpointDebug.candidateSha,
     }),
     [
       orchestrator.currentRunId,
@@ -430,10 +351,6 @@ export default function App() {
       currentView,
       orchestrator.isRunning,
       orchestrator.viewingHistorical,
-      timelineSnapshot.currentBranch,
-      checkpointDebug.currentAttemptBranch,
-      checkpointDebug.lastCheckpointTag,
-      checkpointDebug.candidateSha,
     ],
   );
 
@@ -471,6 +388,7 @@ export default function App() {
       isCheckingPrerequisites={orchestrator.isCheckingPrerequisites}
       loopTermination={orchestrator.loopTermination}
       latestAction={orchestrator.latestAction}
+      snapshot={project.snapshot}
       loadRunHistory={orchestrator.loadRunHistory}
       selectedSubagent={selectedSubagent}
       handleWelcomeComplete={handleWelcomeComplete}
@@ -486,67 +404,13 @@ export default function App() {
     />
   );
 
-  const tabs = project.projectDir ? <TopTabBar active={topTab} onChange={setTopTab} /> : null;
-
-  // 010 — when the user is on the Steps tab, force the Loop dashboard regardless
-  // of whichever sub-view currentView points at. Spec / trace / subagent
-  // detail views remain reachable from inside the dashboard via spec-card
-  // clicks; they don't belong on the top-level "Steps" tab.
-  //
-  // 014 — `dexStatus === null` means there's no `.dex/state.json` on disk:
-  // either a fresh project OR a project whose last run was just promoted to
-  // main (the squash-merge IPC deletes state.json). In both cases the user
-  // wants the LoopStartPanel — pick a spec / toggle auto-clarification /
-  // start a new run — not the LoopDashboard's prerequisites view.
-  const stepsTabContent =
-    project.projectDir &&
-    !orchestrator.isRunning &&
-    (project.specSummaries.length === 0 || project.dexStatus === null) ? (
-      <LoopStartPanel
-        projectDir={project.projectDir}
-        isRunning={orchestrator.isRunning}
-        onStart={handleStartLoop}
-      />
-    ) : project.projectDir ? (
-      <LoopDashboard
-        cycles={orchestrator.loopCycles}
-        preCycleStages={orchestrator.preCycleStages}
-        prerequisitesChecks={orchestrator.prerequisitesChecks}
-        isCheckingPrerequisites={orchestrator.isCheckingPrerequisites}
-        currentCycle={orchestrator.currentCycle}
-        currentStage={orchestrator.currentStage}
-        isClarifying={orchestrator.isClarifying}
-        isRunning={orchestrator.isRunning}
-        totalCost={orchestrator.totalCost}
-        loopTermination={orchestrator.loopTermination}
-        specSummaries={project.specSummaries}
-        onStageClick={handleStageClick}
-        onImplPhaseClick={handleImplPhaseClick}
-        onSelectSpec={handleSelectSpec}
-        debugBadge={debugBadge}
-        projectDir={project.projectDir}
-        latestAction={orchestrator.latestAction}
-      />
-    ) : (
-      content
-    );
-
-  const shellContent =
-    topTab === "timeline" && project.projectDir ? (
-      <TimelineView projectDir={project.projectDir} />
-    ) : topTab === "steps" && project.projectDir ? (
-      stepsTabContent
-    ) : (
-      content
-    );
-
   return (
     <>
       <AppShell
         projectDir={project.projectDir}
         aggregate={project.aggregate}
         isRunning={orchestrator.isRunning}
-        isPausedLoop={!orchestrator.isRunning && project.dexStatus === "paused"}
+        snapshot={project.snapshot}
         onOpenProject={handleOpenProject}
         onGoHome={handleGoHome}
         onRefreshProject={project.refreshProject}
@@ -554,11 +418,13 @@ export default function App() {
         onStart={handleStart}
         onStop={() => orchestratorService.stopRun()}
         debugBadge={debugBadge}
-        tabs={tabs}
-        content={shellContent}
+        content={content}
       />
-      <ClarificationPanel />
-      <CheckpointsEnvelope projectDir={project.projectDir ?? null} />
+      <ClarificationPanel
+        snapshot={project.snapshot}
+        isRunning={orchestrator.isRunning}
+        onResume={() => handleStartLoop({ resume: true })}
+      />
     </>
   );
 }

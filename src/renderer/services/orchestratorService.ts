@@ -1,9 +1,10 @@
 /**
- * What: Typed wrapper over window.dexAPI orchestrator surface — startRun, stopRun, answerQuestion, getProjectState, getRunState, subscribeEvents.
+ * What: Typed wrapper over window.dexAPI orchestrator surface — startRun, stopRun, answerRequest, getProjectState, getRunState, subscribeEvents.
  * Not: Does not own loop/trace/question/run-session state — those are renderer hooks (Wave B). Does not transform events.
  * Deps: window.dexAPI orchestrator + getProjectState; OrchestratorEvent / RunConfig / DexState types.
  */
 
+import type { RequestAnswer } from "../../core/humanInput.js";
 import type { DexState } from "../../core/state.js";
 import type { OrchestratorEvent, RunConfig } from "../../core/types.js";
 
@@ -98,8 +99,8 @@ export const orchestratorService = {
     return call(() => window.dexAPI.stopRun());
   },
 
-  answerQuestion(requestId: string, answers: Record<string, string>): Promise<void> {
-    return call(() => window.dexAPI.answerQuestion(requestId, answers));
+  answerRequest(requestId: string, answer: RequestAnswer): Promise<void> {
+    return call(() => window.dexAPI.answerRequest(requestId, answer));
   },
 
   getProjectState(dir: string): Promise<DexState | null> {

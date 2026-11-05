@@ -1,5 +1,5 @@
-import type { ClaudeProfile } from "../agent-profile.js";
 import type { RunLogger } from "../log.js";
+import type { Policy } from "../policy.js";
 import type { EmitFn, RunConfig, StepType, TaskPhase } from "../types.js";
 
 /** Context passed to runStep. Everything a runner needs to execute one step. */
@@ -21,20 +21,12 @@ export interface StepContext {
   emit: EmitFn;
   /** Structured logger supplied by the orchestrator. */
   rlog: RunLogger;
-  /**
-   * 010 — per-variant agent profile. When set, overrides `config.model`,
-   * appends `systemPromptAppend` to the assembled system prompt, and passes
-   * `allowedTools` as the SDK's allowed-tools restriction. Default behavior
-   * is unchanged when undefined.
-   */
-  profile?: ClaudeProfile;
-  /**
-   * 010 — variant-specific working directory. When set, the runner spawns
-   * the SDK with this CWD instead of `config.projectDir`, so the runner's
-   * native config discovery picks up the overlaid `.claude/` inside the
-   * worktree.
-   */
-  worktreePath?: string;
+  /** Extra environment for the agent (SPECIFY_FEATURE_DIRECTORY, …), merged over process.env. */
+  env?: Record<string, string>;
+  /** The queue entry this step works on; absent for project-level steps. */
+  entryId?: string;
+  /** The project's policy; the Claude runner enforces it, the mock ignores it. */
+  policy: Policy;
 }
 
 export interface StepResult {
@@ -49,9 +41,21 @@ export interface StepResult {
   outputTokens: number;
   /** SDK session id when available; null for non-SDK runners. */
   sessionId: string | null;
+  /** The stage stopped at its turn or budget limit (research R9); null or absent otherwise. */
+  limitHit?: LimitHit | null;
 }
 
-/** Context for runTaskPhase (build-mode tasks.md phase invocations). */
+/** Which stage limit stopped an agent. */
+export type LimitHit = "turns" | "budget";
+
+/** The SDK result subtypes that mean a stage limit stopped the agent. */
+export function limitHitOf(subtype: string | null | undefined): LimitHit | null {
+  if (subtype === "error_max_turns") return "turns";
+  if (subtype === "error_max_budget_usd") return "budget";
+  return null;
+}
+
+/** Context for runTaskPhase (one tasks.md phase per agent). */
 export interface TaskPhaseContext {
   config: RunConfig;
   prompt: string;
@@ -61,12 +65,12 @@ export interface TaskPhaseContext {
   abortController: AbortController | null;
   emit: EmitFn;
   rlog: RunLogger;
-  /** Callback to apply TodoWrite updates — owned by the orchestrator. */
-  onTodoWrite: (todos: Array<{ content?: string; status?: string }>) => void;
-  /** 010 — same as StepContext.profile. */
-  profile?: ClaudeProfile;
-  /** 010 — same as StepContext.worktreePath. */
-  worktreePath?: string;
+  /** Extra environment for the agent, merged over process.env. */
+  env?: Record<string, string>;
+  /** The queue entry this phase belongs to; absent in build mode. */
+  entryId?: string;
+  /** The project's policy; the Claude runner enforces it, the mock ignores it. */
+  policy: Policy;
 }
 
 export interface TaskPhaseResult {
@@ -74,48 +78,12 @@ export interface TaskPhaseResult {
   durationMs: number;
   inputTokens: number;
   outputTokens: number;
-}
-
-/**
- * Context for runOneShot — free-form ad-hoc agent invocation. Used by the
- * 014 conflict resolver and any future "small AI gesture" that fits neither
- * the cycle-step nor the task-phase shape.
- */
-export interface OneShotContext {
-  /** Same RunConfig that drives the orchestrator — used for model, projectDir, settings. */
-  config: RunConfig;
-  /** Free-form user prompt sent as the first user turn. */
-  prompt: string;
-  /** Appended to (not replacing) the project's resolved system prompt — used to install role-specific instructions. */
-  systemPromptOverride?: string;
-  /** Tool allowlist passed to the SDK. The conflict resolver always sets `["Read", "Edit"]`. */
-  allowedTools?: string[];
-  /** Working dir for the SDK invocation. Defaults to `config.projectDir` when unset. */
-  cwd?: string;
-  abortController: AbortController | null;
-  emit: EmitFn;
-  rlog: RunLogger;
-  /** SDK maxTurns ceiling. Defaults to 1 when undefined. */
-  maxTurns?: number;
-}
-
-export interface OneShotResult {
-  /** USD; 0 for non-SDK runners. */
-  cost: number;
-  durationMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  /** The agent's last assistant text. Empty string when no assistant message arrived (e.g. immediate abort). */
-  finalText: string;
-  /** True iff the SDK ended its stream cleanly — no abort, no error, no max-turns cutoff. */
-  finishedNormally: boolean;
+  limitHit?: LimitHit | null;
 }
 
 export interface AgentRunner {
   runStep(ctx: StepContext): Promise<StepResult>;
   runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult>;
-  /** 014 — generic ad-hoc invocation. v1 caller is the conflict resolver. */
-  runOneShot(ctx: OneShotContext): Promise<OneShotResult>;
 }
 
 export type AgentRunnerFactory = (runConfig: RunConfig, projectDir: string) => AgentRunner;

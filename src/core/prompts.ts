@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isFixPhase, isInScope, type QueueV3, type ResolvedEntry, type StageName } from "./queue.js";
 import type { RunConfig, TaskPhase } from "./types.js";
 
 // ── Structured Output Schemas ──
@@ -28,71 +29,6 @@ export const MANIFEST_SCHEMA = {
     },
   },
   required: ["features"],
-  additionalProperties: false,
-} as const;
-
-export const GAP_ANALYSIS_SCHEMA = {
-  type: "object",
-  properties: {
-    decision: { type: "string", enum: ["RESUME_FEATURE", "REPLAN_FEATURE"] },
-    reason: { type: "string" },
-  },
-  required: ["decision", "reason"],
-  additionalProperties: false,
-} as const;
-
-export const VERIFY_SCHEMA = {
-  type: "object",
-  properties: {
-    passed: {
-      type: "boolean",
-      description: "true if ALL acceptance criteria pass and build/tests succeed",
-    },
-    buildSucceeded: { type: "boolean", description: "true if the project compiles without errors" },
-    testsSucceeded: { type: "boolean", description: "true if all tests pass (or no tests exist)" },
-    failures: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          criterion: {
-            type: "string",
-            description: "The acceptance criterion or check that failed",
-          },
-          description: { type: "string", description: "What went wrong and what was expected" },
-          severity: { type: "string", enum: ["blocking", "minor"] },
-        },
-        required: ["criterion", "description", "severity"],
-        additionalProperties: false,
-      },
-    },
-    summary: { type: "string", description: "One-paragraph summary of verification results" },
-  },
-  required: ["passed", "buildSucceeded", "testsSucceeded", "failures", "summary"],
-  additionalProperties: false,
-} as const;
-
-export const LEARNINGS_SCHEMA = {
-  type: "object",
-  properties: {
-    insights: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          category: {
-            type: "string",
-            enum: ["build", "testing", "api", "architecture", "tooling", "workaround"],
-          },
-          insight: { type: "string", description: "One-line actionable insight" },
-          context: { type: "string", description: "Brief context for when this applies" },
-        },
-        required: ["category", "insight", "context"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["insights"],
   additionalProperties: false,
 } as const;
 
@@ -287,65 +223,6 @@ The description must be detailed enough that someone reading ONLY that descripti
 Process features in the exact order they appear in the priority table. Do not skip features. Do not invent new features.`;
 }
 
-// ── Feature Evaluation Prompt (RESUME vs REPLAN) ──
-
-export function buildFeatureEvaluationPrompt(config: RunConfig, specDir: string): string {
-  return `You are evaluating whether a partially-completed feature should be resumed or replanned.
-
-## Instructions
-
-1. Read the spec at: ${specDir}/spec.md
-2. Read the plan at: ${specDir}/plan.md
-3. Read the tasks at: ${specDir}/tasks.md
-4. Check the current state of the implementation — which tasks are done, which remain
-5. Assess whether the existing plan is still viable or needs replanning
-
-## Decision criteria
-
-Choose RESUME_FEATURE if:
-- The plan is sound and remaining tasks are clearly defined
-- Progress has been made and continuing makes sense
-- No fundamental design issues have been discovered
-
-Choose REPLAN_FEATURE if:
-- The plan has structural problems that make remaining tasks unworkable
-- Key assumptions in the plan turned out to be wrong
-- The implementation has diverged significantly from the plan
-
-## Project Directory
-
-${config.projectDir}`;
-}
-
-// ── Verify Fix Prompt ──
-
-export function buildVerifyFixPrompt(
-  config: RunConfig,
-  specDir: string,
-  failures: Array<{ criterion: string; description: string; severity: string }>,
-): string {
-  const failureList = failures
-    .map((f, i) => `${i + 1}. **${f.criterion}**: ${f.description}`)
-    .join("\n");
-
-  return `You are a fix agent. The verification stage found blocking failures in the implementation at ${specDir}.
-
-## Failures to fix
-
-${failureList}
-
-## Instructions
-
-1. Read the relevant code and spec
-2. Fix each blocking failure
-3. Run the build to verify your fixes compile
-4. Do not introduce new features — only fix the listed failures
-
-## Project Directory
-
-${config.projectDir}`;
-}
-
 // ── T007: Constitution Prompt ──
 
 export function buildConstitutionPrompt(config: RunConfig, fullPlanPath: string): string {
@@ -354,102 +231,224 @@ export function buildConstitutionPrompt(config: RunConfig, fullPlanPath: string)
 Read the full project plan at ${fullPlanPath} and the project instructions at ${config.projectDir}/CLAUDE.md for detailed technical context about the project being built. The project directory is ${config.projectDir}.`;
 }
 
-// ── Specify Prompt ──
+// ── Per-entry stage prompts (research R11) ──
+//
+// Each builder is a pure function of (entry, projectDir, extras), so
+// `dex run --dry-run` prints exactly what an agent receives.
 
-export function buildSpecifyPrompt(featureName: string, featureDescription: string): string {
-  return `/speckit-specify ${featureName}: ${featureDescription}`;
+/** A project-relative path as an absolute one. */
+function absPath(projectDir: string, rel: string): string {
+  return path.isAbsolute(rel) ? rel : path.join(projectDir, rel);
 }
 
-// ── T009: Loop Plan Prompt ──
-
-export function buildLoopPlanPrompt(specPath: string): string {
-  return `/speckit-plan ${specPath}`;
+/** Replaces Dex's old fixed commit command: the project's own rules decide. */
+function commitRule(entry: ResolvedEntry): string {
+  return `- Commit your changes as this project's rules say (CLAUDE.md, AGENTS.md, CONTRIBUTING). If the rules say nothing about commits, make one commit for this stage with a short message that names ${entry.id}.`;
 }
 
-// ── T010: Loop Tasks Prompt ──
-
-export function buildLoopTasksPrompt(specPath: string): string {
-  return `/speckit-tasks ${specPath}`;
+function rules(lines: string[]): string {
+  return `## Dex rules for this stage\n\n${lines.join("\n")}`;
 }
 
-// ── Verify Prompt ──
+export interface BriefExtras {
+  /** The previous entry's brief, as the format example; null when there is none. */
+  previousBrief: string | null;
+}
 
-export function buildVerifyPrompt(
-  config: RunConfig,
-  specDir: string,
-  fullPlanPath: string,
+export function buildBriefPrompt(entry: ResolvedEntry, projectDir: string, extras: BriefExtras): string {
+  const target = absPath(projectDir, entry.brief ?? `docs/${entry.id}.md`);
+  const sources = (entry.generate?.sources ?? []).map((s) => `- ${absPath(projectDir, s)}`);
+  const example = extras.previousBrief
+    ? `Use ${absPath(projectDir, extras.previousBrief)} as the format example.`
+    : "State the goal, the scope (in and out) and the acceptance criteria.";
+  const instructions = entry.generate?.instructions
+    ? `\n\n## Instructions\n\n${entry.generate.instructions}`
+    : "";
+  return `Write the brief for "${entry.title}" (${entry.id}) to ${target}.
+
+## Sources
+
+${sources.join("\n")}${instructions}
+
+${rules([
+  `- ${example}`,
+  '- The brief must have an acceptance section ("## Acceptance" or "Definition of Done"): the verify stage checks the work against it.',
+  "- Write only this one file.",
+  commitRule(entry),
+])}`;
+}
+
+export function buildSpecifyPrompt(entry: ResolvedEntry, projectDir: string): string {
+  const specPath = absPath(projectDir, entry.specDir);
+  const head = entry.brief
+    ? `/speckit-specify Implement the feature described in the brief at ${absPath(projectDir, entry.brief)}.`
+    : `/speckit-specify ${entry.title}: ${entry.description ?? entry.title}`;
+  const lines = [
+    `- The spec folder is ${specPath} and the branch is ${entry.branch}. Use exactly these names.`,
+    ...(entry.brief
+      ? [
+          "- The brief is the source of truth. Do not add scope it does not have; mark open points [NEEDS CLARIFICATION].",
+        ]
+      : []),
+    commitRule(entry),
+  ];
+  return `${head}\n\n${rules(lines)}`;
+}
+
+export function buildClarifyPrompt(
+  entry: ResolvedEntry,
+  projectDir: string,
+  extras: { date: string },
 ): string {
-  return `You are a verification agent. Your job is to verify that the implementation in the project matches the specification.
+  const specPath = absPath(projectDir, entry.specDir);
+  const sources = entry.brief ? `the brief (${absPath(projectDir, entry.brief)}), ` : "";
+  return `/speckit-clarify ${specPath}
 
-## Instructions
-
-1. Read the spec at: ${specDir}/spec.md
-2. Read the plan at: ${specDir}/plan.md
-3. Read the full project plan at: ${fullPlanPath} for testing strategy
-4. Run the build command to verify the project compiles
-5. Run tests if they exist
-6. Check that all acceptance criteria from the spec are met
-7. If browser-based verification is needed, use the available MCP tools
-
-## Project Directory
-
-${config.projectDir}
-
-## Output
-
-Your structured output must accurately reflect what you observed. Set passed=true ONLY if the build succeeds, tests pass, AND all acceptance criteria are met. For each failure, classify severity:
-- "blocking": the feature is incomplete or broken — must fix before marking complete
-- "minor": cosmetic issues, missing polish, non-critical deviations`;
+${rules([
+  "- Run autonomously. Do not wait for a human unless the last question rule below applies.",
+  `- Answer each question yourself from ${sources}the repository and its docs.`,
+  "- Record every question and its answer in spec.md.",
+  `- Always write a \`## Clarifications\` section with a \`### Session ${extras.date}\` heading. When there are no critical ambiguities, write "No critical ambiguities" under it. Dex reads this section to know the stage is done.`,
+  '- Ask the human (AskUserQuestion) only when nothing in the repository answers the question and a wrong guess would cost more than a day of rework. End the label of the option you recommend with "(Recommended)".',
+  commitRule(entry),
+])}`;
 }
 
-// ── Learnings Prompt ──
-
-export function buildLearningsPrompt(config: RunConfig, specDir: string): string {
-  return `You are a learnings agent. Review the work done on the spec at ${specDir} and extract operational insights.
-
-## Instructions
-
-1. Read the spec, plan, and implementation files in ${specDir}
-2. Identify patterns that worked well or caused problems
-3. Return structured insights — do NOT modify any files directly
-
-## Project Directory
-
-${config.projectDir}
-
-## Guidelines
-
-- Focus on actionable, project-specific insights
-- Note any workarounds or gotchas discovered
-- Record technology-specific patterns (build quirks, API behaviors)
-- Each insight should be one concise line
-- Categorize each insight: build, testing, api, architecture, tooling, or workaround
-- Include brief context for when the insight applies`;
+export function buildPlanPrompt(entry: ResolvedEntry, projectDir: string): string {
+  return `/speckit-plan ${absPath(projectDir, entry.specDir)}\n\n${rules([commitRule(entry)])}`;
 }
 
-// ── T013: Implement Prompt ──
+export function buildTasksPrompt(entry: ResolvedEntry, projectDir: string): string {
+  return `/speckit-tasks ${absPath(projectDir, entry.specDir)}\n\n${rules([commitRule(entry)])}`;
+}
+
+export interface ImplementExtras {
+  phase: TaskPhase;
+  /** The project goal, read-only context for new projects; null when there is none. */
+  goalPath: string | null;
+}
+
+/** In-scope task ids of `phase`, or null when the whole phase is in scope. */
+function scopeOf(entry: ResolvedEntry, phase: TaskPhase): string[] | null {
+  if (!entry.tasks || isFixPhase(phase)) return null;
+  return phase.tasks.filter((t) => isInScope(entry, phase, t)).map((t) => t.id);
+}
 
 export function buildImplementPrompt(
-  config: RunConfig,
-  phase: TaskPhase,
-  fullPlanPath: string,
+  entry: ResolvedEntry,
+  projectDir: string,
+  extras: ImplementExtras,
 ): string {
-  const specPath = config.specDir.startsWith("/")
-    ? config.specDir
-    : `${config.projectDir}/${config.specDir}`;
+  const specPath = absPath(projectDir, entry.specDir);
+  const { phase, goalPath } = extras;
+  const scope = scopeOf(entry, phase);
+  const lines = [
+    `- You are implementing task phase ${phase.number}: ${phase.name}.`,
+    ...(scope
+      ? [`- Only these tasks are in scope: ${scope.join(", ")}. Leave every other unchecked task alone.`]
+      : []),
+    `- After completing EACH task, mark it [X] in ${specPath}/tasks.md before you start the next one. Dex reads the ticks to decide what runs next.`,
+    "- Run the build, the typecheck and the tests after each logical group of changes.",
+    "- If a task fails, write the error under the task in tasks.md and move to the next task.",
+    ...(goalPath ? [`- Read ${goalPath} for project context. Do not change it.`] : []),
+    "- If you learned something the next agent needs (a build quirk, a gotcha), add it to the project's agent instructions (CLAUDE.md or AGENTS.md).",
+    "- Do not run more than 3 subagents at the same time.",
+    commitRule(entry),
+  ];
+  return `/speckit-implement ${specPath} --phase ${phase.number}\n\n${rules(lines)}`;
+}
 
-  const goalName = config.descriptionFile ? path.basename(config.descriptionFile) : "GOAL.md";
-  const clarifiedName = path.basename(fullPlanPath);
+export interface VerifyExtras {
+  /** sha256 of tasks.md, computed by Dex right before the stage. */
+  tasksHash: string;
+  /** The round number k of the fix phase this run would append. */
+  round: number;
+  nextPhaseNumber: number;
+  nextTaskId: string;
+}
 
-  return `/speckit-implement ${specPath} --phase ${phase.number}
+export function buildVerifyPrompt(
+  entry: ResolvedEntry,
+  projectDir: string,
+  extras: VerifyExtras,
+): string {
+  const specPath = absPath(projectDir, entry.specDir);
+  const brief = entry.brief
+    ? `- the brief ${absPath(projectDir, entry.brief)}: its acceptance criteria\n`
+    : "";
+  const { tasksHash, round, nextPhaseNumber, nextTaskId } = extras;
+  return `You are the verification agent for ${entry.id} ("${entry.title}"). You did not implement this work. Check it; do not change it.
 
-## Dex Loop Guardrails
+## Read
 
-- Read ${fullPlanPath} for full project context (READ-ONLY — do not modify ${goalName} or ${clarifiedName})
-- Orient: You are implementing TaskPhase ${phase.number}: ${phase.name}
-- After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md
-- Run build/typecheck after each logical group of changes
-- If a task fails, log the error and move to the next task
-- Do not spawn more than 3 subagents concurrently
-- Commit after completing the phase: git add -A -- ':!.dex/' && git commit -m "TaskPhase ${phase.number}: ${phase.name}"`;
+${brief}- ${specPath}/spec.md: its success criteria
+- ${specPath}/tasks.md
+
+## Do
+
+1. Run the project's acceptance commands: build, typecheck, tests, and every command the brief or the spec names. Record each command and its exit code.
+2. Check every criterion against the code and the command results.
+3. Never edit code, tests or configuration. Write only ${specPath}/verify.md and, on failure, append to ${specPath}/tasks.md.
+
+## Write ${specPath}/verify.md
+
+Start it with exactly these lines:
+
+\`\`\`markdown
+# Verification: ${entry.id}
+
+**Verdict**: passed
+**Tasks-SHA256**: ${tasksHash}
+**Checked**: <the time now, ISO-8601>
+\`\`\`
+
+- Write \`failed\` instead of \`passed\` when any criterion or command fails.
+- Copy the Tasks-SHA256 line verbatim. Dex computed it from tasks.md before you started. Do not hash any file yourself.
+- Then add \`## Commands\` (a table: command, exit code) and \`## Criteria\` (one checkbox per criterion, with the reason when it fails).
+
+## On failure
+
+Append this phase to the end of ${specPath}/tasks.md:
+
+\`\`\`markdown
+## Phase ${nextPhaseNumber}: Verify fixes V${round}
+
+**Purpose**: Fix what verification round ${round} found.
+
+- [ ] ${nextTaskId} <a concrete fix, with the file and the criterion it fixes>
+\`\`\`
+
+Number further tasks on from ${nextTaskId}. Keep the Tasks-SHA256 line as given: it names the tasks.md you checked.
+
+${rules([commitRule(entry)])}`;
+}
+
+/** The prompt for one of the five file stages (brief → tasks); implement and verify have their own builders. */
+export function buildStagePrompt(queue: QueueV3, entry: ResolvedEntry, projectDir: string, stage: StageName): string {
+  switch (stage) {
+    case "brief":
+      return buildBriefPrompt(entry, projectDir, { previousBrief: queue.entries[entry.index - 1]?.brief ?? null });
+    case "specify":
+      return buildSpecifyPrompt(entry, projectDir);
+    case "clarify":
+      return buildClarifyPrompt(entry, projectDir, { date: new Date().toISOString().slice(0, 10) });
+    case "plan":
+      return buildPlanPrompt(entry, projectDir);
+    case "tasks":
+      return buildTasksPrompt(entry, projectDir);
+    default:
+      throw new Error(`stage ${stage} has its own prompt builder`);
+  }
+}
+
+/** The agent environment for a stage (research R5). */
+export function stageEnv(
+  entry: ResolvedEntry,
+  stage: StageName,
+  kind: "new" | "existing",
+): Record<string, string> {
+  if (stage === "brief") return {};
+  const env: Record<string, string> = { SPECIFY_FEATURE_DIRECTORY: entry.specDir };
+  if (stage === "specify" && kind === "existing") env.GIT_BRANCH_NAME = entry.branch;
+  return env;
 }

@@ -4,6 +4,7 @@
  * Deps: useOrchestrator, useProject types; component imports for each view; AppBreadcrumbs for the trace breadcrumb.
  */
 import type { ReactNode } from "react";
+import type { RunSnapshot } from "../core/run-snapshot.js";
 import type { AgentRunRecord } from "../core/runs.js";
 import type {
   AgentStep,
@@ -70,6 +71,8 @@ export interface AppRouterProps {
   isCheckingPrerequisites: boolean;
   loopTermination: LoopTermination | null;
   latestAction: LatestAction | null;
+  /** The queue and run status from the files (research R17). */
+  snapshot: RunSnapshot | null;
 
   // Imperative actions
   loadRunHistory: (projectDir: string) => Promise<boolean>;
@@ -224,8 +227,8 @@ export function AppRouter(props: AppRouterProps): ReactNode {
         onImplPhaseClick={handleImplPhaseClick}
         onSelectSpec={handleSelectSpec}
         debugBadge={debugBadge}
-        projectDir={projectDir}
         latestAction={latestAction}
+        snapshot={props.snapshot}
       />
     );
   }

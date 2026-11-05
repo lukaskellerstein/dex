@@ -167,6 +167,17 @@ describe("useLoopState", () => {
     });
   });
 
+  it("step_completed never guesses the next stage: currentStage moves only on step_started (research R17)", () => {
+    const { result } = renderHook(() => useLoopState());
+    emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
+    emit({ type: "loop_cycle_started", runId: "r-1", cycleNumber: 1 });
+    emit({ type: "step_started", runId: "r-1", cycleNumber: 1, step: "plan", agentRunId: "a-1" });
+    emit({ type: "step_completed", runId: "r-1", cycleNumber: 1, step: "plan", agentRunId: "a-1", costUsd: 0, durationMs: 1 });
+    expect(result.current.currentStage).toBe("plan");
+    emit({ type: "step_started", runId: "r-1", cycleNumber: 1, step: "tasks", agentRunId: "a-2" });
+    expect(result.current.currentStage).toBe("tasks");
+  });
+
   it("loop_terminated with reason=user_abort is ignored (paused, not terminal)", () => {
     const { result } = renderHook(() => useLoopState());
     emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
@@ -185,14 +196,14 @@ describe("useLoopState", () => {
     expect(result.current.loopTermination).toBeNull();
   });
 
-  it("loop_terminated with reason=gaps_complete sets termination", () => {
+  it("loop_terminated with reason=queue_complete sets termination", () => {
     const { result } = renderHook(() => useLoopState());
     emit({ type: "run_started", config: baseConfig, runId: "r-1", branchName: "b" });
     emit({
       type: "loop_terminated",
       runId: "r-1",
       termination: {
-        reason: "gaps_complete",
+        reason: "queue_complete",
         cyclesCompleted: 3,
         featuresCompleted: ["A", "B", "C"],
         featuresSkipped: [],
@@ -200,7 +211,7 @@ describe("useLoopState", () => {
         totalDurationMs: 5000,
       },
     });
-    expect(result.current.loopTermination?.reason).toBe("gaps_complete");
+    expect(result.current.loopTermination?.reason).toBe("queue_complete");
     expect(result.current.loopTermination?.featuresCompleted).toEqual(["A", "B", "C"]);
   });
 });

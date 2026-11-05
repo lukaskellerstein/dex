@@ -107,30 +107,32 @@ Before every test run, restore `dex-ecommerce` to a known state. A single entry 
 
 #### Mode details
 
-`initial` — **destructive on origin.** Resets `main` to the repo's root commit, deletes every other local branch, deletes every non-main branch on `origin`, and force-pushes `origin/main` back to root. Use when you genuinely want the GitHub-side state wiped — the loop will then push fresh `dex/*` branches into a clean remote, with no leftover history to confuse a fresh feature run. Reach for this only when the scenario calls for a true blank slate; otherwise prefer `pristine`.
+`initial` — **destructive on origin.** Resets `main` to the repo's root commit, deletes every other local branch, deletes every non-main branch on `origin`, and force-pushes `origin/main` back to root. Use when you genuinely want the GitHub-side state wiped, so a fresh run starts against a clean remote with no leftover history. Reach for this only when the scenario calls for a true blank slate; otherwise prefer `pristine`.
 
-`pristine` — `git fetch origin → reset --hard origin/main → clean -fdx → delete dex/* / selected-* / attempt-* / feature/* local branches → checkout main`. Strongest local-only reset — discards every local commit ahead of origin and every leftover test branch, then resyncs local main to whatever `origin/main` currently is. Does **not** rewrite origin.
+`pristine` — `git fetch origin → reset --hard origin/main → clean -fdx → delete dex/* / attempt-* / feature/* local branches → checkout main`. Strongest local-only reset — discards every local commit ahead of origin and every leftover test branch, then resyncs local main to whatever `origin/main` currently is. Does **not** rewrite origin.
 
 `clean` — `git reset --hard HEAD → clean -fdx → checkout main`. Doesn't sync to origin; doesn't prune `dex/*` branches.
 
-`<checkpoint-name>` — resolves to `checkpoint/<name>` (or pass the full ref if it already starts with `checkpoint/`). The script creates a fresh `attempt-<ts>` branch (fixture-only — `attempt-*` is internal scaffolding for the testing flow and never reaches the running app per 013-cleanup-2) and restores the working tree to exactly that checkpoint's state, preserving gitignored files (`.env`, build output, editor state — `git clean -fd`, never `-fdx`).
+`<checkpoint-name>` — resolves to `checkpoint/<name>` (or pass the full ref if it already starts with `checkpoint/`). The script creates a fresh `attempt-<ts>` branch and restores the working tree to exactly that checkpoint's state, preserving gitignored files (`.env`, build output, editor state — `git clean -fd`, never `-fdx`). The app never creates `attempt-*` branches itself; on Resume it runs on whatever branch is checked out, so the run continues on this one.
+
+**Checkpoint tags are fixture tags.** The app creates no tags and makes no stage commits. A `checkpoint/<name>` tag exists only because someone ran `scripts/promote-checkpoint.sh <project-dir> <name> [<sha>]`, which tags any commit (default `HEAD`). Under the mock agent every stage commits as `mock(<stage>): <entry>`, so a mock run gives you a commit per stage to tag:
+
+```bash
+git log --oneline --grep='^mock('                       # one commit per mock stage
+./scripts/promote-checkpoint.sh ~/Projects/Github/lukaskellerstein/dex-ecommerce cycle-1-after-tasks <sha>
+```
 
 **Picking a checkpoint**:
 
-- Your change only touches the implement loop or later → use the most recent `cycle-N-after-tasks`.
-- Your change touches `gap_analysis`, `specify`, `plan`, or `tasks` → use the most recent `cycle-N-after-manifest-extraction` or `after-manifest-extraction` if it's cycle 0.
+- Your change only touches `implement` or `verify` → a tag at the entry's `tasks` commit (e.g. `cycle-N-after-tasks`).
+- Your change touches `specify`, `clarify`, `plan`, or `tasks` → a tag at the commit after manifest extraction (e.g. `cycle-N-after-manifest-extraction`, or `after-manifest-extraction` for the first entry).
 - Your change touches `prerequisites`, any `clarification_*`, `constitution`, `manifest_extraction`, or you're validating non-regression → use `clean` or `pristine` (or `initial` if origin needs wiping too).
 
-**Legacy fixtures**: `fixture/after-clarification` and `fixture/after-tasks` have been deleted — they're fully replaced by the `checkpoint/*` tag tree. Any references to `fixture/*` in older docs are obsolete.
+A tag minted before 015 points at a pre-015 tree, whose `.dex/mock-config.json` may still use the `dex_loop` shape the mock loader now refuses. For a mock run, copy `fixtures/mock/new-project.json` over it, or mint a fresh tag from a current mock run (`specs/015-lean-core/quickstart.md` § 4).
 
-After restoring a checkpoint, the welcome submit button reads **Open Existing** (because the folder exists) and the loop page's primary button reads **Resume** (because loop history is present). Clicking **Resume** auto-routes to `config.resume=true` — the orchestrator skips `prerequisites`, reuses the existing `runId`, and resumes from the next stage after `state.lastCompletedStage`.
+**Legacy fixtures**: `fixture/after-clarification` and `fixture/after-tasks` have been deleted — they're fully replaced by the `checkpoint/*` tags. Any references to `fixture/*` in older docs are obsolete.
 
-**Power-user terminal workflow**: every `commitCheckpoint` commit is stamped with a `[checkpoint:<stage>:<cycle>]` line. Query the full checkpoint tree without the UI:
-
-```bash
-git log --all --grep='^\[checkpoint:' --oneline
-git tag --list 'checkpoint/*' | sort
-```
+After restoring a checkpoint, the welcome submit button reads **Open Existing** (because the folder exists) and the topbar's run button reads **Resume** while a run state exists and a queue entry is still open. Clicking **Resume** starts with `config.resume=true` — the orchestrator skips `prerequisites`, reuses the existing `runId`, and runs the picker again: the next stage comes from the project's files, with no repair step.
 
 Sanity check — after reset, inspect the workspace:
 
@@ -138,9 +140,9 @@ Sanity check — after reset, inspect the workspace:
 cd ~/Projects/Github/lukaskellerstein/dex-ecommerce && git status --short && ls
 ```
 
-For `initial`, `clean`, or `pristine`, `ls` must show only the root commit's contents (typically `GOAL.md`) and `.git/`. For a checkpoint reset, the tree matches that checkpoint's commit.
+For `initial`, `ls -A` must show only the root commit's contents and `.git/`: `.dex/` (with `dex-config.json` and `mock-config.json`), `.gitignore` and `docs/`. The root commit has **no `GOAL.md`**. For `pristine` the tree matches `origin/main`, for `clean` the local `HEAD`, and for a checkpoint reset that checkpoint's commit.
 
-**Branch hygiene**: autonomous runs leave behind `dex/YYYY-MM-DD-xxxxxx` branches. Click-to-jump navigation forks leave behind transient `selected-<ts>` branches (auto-pruned when empty relative to the next jump target). Post-013-cleanup-2 the running app no longer produces `attempt-*` or `capture/*` branches; only the fixture script (`reset-example-to.sh`) mints `attempt-*` branches against the example project. Run `./scripts/prune-example-branches.sh` periodically — it deletes `dex/*` branches older than 7 days. `main`, `fixture/*` (if any linger), `lukas/*`, `checkpoint/*` (tags are immune), `attempt-*` (fixture remnants), and any pre-existing `capture/*` (legacy refs) are always preserved.
+**Branch hygiene**: each autonomous run of a new project leaves behind one `dex/YYYY-MM-DD-xxxxxx` branch; Dex itself creates no other branch. `attempt-*` branches come only from `reset-example-to.sh <checkpoint-name>`. Run `./scripts/prune-example-branches.sh` periodically — it deletes `dex/*` branches older than 7 days. `main`, `fixture/*` (if any linger), `lukas/*`, `checkpoint/*` (tags are immune), `attempt-*` (fixture remnants), and any pre-existing `capture/*` (legacy refs) are always preserved.
 
 `reset-example-to.sh`, `prune-example-branches.sh`, and `promote-checkpoint.sh` are the **only authorized destructive paths** against `dex-ecommerce`. You do not need to ask before running them against `dex-ecommerce`. Never run them against any other repo.
 
@@ -182,11 +184,13 @@ Fill and submit:
 
 On the Autonomous Loop page:
 
-1. `GOAL.md` is auto-detected — no need to write it.
-2. Toggle **Automatic Clarification** on (the switch next to "Skip interactive Q&A — agent auto-selects recommended options based on GOAL.md context").
+1. `GOAL.md` is auto-detected when it is in the project root. After an `initial` reset it is not there (the root commit has none), so write one first.
+2. Toggle **Automatic Clarification** on (the switch next to "Skip interactive Q&A — agent auto-selects recommended options based on the goal-file context").
 3. Click **Start Autonomous Loop**.
 
-From here the orchestrator takes over: it creates its own branch, runs clarification, planning, and the implement loop. Observe via snapshots, screenshots, `~/.dex/dev-logs/*.log`, and the live trace view.
+From here the orchestrator takes over: it creates its own `dex/*` branch, runs clarification, constitution and manifest extraction (which writes `.dex/queue.json`), then works through the queue entry by entry. Observe via snapshots, screenshots, `~/.dex/dev-logs/*.log`, and the live trace view.
+
+**Headless alternative for mock runs** — the same loop without the app: `node dist/core/cli.js run <projectDir>` (build with `npx tsc` first; `--once`, `--dry-run`, `--status`, `--agent mock|claude`). Exit code 0 means the queue is complete (or `--once` / `--dry-run` / `--status` finished), 1 a failed run, 2 a usage or queue / policy error, 3 a pause that needs a human. Use it for engine checks; anything about the UI still goes through the app over CDP.
 
 ## 4d. Test
 
@@ -280,17 +284,19 @@ Every line is `[<ISO-timestamp>] [<LEVEL>] <message> <optional JSON>`:
 
 ### 4f.3 Per-project state — `<projectDir>/.dex/`
 
-Each project gets its own state directory. For the example project that's `~/Projects/Github/lukaskellerstein/dex-ecommerce/.dex/`. After a reset (section 4c.1), this directory is gone; the loop recreates it on start.
+Each project gets its own state directory. For the example project that's `~/Projects/Github/lukaskellerstein/dex-ecommerce/.dex/`. After an `initial`, `pristine` or `clean` reset (section 4c.1, `git clean -fdx`), only its tracked files stay — on the root commit `dex-config.json` and `mock-config.json`. The loop recreates the run state on start.
 
 | File | Contains |
 |---|---|
-| `.dex/state.json` | Primary filesystem state — current cycle, stage, branch, pending clarification, active feature |
+| `.dex/queue.json` | The feature queue (v3) — one entry per feature, written by manifest extraction, by hand, or drafted by `dex queue init`. Tracked. |
+| `.dex/policy.json` | The project's policy — settings sources, `deny` / `ask` rules, write roots, frozen files, preflight, question mode, limits. Tracked. |
+| `.dex/.gitignore` | Keeps the runtime files below out of git. Tracked. |
+| `.dex/state.json` | Runtime run state — only what the files cannot say: run id, status and pause reason, `runBranch`, the last stage run (`current`), cost, counters, pending requests, the review list. Gitignored. |
+| `.dex/questions.md` | Runtime — pending questions and tool approvals as plain text, plus the questions answered by default for review. Gitignored. |
 | `.dex/state.lock` | PID file guarding against concurrent orchestrator processes on the same project. Gitignored. |
-| `.dex/feature-manifest.json` | Feature manifest produced by the structured-outputs flow |
-| `.dex/learnings.md` | Accumulated per-project insights from the loop's learnings phase |
-| `.dex/runs/<runId>.json` | One file per Dex run — full audit summary (phases, subagents, costs). See § 4f.4. Default-not-gitignored; opt in to ignoring per-project. |
+| `.dex/runs/<runId>.json` | One file per Dex run — full audit summary (phases, subagents, costs). See § 4f.4. Gitignored. |
 
-`cat` / `jq` the JSON files to answer "what cycle is the loop on?", "what branch did the orchestrator cut?", "which feature is in progress?". Everything in this directory except `state.lock` is committable.
+`cat` / `jq` the JSON files to answer "what did the run last do?", "which branch is the run on?", "what is waiting for a human?". Which stage runs next is not stored anywhere: ask the picker with `node dist/core/cli.js run <projectDir> --status`, which writes nothing. A project that still has the old `.dex/feature-manifest.json` is migrated to `queue.json` when Dex loads it.
 
 ### 4f.4 Audit trail — per-project JSON files
 
@@ -362,17 +368,13 @@ RunID:           <uuid>
 AgentRunID:      <uuid>
 Mode:            loop | build
 Cycle:           <n>
-Stage:           specify | plan | tasks | implement | ...
+Stage:           specify | clarify | plan | tasks | implement | verify | ...
 SpecDir:         <relative path>
 TaskPhase:       <number> - <name>
 ProjectDir:      <absolute path>
-Branch:          <current git branch>
 View:            overview | tasks | trace | loop-dashboard | ...
 IsRunning:       true | false
 ViewHistory:     true | false
-CurrentAttemptBranch: <dex/* | selected-* | null>
-LastCheckpointTag:    checkpoint/<name> | null
-CandidateSha:    <sha> | null
 RunDir:          ~/.dex/logs/<project>/<runId>/
 RunLog:          ~/.dex/logs/<project>/<runId>/run.log
 PhaseLog:        ~/.dex/logs/<project>/<runId>/phase-<N>_<slug>/agent.log
@@ -380,7 +382,7 @@ RunRecord:       <projectDir>/.dex/runs/<runId>.json
 Timestamp:       <ISO-8601>
 ```
 
-Empty / null fields are omitted from the payload (e.g. `AgentRunID` is missing pre-run, the `RunDir`/`RunLog`/`PhaseLog`/`RunRecord` block only appears once a `runId` exists). Field labels follow the post-rename vocabulary (`AgentRunID` is the renamed `phaseTraceId`; `TaskPhase` is the user-facing name for what the loop calls a "phase").
+Those are all the fields (`buildDebugPayload` in `src/renderer/App.tsx`). The payload carries no git branch: run `git branch --show-current` in the project, or read `runBranch` from `.dex/state.json`. Empty / null fields are omitted from the payload (e.g. `AgentRunID` is missing pre-run, the `RunDir`/`RunLog`/`RunRecord` block only appears once a `runId` exists, and `PhaseLog` only once a task phase is known). Field labels follow the post-rename vocabulary (`AgentRunID` is the renamed `phaseTraceId`; `TaskPhase` is the user-facing name for what the loop calls a "phase").
 
 `RunID` and `AgentRunID` are the **primary keys** for both the JSON audit files (4f.4) and the per-run log directory (4f.2). This makes the badge the quickest way to pivot from "the UI is showing something weird" to "the exact log file that contains the answer" — and the resolved `RunLog` / `PhaseLog` / `RunRecord` lines mean you usually do not even need to assemble the path yourself.
 

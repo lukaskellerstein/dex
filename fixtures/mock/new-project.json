@@ -1,0 +1,132 @@
+{
+  "prerequisites": {
+    "prerequisites": {
+      "delay": 600
+    }
+  },
+  "clarification": {
+    "clarification": {
+      "delay": 800
+    },
+    "clarification_product": {
+      "delay": 1600,
+      "writes": [
+        {
+          "path": "{goalProductDomain}",
+          "content": "# Eshopy — product domain\n\n## Who uses this\n\nTwo distinct users with almost no overlap:\n\n- **Shoppers** arrive from search or a category link, browse, and want to be\n  checking out in under a minute. Most are not logged in when they start.\n- **Store administrators** live in the back office all day and care about\n  throughput: editing catalogue entries, moving orders through fulfilment, and\n  seeing what is selling.\n\n## Decisions\n\n- Browsing and cart-building never require an account. Sign-in is deferred to\n  the first checkout step, with a return URL so nothing is lost.\n- A guest cart lives in the browser and merges on login. Where the same item\n  exists in both carts, the higher quantity wins.\n- Categories nest two levels deep. Deeper hierarchies were considered and cut —\n  they complicate navigation without helping the catalogue sizes in scope.\n- Filters are additive and reflected as removable chips, so a shopper can always\n  see why a list is short.\n\n## Deliberately excluded from v1\n\nPayment provider integration, multi-currency, and subscriptions. Each pulls in\nan external dependency and a compliance surface the first release does not need.\n"
+        }
+      ]
+    },
+    "clarification_technical": {
+      "delay": 1600,
+      "writes": [
+        {
+          "path": "{goalTechnicalDomain}",
+          "content": "# Eshopy — technical domain\n\n## Stack\n\nTypeScript in strict mode across the storefront and the back office. Server-side\nrendering for catalogue and product pages so search engines see real content;\nclient-side state only for the cart and filter interactions.\n\n## Structure\n\n```\nsrc/catalog/     product, category and variant models, search, filters\nsrc/cart/        cart state, guest-cart merge, checkout flow\nsrc/accounts/    registration, sessions, addresses, wishlist\nsrc/admin/       back-office views over the same models\n```\n\n## Constraints\n\n- Model and query logic stay pure. Anything touching the datastore lives behind\n  a repository module so catalogue and cart logic are testable without fixtures.\n- Filter and sort state is encoded in the URL, so a filtered list is shareable\n  and the back button behaves.\n- Rating aggregates are denormalised onto the product record. Recomputing them\n  per request was measured as the dominant cost on category pages.\n"
+        }
+      ]
+    },
+    "clarification_synthesis": {
+      "delay": 1800,
+      "writes": [
+        {
+          "path": "{goalClarified}",
+          "content": "# Eshopy — clarified plan\n\n## Summary\n\nA full ecommerce storefront with a back office. Shoppers browse a nested\ncategory tree, search and filter products, build a cart as a guest or a signed-in\ncustomer, and check out. Administrators manage catalogue and orders.\n\n## Features\n\n### 1. Catalog and search\n\nNested categories two levels deep with product counts. Full-text search over\nnames and descriptions, ranked by relevance. Additive filters on price, rating\nand stock, with sorting and removable filter chips. Filter state lives in the URL.\n\n### 2. Cart and checkout\n\nAdd to cart from product and listing pages, with variant selection required\nwhere variants exist. Guest carts persist in the browser and merge on login,\nhigher quantity winning. Multi-step checkout behind authentication with a\nreturn URL.\n\n### 3. Customer accounts\n\nRegistration with password strength feedback, lockout after five failed logins\nin fifteen minutes, and single-use one-hour password resets. Account area with\nprofile, up to five saved addresses, order history and a wishlist.\n\n## Constraints\n\n- TypeScript strict mode throughout\n- Server-rendered catalogue pages; client state only for cart and filters\n- No payment provider, no multi-currency, no subscriptions in v1\n"
+        }
+      ],
+      "structured_output": {
+        "filesProduced": [
+          "GOAL_clarified.md"
+        ]
+      }
+    },
+    "constitution": {
+      "delay": 1400,
+      "writes": [
+        {
+          "path": ".specify/memory/constitution.md",
+          "content": "# Eshopy constitution\n\n## Principles\n\n1. **The shopper is never blocked.** Browsing, searching and cart-building work\n   without an account. Authentication appears at checkout and nowhere earlier.\n2. **Pure core, thin edges.** Catalogue, cart and pricing logic are pure\n   functions. Datastore access lives behind repository modules.\n3. **State that survives a refresh.** Filters and sort live in the URL; carts\n   live in the browser until they live on the server. A reload loses nothing.\n4. **Strict types, no escape hatches.** No `any` and no non-null assertions on\n   data crossing a module boundary.\n5. **Measure before denormalising.** Caches and derived columns need a recorded\n   reason.\n\n## Review gates\n\nA feature lands with its types, its tests and its data shape in one change. A\nfeature that compiles but has no test is not done.\n"
+        }
+      ]
+    },
+    "manifest_extraction": {
+      "delay": 1500,
+      "structured_output": {
+        "features": [
+          {
+            "id": 1,
+            "title": "Catalog and search",
+            "description": "Nested categories with product counts, relevance-ranked search over names and descriptions, and additive price, rating and stock filters with URL-encoded state."
+          },
+          {
+            "id": 2,
+            "title": "Cart and checkout",
+            "description": "Variant-keyed cart with stock-capped quantities, guest carts that merge on login taking the higher quantity, and an authenticated checkout that validates stock before writing an order."
+          },
+          {
+            "id": 3,
+            "title": "Customer accounts",
+            "description": "Registration with password strength feedback, lockout after five failed logins in fifteen minutes, single-use hourly password resets, and an account area with addresses, wishlist and order history."
+          }
+        ]
+      }
+    }
+  },
+  "entries": {
+    "*": {
+      "specify": {
+        "delay": 300,
+        "writes": [
+          {
+            "path": "{specDir}/spec.md",
+            "content": "# Feature Specification: {feature}\n\n## User Scenarios\n\n### User Story 1 — the core flow (P1)\n\nA user completes the main flow of {feature} end to end.\n\n## Requirements\n\n- **FR-001**: The feature MUST cover the main flow.\n- **FR-002**: The feature MUST keep its state across a reload.\n\n## Success Criteria\n\n- **SC-001**: The main flow works end to end.\n"
+          }
+        ]
+      },
+      "clarify": {
+        "delay": 300,
+        "appends": [
+          {
+            "path": "{specDir}/spec.md",
+            "line": "\n## Clarifications\n\n### Session mock\n\nNo critical ambiguities. The spec covers the flow the goal names.\n"
+          }
+        ]
+      },
+      "plan": {
+        "delay": 300,
+        "writes": [
+          {
+            "path": "{specDir}/plan.md",
+            "content": "# Implementation Plan: {feature}\n\n## Technical Context\n\nTypeScript in strict mode. Pure logic in `src/{feature}/`, tests beside it.\n\n## Structure\n\n```text\nsrc/{feature}/\n├── index.ts\n└── index.test.ts\n```\n"
+          }
+        ]
+      },
+      "tasks": {
+        "delay": 300,
+        "writes": [
+          {
+            "path": "{specDir}/tasks.md",
+            "content": "# Tasks: {feature}\n\n## Phase 1: Core\n\n**Purpose**: The model and the main flow.\n\n- [ ] T001 Define the types in src/{feature}/index.ts\n- [ ] T002 Implement the main flow in src/{feature}/index.ts\n\n## Phase 2: Tests\n\n**Purpose**: Cover the main flow.\n\n- [ ] T003 Test the main flow in src/{feature}/index.test.ts\n- [ ] T004 Test that state survives a reload in src/{feature}/index.test.ts\n"
+          }
+        ]
+      },
+      "implement": {
+        "delay": 300,
+        "writes": [
+          {
+            "path": "src/{feature}/index.ts",
+            "content": "// {feature}: written by the mock implement stage (run {shortRunId}).\nexport const feature = \"{feature}\";\n"
+          }
+        ]
+      },
+      "verify": {
+        "delay": 300,
+        "rounds": [
+          {
+            "verdict": "passed"
+          }
+        ]
+      }
+    }
+  }
+}

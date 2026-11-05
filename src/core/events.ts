@@ -3,9 +3,10 @@
 // querying back into core (events flow one way: core → IPC → renderer).
 
 import type { RunConfig } from "./config.js";
+import type { StageName } from "./queue.js";
+import type { PauseReason } from "./state.js";
 import type {
   AgentStep,
-  DriftSummary,
   LoopTermination,
   PrerequisiteCheck,
   StepType,
@@ -16,8 +17,6 @@ import type {
 
 export type OrchestratorEvent =
   | { type: "run_started"; config: RunConfig; runId: string; branchName: string }
-  | { type: "loop_reset"; reason: "promoted" }
-  | { type: "head_changed"; reason: "jump"; branch: string; sha: string }
   | { type: "spec_started"; specDir: string }
   | { type: "spec_completed"; specDir: string; taskPhasesCompleted: number }
   | { type: "task_phase_started"; taskPhase: TaskPhase; iteration: number; agentRunId: string }
@@ -46,7 +45,6 @@ export type OrchestratorEvent =
   | { type: "prerequisites_completed"; runId: string }
   // Loop mode events
   | { type: "clarification_started"; runId: string }
-  | { type: "clarification_question"; runId: string; question: string }
   | { type: "clarification_completed"; runId: string; fullPlanPath: string }
   | { type: "loop_cycle_started"; runId: string; cycleNumber: number }
   | {
@@ -80,62 +78,54 @@ export type OrchestratorEvent =
   | { type: "loop_terminated"; runId: string; termination: LoopTermination }
   // Manifest & structured output events
   | { type: "manifest_created"; runId: string; featureCount: number }
-  | { type: "manifest_drift_detected"; runId: string }
-  | {
-      type: "verify_failed";
-      runId: string;
-      cycleNumber: number;
-      blockingCount: number;
-      summary: string;
-    }
   // User input request/response (AskUserQuestion)
   | { type: "user_input_request"; runId: string; requestId: string; questions: UserInputQuestion[] }
   | { type: "user_input_response"; requestId: string; answers: Record<string, string> }
-  // State reconciliation events
-  | { type: "state_reconciling"; runId: string }
-  | { type: "state_reconciled"; runId: string; driftSummary: DriftSummary }
-  // Interactive checkpoint events (008)
+  // The picker's choice before each stage (D-015-1)
   | {
-      type: "step_candidate";
+      type: "stage_decision";
       runId: string;
       cycleNumber: number;
-      step: StepType;
-      checkpointTag: string;
-      candidateSha: string;
-      attemptBranch: string;
+      entryId: string;
+      stage: StageName | null;
+      decision: "stage" | "pause" | "complete";
+      reason: string;
+    }
+  // A stage left files uncommitted (research R4); the next branch switch pauses on them
+  | { type: "tree_dirty"; runId: string; cycleNumber: number; files: string[] }
+  // The policy denied a tool call in the PreToolUse hook (contracts/policy-json.md)
+  | {
+      type: "policy_denied";
+      runId: string;
+      agentRunId: string;
+      toolName: string;
+      subject: string;
+      reason: string;
+      rule: "deny" | "writeRoots" | "frozen";
+    }
+  // A tool call waits for a human (a policy or settings `ask` rule)
+  | {
+      type: "tool_approval_request";
+      runId: string;
+      requestId: string;
+      toolName: string;
+      subject: string;
+      input: unknown;
+      source: "policy" | "settings";
+      reason?: string;
+    }
+  // A held human request was answered (or cancelled by Stop)
+  | {
+      type: "request_resolved";
+      requestId: string;
+      by: "human" | "default" | "answer_book" | "stop";
     }
   | {
       type: "paused";
       runId: string;
-      reason: "user_abort" | "step_mode" | "budget" | "failure";
+      reason: PauseReason;
+      detail?: string;
       step?: StepType;
-    }
-  // Conflict resolver progress events (014/US3) — emitted while
-  // mergeToMain hands off to the AI resolver harness. Field shapes are
-  // contracted in specs/014-branch-management/contracts/conflict-resolver-events.md.
-  | {
-      type: "conflict-resolver:file-start";
-      file: string;
-      index: number;
-      total: number;
-    }
-  | {
-      type: "conflict-resolver:file-done";
-      file: string;
-      ok: boolean;
-      iterationsUsed: number;
-    }
-  | {
-      type: "conflict-resolver:iteration";
-      n: number;
-      costSoFar: number;
-      currentFile: string;
-    }
-  | {
-      type: "conflict-resolver:done";
-      ok: boolean;
-      costTotal: number;
-      reason?: "max_iterations" | "cost_cap" | "verify_failed" | "agent_gave_up" | "user_cancelled";
     };
 
 export type EmitFn = (event: OrchestratorEvent) => void;

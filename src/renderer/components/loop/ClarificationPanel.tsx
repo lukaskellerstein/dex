@@ -1,18 +1,88 @@
+/**
+ * What: The bottom panel for what waits on the human — a question an agent asks (AskUserQuestion, with an "Other" free-text option) or a tool approval (ToolApprovalCard) while a run goes; else, once the run has paused, the pause it ended on (PauseCard, from the run snapshot). One card at a time, keyed by its request id, so picks never carry over.
+ * Not: Does not hold or persist requests (core humanInput.ts). The answers Dex gave by default are listed in the queue panel, not here: they wait for nobody.
+ * Deps: useUserQuestion, ToolApprovalCard, PauseCard, RunSnapshot, lucide-react.
+ */
 import { MessageCircleQuestion, Send } from "lucide-react";
-import { useState } from "react";
-import { useUserQuestion } from "../../hooks/useUserQuestion.js";
+import { type ReactNode, useState } from "react";
+import type { RunSnapshot } from "../../../core/run-snapshot.js";
+import { type HeldRequest, useUserQuestion } from "../../hooks/useUserQuestion.js";
+import { PauseCard, type PauseRequest } from "./PauseCard.js";
+import { ToolApprovalCard } from "./ToolApprovalCard.js";
 
-export function ClarificationPanel() {
-  const { pendingQuestion, answerQuestion } = useUserQuestion();
+/** The pause a paused run ended on, from its state; null while a run goes. */
+function pauseOf(snapshot: RunSnapshot | null, isRunning: boolean): PauseRequest | null {
+  const state = snapshot?.state;
+  if (isRunning || state?.status !== "paused") return null;
+  return state.pendingRequests.find((r): r is PauseRequest => r.kind === "pause") ?? null;
+}
 
+export function ClarificationPanel({
+  snapshot,
+  isRunning,
+  onResume,
+}: {
+  snapshot: RunSnapshot | null;
+  isRunning: boolean;
+  onResume: () => void;
+}) {
+  const { pendingRequest, answerQuestion, answerToolApproval } = useUserQuestion();
+  const [closed, setClosed] = useState<string | null>(null);
+  const pause = pauseOf(snapshot, isRunning);
+  if (pendingRequest) {
+    return (
+      <PanelShell>
+        {pendingRequest.kind === "question" ? (
+          <QuestionCard key={pendingRequest.requestId} request={pendingRequest} onAnswer={answerQuestion} />
+        ) : (
+          <ToolApprovalCard key={pendingRequest.requestId} request={pendingRequest} onAnswer={answerToolApproval} />
+        )}
+      </PanelShell>
+    );
+  }
+  if (!pause || closed === pause.id) return null;
+  return (
+    <PanelShell>
+      <PauseCard key={pause.id} request={pause} onContinue={onResume} onStop={() => setClosed(pause.id)} />
+    </PanelShell>
+  );
+}
+
+function PanelShell({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
+        background: "var(--surface)",
+        borderTop: "2px solid var(--primary)",
+        boxShadow: "0 -4px 24px rgba(0,0,0,0.3)",
+        maxHeight: "60vh",
+        overflowY: "auto",
+      }}
+    >
+      <div style={{ padding: "16px 24px", maxWidth: 720, margin: "0 auto" }}>{children}</div>
+    </div>
+  );
+}
+
+function QuestionCard({
+  request,
+  onAnswer,
+}: {
+  request: Extract<HeldRequest, { kind: "question" }>;
+  onAnswer: (requestId: string, answers: Record<string, string>) => void;
+}) {
   // Track selected option per question (keyed by question text)
   const [selections, setSelections] = useState<Record<string, string>>({});
   // Track free-text input per question (for "Other" option)
   const [freeText, setFreeText] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  if (!pendingQuestion) return null;
-  const { requestId, questions } = pendingQuestion;
+  const { requestId, questions } = request;
 
   const allAnswered = questions.every((q) => {
     const sel = selections[q.question];
@@ -35,25 +105,11 @@ export function ClarificationPanel() {
       answers[q.question] = sel === "__other__" ? (freeText[q.question] ?? "").trim() : sel;
     }
 
-    answerQuestion(requestId, answers);
+    onAnswer(requestId, answers);
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        background: "var(--surface)",
-        borderTop: "2px solid var(--primary)",
-        boxShadow: "0 -4px 24px rgba(0,0,0,0.3)",
-        maxHeight: "60vh",
-        overflowY: "auto",
-      }}
-    >
-      <div style={{ padding: "16px 24px", maxWidth: 720, margin: "0 auto" }}>
+    <>
         {/* Header */}
         <div
           style={{
@@ -240,7 +296,6 @@ export function ClarificationPanel() {
           <Send size={14} />
           Submit Answers
         </button>
-      </div>
-    </div>
+    </>
   );
 }

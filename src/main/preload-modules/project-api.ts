@@ -1,4 +1,5 @@
 import { ipcRenderer } from "electron";
+import type { RunSnapshot } from "../../core/run-snapshot.js";
 
 export const projectApi = {
   openProject: () => ipcRenderer.invoke("project:open"),
@@ -21,6 +22,8 @@ export const projectApi = {
     >,
   pathExists: (targetPath: string) =>
     ipcRenderer.invoke("project:path-exists", targetPath) as Promise<boolean>,
+  getRunSnapshot: (projectDir: string) =>
+    ipcRenderer.invoke("project:get-run-snapshot", projectDir) as Promise<RunSnapshot>,
 
   // App config (global ~/.dex/app-config.json)
   getWelcomeDefaults: () =>
