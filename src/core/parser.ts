@@ -148,25 +148,6 @@ export function extractTaskIds(content: string): string[] {
 
 // ── T015: Discover New Spec Directory ──
 
-export function discoverNewSpecDir(projectDir: string, knownSpecs: string[]): string | null {
-  const candidates = [path.join(projectDir, "specs"), path.join(projectDir, ".specify", "specs")];
-
-  for (const specsRoot of candidates) {
-    if (fs.existsSync(specsRoot)) {
-      const entries = fs.readdirSync(specsRoot, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const relPath = path.relative(projectDir, path.join(specsRoot, entry.name));
-        if (!knownSpecs.includes(relPath)) {
-          return relPath;
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
 export function parseTasksFile(projectDir: string, specDir: string): TaskPhase[] {
   const tasksPath = path.join(projectDir, specDir, "tasks.md");
   const content = fs.readFileSync(tasksPath, "utf-8");

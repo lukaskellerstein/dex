@@ -36,7 +36,7 @@ description: "Task list for 015 Lean Core"
 - [X] T009 Run `npm run typecheck` and `npm test`; fix the type breaks from SDK 0.3 (hook callback signatures, `CanUseTool` returning `PermissionResult | null`, optional `updatedInput`) in src/core/agent/ClaudeAgentRunner.ts until both pass
 - [X] T010 Repeat the T004 mock run on a fresh scratch clone and confirm the event sequence matches the baseline except for the removed TodoWrite steps
 - [X] T011 Create scripts/smoke-stage.mjs (`node scripts/smoke-stage.mjs <projectDir> <step> <prompt>`): imports `ClaudeAgentRunner` from `dist/core/agent/ClaudeAgentRunner.js`, runs one `runStep` with a console emitter, and prints cost, duration and the result subtype
-- [ ] T012 **Ask the owner first (costs money).** Run one real `specify` stage with scripts/smoke-stage.mjs on a scratch clone of `$EX` whose `GOAL_clarified.md` exists, then check that `specs/<new>/spec.md` was written with the preset system prompt; record cost, duration and anything odd in specs/015-lean-core/research.md § R1
+- [X] T012 **Ask the owner first (costs money).** Run one real `specify` stage with scripts/smoke-stage.mjs on a scratch clone of `$EX` whose `GOAL_clarified.md` exists, then check that `specs/<new>/spec.md` was written with the preset system prompt; record cost, duration and anything odd in specs/015-lean-core/research.md § R1
 
 **Checkpoint**: SDK 0.3.318 in place, tests green, baseline recorded.
 
@@ -151,7 +151,7 @@ description: "Task list for 015 Lean Core"
 - [X] T064 [US2] Replace `orchestrator:answer-question` with `orchestrator:answer-request` (the `RequestAnswer` union in contracts/ipc-events.md) in src/main/ipc/orchestrator.ts, src/main/preload-modules/orchestrator-api.ts and src/renderer/electron.d.ts
 - [X] T065 [US2] Renderer approvals: make the pending state in src/renderer/hooks/useUserQuestion.ts a `PendingRequest` union restored on reload from `getProjectState().pendingRequests`; render a tool-approval card in src/renderer/components/loop/ClarificationPanel.tsx (tool, subject, full input, source and reason, Approve / Deny) that answers through `answer-request`
 - [X] T066 [US2] Confirm `grep -rn bypassPermissions src` lists only the refusal in src/core/policy.ts and its test (SC-006); run the phase gate
-- [ ] T067 [US2] **Ask the owner first (small cost).** Live check, quickstart § 9: a scratch clone with `.claude/settings.json` `{"permissions":{"ask":["Bash(git push:*)"]}}`, the app started with `dev-setup.sh`, a run that leads to `git push`; with electron-playwright confirm the approval card appears with the command held, deny it, and confirm the agent reports the denial
+- [X] T067 [US2] **Ask the owner first (small cost).** Live check, quickstart § 9: a scratch clone with `.claude/settings.json` `{"permissions":{"ask":["Bash(git push:*)"]}}`, the app started with `dev-setup.sh`, a run that leads to `git push`; with electron-playwright confirm the approval card appears with the command held, deny it, and confirm the agent reports the denial
 
 **Checkpoint**: Dex runs with brakes. The policy is enforced in code, and the project's own rules apply.
 
@@ -405,7 +405,7 @@ Task: "T034 src/core/queue.ts"  +  "T035 src/core/tree-reader.ts"
 
 - Never commit unless the owner asks (repo rule). The mock agent's `mock(<stage>)` commits happen only inside scratch clones and temp repos.
 - T012, T067 and T113 spend real money. Each one needs the owner's go-ahead first.
-- **Status at the sync (2026-11-05):** 109 of 114 done. Open: T012 and T067 (real agent runs, waiting for the owner's approval), T112 and T113 (owner steps on `onion-demo-01`), T114 (this sync and the feature docs). T106's live UI check passed except the tool-approval card (the mock makes no tool calls); see research.md § Phase 10 gate.
+- **Status (2026-11-05):** 112 of 114 done. Open: T112 and T113 (owner steps on `onion-demo-01`). T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule inside a compound command is still allowed (research.md § R6, Known gap).
 - **Where the build differs from a task's wording** (the task lines stay as written; research.md has the reasons):
   - T035: the tree reader uses `git cat-file -t` / `cat-file blob` on `<ref>:./<rel>`, not `cat-file -e` / `git show`; `headSha` was not added (`getHeadSha` exists); a test-only `statusPorcelain` helper was removed.
   - T042: `humanInput.ts` is a new file (`userInput.ts` is deleted) and exports `askQuestions` and `recordPause`, not `requestHuman()`; T048's loop entry is `runQueueLoop`.

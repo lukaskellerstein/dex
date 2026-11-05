@@ -246,16 +246,6 @@ export function completeRun(
   });
 }
 
-export function updateRunCyclesCompleted(
-  projectDir: string,
-  runId: string,
-  cyclesCompleted: number,
-): void {
-  updateRun(projectDir, runId, (r) => {
-    r.cyclesCompleted = cyclesCompleted;
-  });
-}
-
 // ── AgentRun helpers ──
 
 interface StartAgentRunInput {
@@ -359,18 +349,6 @@ export function completeSubagent(
 }
 
 // ── Failure-counter helpers ──
-
-export function upsertFailureCount(
-  projectDir: string,
-  runId: string,
-  specDir: string,
-  impl: number,
-  replan: number,
-): void {
-  updateRun(projectDir, runId, (r) => {
-    r.failureCounters[specDir] = { impl, replan };
-  });
-}
 
 // ── Crash-recovery sweep ──
 

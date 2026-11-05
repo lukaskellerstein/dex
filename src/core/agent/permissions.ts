@@ -1,5 +1,5 @@
 /**
- * What: The permission chain Dex adds to every Claude session (research R6) — `preToolUseDecision` (the PreToolUse hook: the policy's deny → `deny` + `policy_denied`, its ask → `ask`, else `{}`; never `allow`, so the project's own deny and ask rules always run), and `makeCanUseTool` (AskUserQuestion → a held question; a policy `ask` or a settings `matchedAskRule` → a held tool approval; anything else → allow). `policyEnvFor` gives the decision its git probe.
+ * What: The permission chain Dex adds to every Claude session (research R6) — `preToolUseDecision` (the PreToolUse hook: the policy's deny → `deny` + `policy_denied`, its ask → `ask`, else `{}`; never `allow`, so the project's own deny and ask rules always run), and `makeCanUseTool` (AskUserQuestion → a held question; a policy `ask`, or a settings ask rule (`matchedAskRule` or `decisionReasonType: "rule"`) → a held tool approval; anything else → allow). `policyEnvFor` gives the decision its git probe.
  * Not: Does not build SDK options or run the session (claudeSession.ts). Does not parse the policy (policy.ts) or own the request queue (humanInput.ts).
  * Deps: policy.{decideToolUse, subjectOf}, humanInput.{askQuestions, requestToolApproval}, git.isTrackedAtHead, SDK types only.
  */
@@ -80,11 +80,22 @@ export function preToolUseDecision(
   return {};
 }
 
-type AskRule = NonNullable<Parameters<CanUseTool>[2]["matchedAskRule"]>;
+type CanUseToolOptions = Parameters<CanUseTool>[2];
 
-function describeAskRule(rule: AskRule): string {
-  const content = rule.ruleContent ? `(${rule.ruleContent})` : "";
-  return `${rule.source} ask rule ${rule.toolName}${content}`;
+/**
+ * Why a settings ask rule forced this call to canUseTool, or null when none did.
+ * `matchedAskRule` is set only when the ask also carries the tool's own reason.
+ * A plain rule-forced ask arrives as `decisionReasonType: "rule"`, a field the
+ * SDK forwards from the CLI but does not declare (measured on 0.3.318, T067).
+ */
+function settingsAskReason(options: CanUseToolOptions | undefined): string | null {
+  const rule = options?.matchedAskRule;
+  if (rule) {
+    const content = rule.ruleContent ? `(${rule.ruleContent})` : "";
+    return `${rule.source} ask rule ${rule.toolName}${content}`;
+  }
+  const reasonType = (options as { decisionReasonType?: unknown } | undefined)?.decisionReasonType;
+  return reasonType === "rule" ? "a settings ask rule" : null;
 }
 
 /** canUseTool for every Dex session: questions, approvals, else allow. */
@@ -95,16 +106,18 @@ export function makeCanUseTool(d: PermissionDeps): CanUseTool {
     const decision = decideToolUse(d.policy, call, d.policyEnv);
     // The hook denies first; this keeps a deny a deny if the hook did not run.
     if (decision.kind === "deny") return { behavior: "deny", message: decision.reason };
-    const rule = options?.matchedAskRule;
-    if (decision.kind !== "ask" && !rule) return { behavior: "allow", updatedInput: input };
+    const settingsReason = settingsAskReason(options);
+    if (decision.kind !== "ask" && !settingsReason)
+      return { behavior: "allow", updatedInput: input };
     const answer = await requestToolApproval(d.io, d.entryId, {
       toolName,
       subject: subjectOf(call, d.policyEnv.projectDir),
       input,
       source: decision.kind === "ask" ? "policy" : "settings",
-      reason: decision.kind === "ask" ? decision.reason : rule ? describeAskRule(rule) : undefined,
+      reason: decision.kind === "ask" ? decision.reason : (settingsReason ?? undefined),
     });
-    d.rlog?.agentRun("INFO", `canUseTool: ${toolName} ${answer.decision}d by the human`);
+    const verdict = answer.decision === "approve" ? "approved" : "denied";
+    d.rlog?.agentRun("INFO", `canUseTool: ${toolName} ${verdict} by the human`);
     return answer.decision === "approve"
       ? { behavior: "allow", updatedInput: input }
       : { behavior: "deny", message: answer.message ?? "Denied by the human" };

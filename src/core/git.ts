@@ -40,23 +40,6 @@ export function getHeadSha(projectDir: string): string {
   return exec("git rev-parse HEAD", projectDir);
 }
 
-export function countCommitsBetween(projectDir: string, fromSha: string, toSha: string): number {
-  const count = exec(`git rev-list --count ${fromSha}..${toSha}`, projectDir);
-  return parseInt(count, 10) || 0;
-}
-
-export function getCommittedFileContent(
-  projectDir: string,
-  ref: string,
-  filePath: string,
-): string | null {
-  try {
-    return exec(`git show ${ref}:${filePath}`, projectDir);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * git with an argument list — no shell, so branch names and paths from
  * queue.json cannot inject commands. Output is not trimmed: porcelain status
@@ -167,89 +150,6 @@ ${diffStat || "No changes."}
 `;
 
   // Write body to a temp file to avoid shell escaping issues
-  const bodyFile = path.join(os.tmpdir(), `dex-pr-body-${crypto.randomUUID()}.md`);
-  try {
-    fs.writeFileSync(bodyFile, body, "utf-8");
-    const prUrl = exec(
-      `gh pr create --base ${baseBranch} --head ${branchName} --title "${title}" --body-file "${bodyFile}"`,
-      projectDir,
-    );
-    return prUrl;
-  } catch {
-    return null;
-  } finally {
-    try {
-      fs.unlinkSync(bodyFile);
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-// ── Loop-specific PR (T021) ──
-
-export function createLoopPullRequest(
-  projectDir: string,
-  branchName: string,
-  baseBranch: string,
-  terminationReason: string,
-  cyclesCompleted: number,
-  featuresCompleted: string[],
-  featuresSkipped: string[],
-  totalCost: number,
-  totalDurationMs: number,
-): string | null {
-  try {
-    exec(`git push -u origin ${branchName}`, projectDir);
-  } catch {
-    return null;
-  }
-
-  const commitLog = exec(
-    `git log ${baseBranch}..${branchName} --pretty=format:"- %s" --reverse`,
-    projectDir,
-  );
-
-  const diffStat = exec(`git diff --stat ${baseBranch}..${branchName}`, projectDir);
-
-  const durationMin = (totalDurationMs / 60_000).toFixed(1);
-  const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "n/a";
-
-  const title = `Dex loop: ${featuresCompleted.length} feature${featuresCompleted.length === 1 ? "" : "s"} completed`;
-
-  const completedList =
-    featuresCompleted.length > 0 ? featuresCompleted.map((f) => `  - ${f}`).join("\n") : "  _none_";
-  const skippedList =
-    featuresSkipped.length > 0 ? featuresSkipped.map((f) => `  - ${f}`).join("\n") : "  _none_";
-
-  const body = `## Summary
-
-Autonomous loop run by Dex orchestrator.
-
-- **Termination reason**: ${terminationReason}
-- **Cycles completed**: ${cyclesCompleted}
-- **Duration**: ${durationMin} min
-- **Cost**: ${costStr}
-
-## Features completed
-
-${completedList}
-
-## Features skipped
-
-${skippedList}
-
-## Commits
-
-${commitLog || "_No commits were made._"}
-
-## Diff stats
-
-\`\`\`
-${diffStat || "No changes."}
-\`\`\`
-`;
-
   const bodyFile = path.join(os.tmpdir(), `dex-pr-body-${crypto.randomUUID()}.md`);
   try {
     fs.writeFileSync(bodyFile, body, "utf-8");

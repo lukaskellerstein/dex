@@ -45,6 +45,29 @@ the hook `ask` → `canUseTool` routing fixed in 0.2.85, and the changes above
 would land later inside the deletion diffs, which is what D-015-10 exists to
 avoid.
 
+**Live stage, T012 (2026-11-05, SDK 0.3.318).** One real `specify` stage with
+`scripts/smoke-stage.mjs` on a scratch clone of dex-ecommerce `main` (spec-kit
+set up, `GOAL_clarified.md` present, origin a scratch bare repo).
+
+| What | Result |
+|:--|:--|
+| Model, limits | `claude-haiku-5-5`, `maxTurns` 25, `maxBudgetUsdPerStage` 0.5 from the clone's policy |
+| Outcome | `success`, no limit hit, 7 turns |
+| Cost, time | $0.0132, 36.1 s, 6,721 output tokens |
+| Written | `specs/004-promo-codes/spec.md` and `checklists/requirements.md`, via `/speckit-specify` |
+| System prompt | the `claude_code` preset: `buildQueryOptions` sets it whenever the policy has no append file |
+
+Odd things, all fixed or recorded:
+
+- The shell carried an `ANTHROPIC_API_KEY` that the API rejects (`Invalid API
+  key`). Every agent Dex starts inherits it, because `env` passes
+  `process.env` through. The runs here drop that one variable
+  (`env -u ANTHROPIC_API_KEY`), so the agents use the Claude Code login.
+- `smoke-stage.mjs` was stale: it printed `result.subtype`, which `limitHit`
+  replaced, and it gave the runner no `policy`. It now loads the project's
+  policy, so the stage limits apply, and reads `DEX_MODEL` and
+  `DEX_MAX_TURNS`.
+
 ## R2 — Entry status is derived from files; Dex never writes `queue.json` during a run
 
 **Decision.** `status` in `queue.json` is human-owned and optional (`done` /
@@ -184,10 +207,40 @@ the hook script reads the process environment, not the prompt.
 2. **`canUseTool`:** `AskUserQuestion` → `humanInput` question (R7). Any other
    tool →
    - the policy says `ask` → human approval, source `policy`;
-   - else `options.matchedAskRule` is set → human approval, source `settings`;
+   - else a settings ask rule forced the call → human approval, source
+     `settings`. The SDK says so in one of two ways: `options.matchedAskRule`,
+     or `decisionReasonType: "rule"` (see the T067 measurement below);
    - else → **allow**. This is a call that matched no allow rule in `default`
      mode. The policy and the project's deny and ask rules have already run, so
-     nothing that either of them guards reaches this branch.
+     nothing that either of them guards reaches this branch — except a compound
+     command, below.
+
+**Measured, T067 (2026-11-05, SDK 0.3.318).** The plan assumed that
+`matchedAskRule` is set whenever a settings ask rule matches. It is not. The
+`.d.ts` sets it only "while the ask carries the tool's own decisionReason". So
+the first live run auto-allowed `git push` under `Bash(git push:*)`. Logging
+every `canUseTool` call (Haiku 5.5, about $0.01 a run) showed what the SDK
+sends:
+
+| Call | `decisionReasonType` | `matchedAskRule` | Suggestions |
+|:--|:--|:--|:--|
+| `git push origin HEAD`, project ask rule | `"rule"` | absent | none |
+| `Edit`, no rule (project settings only) | absent | absent | yes |
+| `git add … && git commit …`, no rule | `"subcommandResults"` | absent | yes |
+| `git add -A && git push origin HEAD` | `"subcommandResults"` | absent | `git add *` only |
+
+`decisionReasonType` is forwarded by the SDK from the CLI's control request
+but is not in its types, so `permissions.ts` reads it through a narrow cast.
+With the fix, the live run held `git push origin HEAD` on the approval card,
+nothing reached the remote, Deny returned "Denied by the human", and the agent
+left T001 open with the note "denied by the human … Not retried".
+
+**Known gap: compound commands.** A settings ask rule that matches one part of
+a compound command (`git add -A && git push`) arrives as
+`"subcommandResults"`, the same as a compound with no rule at all. Dex cannot
+tell the two apart from the options, so it allows both. Only the suggestions
+differ: they leave out the part an ask rule covers. A policy `ask` rule does
+not have this gap, because its pattern is a regex over the whole command.
 3. **Options from the policy:** `settingSources`, `permissionMode` (bypass is
    refused for `existing`, FR-014), `env` (R1), the preset `systemPrompt` with
    the `systemPromptAppend` file, `maxTurns = min(config.maxTurns, limits.maxTurnsPerStage)`,
@@ -431,7 +484,15 @@ record through the snapshot instead.
 removal of the test-only `statusPorcelain` helper; `bash scripts/loc-by-area.sh`):
 core 9,771 (−7), main 524, renderer 11,821 (+37, `queueProgress` and the
 snapshot-driven cycle count); **grand total 22,116**. The table above is the
-T110 measurement; SC-007 stays unmet by 1,116 lines.
+T110 measurement.
+
+**After the dead-code cut** (the T012/T067 session): `uiPrefs.ts` and 13
+exports with no caller left the tree — `countCommitsBetween`,
+`getCommittedFileContent` and `createLoopPullRequest` (git.ts),
+`discoverNewSpecDir` (parser.ts), `updateRunCyclesCompleted` and
+`upsertFailureCount` (runs.ts), `AgentRunnerFactory`, and six style
+fragments in `renderer/styles/tokens.ts`. Core 9,586, main 524, renderer
+11,766; **grand total 21,876** (−22.2%). SC-007 stays unmet by 876 lines.
 
 ### Phase 0 measurements (2026-11-05, tree at `7ec23aa`)
 

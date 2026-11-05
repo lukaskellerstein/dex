@@ -76,7 +76,7 @@ flowchart TD
   M -->|allowed| RUN[runs]
   M -->|needs approval| CU{"Dex canUseTool"}
   CU -->|"AskUserQuestion"| Q[humanInput question]
-  CU -->|"policy ask or matchedAskRule"| A["humanInput tool_approval<br/>agent waits"]
+  CU -->|"policy ask or settings ask rule"| A["humanInput tool_approval<br/>agent waits"]
   CU -->|"no ask anywhere"| RUN
   A -->|approve| RUN
   A -->|"deny / Stop"| D3[denied + message]
@@ -88,10 +88,13 @@ flowchart TD
 `preToolUseDecision` (the PreToolUse hook: a policy `deny` returns `deny` and emits
 `policy_denied`; an `ask` returns `ask`; otherwise `{}`; after Stop it denies with
 "Run stopped by user"; it never returns `allow`) and `makeCanUseTool`
-(`AskUserQuestion` goes to `humanInput`; a policy `ask` or the SDK's
-`matchedAskRule` holds the call as a `tool_approval` with source `policy` or
-`settings`; anything else is allowed; a policy `deny` stays a deny even if the hook
-did not run). `agent/claudeSession.ts` `buildQueryOptions(policy)` turns the policy
+(`AskUserQuestion` goes to `humanInput`; a policy `ask`, or a settings ask rule
+that the SDK reports as `matchedAskRule` or as `decisionReasonType: "rule"`, holds
+the call as a `tool_approval` with source `policy` or `settings`; anything else is
+allowed; a policy `deny` stays a deny even if the hook did not run). A settings
+ask rule that matches only one part of a compound command arrives as
+`"subcommandResults"` and is allowed (research R6, Known gap); a policy `ask`
+pattern catches it. `agent/claudeSession.ts` `buildQueryOptions(policy)` turns the policy
 into SDK options: `settingSources`, `permissionMode`, `env: { ...process.env,
 ...policy.env, ...stageEnv }`, the `claude_code` preset system prompt with the
 append file, `maxTurns = min(config.maxTurns, limits.maxTurnsPerStage)` and

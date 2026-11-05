@@ -121,7 +121,7 @@ flowchart TD
   MODE -->|allowed| RUNS["tool runs"]
   MODE -->|"not allowed"| CUT
   CUT -->|AskUserQuestion| Q["held question"]
-  CUT -->|"policy ask or matchedAskRule"| AP["held tool approval, agent waits"]
+  CUT -->|"policy ask or settings ask rule"| AP["held tool approval, agent waits"]
   CUT -->|"no ask anywhere"| RUNS
   AP -->|approve| RUNS
   AP -->|"deny or Stop"| D3["denied with message"]
@@ -364,21 +364,24 @@ Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clon
 
 ## Size and open items
 
-**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 22,116, which is 21.3% smaller (22,086 at the T110 measurement, before the cycle-count fix). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
+**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 21,876, which is 22.2% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
 
 | Area | Baseline (`7ec23aa`) | After | Change |
 |---|---:|---:|---:|
-| core | 11,740 | 9,771 | −1,969 (−17%) |
+| core | 11,740 | 9,586 | −2,154 (−18%) |
 | main | 1,104 | 524 | −580 (−53%) |
-| renderer | 15,266 | 11,821 | −3,445 (−23%) |
-| **total** | **28,110** | **22,116** | **−5,994 (−21.3%)** |
+| renderer | 15,266 | 11,766 | −3,500 (−23%) |
+| **total** | **28,110** | **21,876** | **−6,234 (−22.2%)** |
 
 The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the dogfood run whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
 
-Still open in `tasks.md`. Each step needs the owner or real spend:
+The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.08 in all:
 
-- **T012**: one real `specify` stage on the 0.3 SDK with the preset system prompt (`scripts/smoke-stage.mjs`).
-- **T067**: the live permission check, where a project-settings `ask` rule reaches the approval card. So far the card is covered only by its component tests, because the mock makes no tool calls.
-- **T112, T113**: the dogfood run on `onion-demo-01`, first `--dry-run` for owner sign-off (SC-009), then the first real `specify` (SC-010).
+- **T012**: one real `specify` stage on the 0.3 SDK wrote `spec.md` with the preset system prompt, for $0.013 in 36 s (`scripts/smoke-stage.mjs`).
+- **T067**: a project-settings `ask` rule for `git push` now reaches the approval card. The first run found that the SDK reports a plain rule-forced ask as `decisionReasonType: "rule"`, not as `matchedAskRule`, so Dex had allowed the push. After the fix the card held the command, nothing reached the remote, and the agent reported the denial.
+
+Known gap: a settings `ask` rule that matches only one part of a compound command (`git add -A && git push`) is still allowed. The SDK reports that call the same way as a compound command that matches no rule. A policy `ask` rule catches it, because its pattern is a regex over the whole command (research § R6).
+
+Still open in `tasks.md`: **T112, T113**, the dogfood run on `onion-demo-01`, first `--dry-run` for owner sign-off (SC-009), then the first real `specify` (SC-010).
 
 Seen but not changed: reloading the renderer returns to the welcome screen while the run goes on, because the open project lives in renderer state. The pending request survives the reload.

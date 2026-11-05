@@ -10,8 +10,13 @@
  * gives a working stage, before the change is buried under other work.
  *
  * Reads the COMPILED runner from dist/ (run `npx tsc` first). Prints every
- * trace step as one line, then the cost, the duration and the result subtype.
+ * trace step as one line, then the cost, the duration and the limit hit, if any.
  * The full trace lands in the usual log tree: ~/.dex/logs/<project>/<runId>/.
+ *
+ * The project's `.dex/policy.json` applies, as in a run: its
+ * `limits.maxBudgetUsdPerStage` caps the spend. To keep a check cheap, set that
+ * cap and pick a small model: DEX_MODEL (default claude-opus-4-6) and
+ * DEX_MAX_TURNS (default 75).
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -38,6 +43,11 @@ if (!fs.existsSync(path.join(repoRoot, "dist", "core", "agent", "ClaudeAgentRunn
 }
 const { ClaudeAgentRunner } = await import(dist("agent/ClaudeAgentRunner.js"));
 const { RunLogger } = await import(dist("log.js"));
+const { loadPolicy } = await import(dist("policy.js"));
+const { loadQueue } = await import(dist("queue.js"));
+
+const kind = loadQueue(projectDir, { persistMigration: false })?.kind ?? "new";
+const policy = loadPolicy(projectDir, kind);
 
 const runId = crypto.randomUUID();
 const agentRunId = crypto.randomUUID();
@@ -62,7 +72,7 @@ const result = await new ClaudeAgentRunner().runStep({
     mode: "loop",
     model: process.env.DEX_MODEL ?? "claude-opus-4-6",
     maxIterations: 1,
-    maxTurns: 75,
+    maxTurns: Number(process.env.DEX_MAX_TURNS ?? 75),
     taskPhases: "all",
     autoClarification: true,
   },
@@ -75,9 +85,10 @@ const result = await new ClaudeAgentRunner().runStep({
   abortController,
   emit,
   rlog,
+  policy,
 });
 
-console.log(`\nsubtype  : ${result.subtype ?? "(no result frame)"}`);
+console.log(`\nlimit    : ${result.limitHit ?? "none"}`);
 console.log(`cost     : $${result.cost.toFixed(4)}`);
 console.log(`duration : ${(result.durationMs / 1000).toFixed(1)}s`);
 console.log(`tokens   : in ${result.inputTokens}, out ${result.outputTokens}`);

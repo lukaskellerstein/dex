@@ -208,6 +208,27 @@ test(
 );
 
 test(
+  "canUseTool: a settings ask rule the SDK reports only as decisionReasonType 'rule' is held too",
+  withState(async (dir) => {
+    // The shape SDK 0.3.318 sent for `git push origin HEAD` under a project rule
+    // Bash(git push:*): no matchedAskRule, no decisionReason, no suggestions.
+    const events: OrchestratorEvent[] = [];
+    const asked = makeCanUseTool(deps(dir, events))("Bash", { command: "git push origin HEAD" }, {
+      ...SDK_OPTIONS,
+      decisionReasonType: "rule",
+      displayName: "Bash",
+    } as CanUseToolOptions);
+    const request = events.find((e) => e.type === "tool_approval_request");
+    assert.ok(request?.type === "tool_approval_request");
+    assert.equal(request.source, "settings");
+    assert.equal(request.subject, "git push origin HEAD");
+    assert.equal(request.reason, "a settings ask rule");
+    resolveRequest(request.requestId, { kind: "tool_approval", decision: "deny" });
+    assert.deepEqual(await asked, { behavior: "deny", message: "Denied by the human" });
+  }),
+);
+
+test(
   "canUseTool: a policy ask rule asks with source policy; approve runs the call",
   withState(async (dir) => {
     const events: OrchestratorEvent[] = [];

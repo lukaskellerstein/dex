@@ -85,5 +85,3 @@ export interface AgentRunner {
   runStep(ctx: StepContext): Promise<StepResult>;
   runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult>;
 }
-
-export type AgentRunnerFactory = (runConfig: RunConfig, projectDir: string) => AgentRunner;

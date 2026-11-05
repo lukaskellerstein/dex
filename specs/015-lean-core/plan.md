@@ -41,7 +41,7 @@ together:
 - Dex makes no commit, branch or push in an existing project;
 - no `bypassPermissions` outside the refusal check;
 - every phase ends with the tests, the typecheck and a green mock loop
-**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (22,116 at the end of the branch)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; 1 real user (`onion-demo-01`, 5 queue entries, 7 sibling repos)
+**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (21,876 at the end of the branch, after a dead-code cut)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; 1 real user (`onion-demo-01`, 5 queue entries, 7 sibling repos)
 
 ## Constitution Check
 
