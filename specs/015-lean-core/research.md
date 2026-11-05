@@ -880,7 +880,7 @@ and replaces `dex_loop.cycles[]` (cycle-index keyed, with `gap_analysis` and
 `learnings` required) by:
 
 ```json
-{ "entries": { "*": { …per-stage descriptors… }, "021-agent-entry": { … } } }
+{ "entries": { "*": { …per-stage descriptors… }, "004-product-recommendations": { … } } }
 ```
 
 - Lookup by entry id, falling back to `"*"`.

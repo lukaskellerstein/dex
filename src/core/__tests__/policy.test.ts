@@ -17,8 +17,8 @@ import {
 import { rmTmp } from "./helpers/git.ts";
 import { mkTmpProject } from "./helpers/project.ts";
 
-const PROJECT = "/work/onion";
-const FILE = "/work/onion/.dex/policy.json";
+const PROJECT = "/work/shop";
+const FILE = "/work/shop/.dex/policy.json";
 
 /** The rules of contracts/policy-json.md § Example, as the owner writes them. */
 const EXAMPLE = {
@@ -44,14 +44,13 @@ const EXAMPLE = {
     },
     {
       tool: "Bash",
-      pattern:
-        "\\bkubectl\\s+(delete|apply|create(?!\\s+job\\s+--from=)|replace|patch|edit|scale|drain|cordon|taint)\\b",
-      reason: "helm is the only deploy path",
+      pattern: "\\bdocker\\s+(rm|rmi|push|system\\s+prune|compose\\s+down(?!\\s+--dry-run))\\b",
+      reason: "containers are the owner's",
     },
     {
       tool: "Bash",
-      pattern: "\\bhelm\\s+(uninstall|delete|rollback)\\b",
-      reason: "destructive helm commands are the owner's",
+      pattern: "\\bnpm\\s+(publish|unpublish|deprecate)\\b",
+      reason: "publishing is the owner's",
     },
     {
       tool: "Bash",
@@ -60,19 +59,19 @@ const EXAMPLE = {
     },
     {
       tool: "*",
-      pattern: "mgmt-01|rancher\\.cellarwood\\.org",
-      reason: "the management cluster is off limits",
+      pattern: "prod-db|payments\\.shop\\.example",
+      reason: "the production systems are off limits",
     },
   ],
   ask: [{ tool: "Bash", pattern: "\\bgit\\s+push\\b", reason: "pushes need a human" }],
   writeRoots: ["."],
-  frozen: ["workload/report/thresholds.md", "workload/report/claim*.md"],
-  limits: { maxBudgetUsdPerStage: 15, maxBudgetUsdPerRun: 120 },
+  frozen: ["docs/legal/terms.md", "docs/legal/policy*.md"],
+  limits: { maxBudgetUsdPerStage: 2, maxBudgetUsdPerRun: 20 },
 };
 
 const TRACKED = new Set([
-  path.join(PROJECT, "workload/report/thresholds.md"),
-  path.join(PROJECT, "workload/report/claim-a.md"),
+  path.join(PROJECT, "docs/legal/terms.md"),
+  path.join(PROJECT, "docs/legal/policy-a.md"),
 ]);
 const ENV: PolicyEnv = {
   projectDir: PROJECT,
@@ -105,7 +104,7 @@ test("parsePolicy: an empty object is the defaults", () => {
 
 test("parsePolicy: the contract example parses, limits merge over the defaults", () => {
   assert.equal(policy.deny.length, 7);
-  assert.equal(policy.limits.maxBudgetUsdPerStage, 15);
+  assert.equal(policy.limits.maxBudgetUsdPerStage, 2);
   assert.equal(policy.limits.maxVerifyRounds, 3);
   assert.equal(policy.env.CLAUDE_NO_WORKTREE, "1");
 });
@@ -192,11 +191,11 @@ test("subjectOf: the command, a resolved path, the URL, or the JSON input", () =
   assert.equal(subjectOf({ toolName: "Bash", input: { command: "ls -la" } }, PROJECT), "ls -la");
   assert.equal(
     subjectOf({ toolName: "Edit", input: { file_path: "src/a.ts" } }, PROJECT),
-    "/work/onion/src/a.ts",
+    "/work/shop/src/a.ts",
   );
   assert.equal(
     subjectOf({ toolName: "NotebookEdit", input: { notebook_path: "n.ipynb" } }, PROJECT),
-    "/work/onion/n.ipynb",
+    "/work/shop/n.ipynb",
   );
   assert.equal(
     subjectOf({ toolName: "WebFetch", input: { url: "https://x.dev" } }, PROJECT),
@@ -214,12 +213,8 @@ const DENY_ROWS: Array<[blocked: string, allowed: string, reason: RegExp]> = [
   ["cd repo && git push -f origin x", "git push origin feature-x", /no force/],
   ["git push origin main", "git push origin maintenance-fix", /never push to main/],
   ["git reset --hard HEAD~1", "git reset --soft HEAD~1", /history-rewriting/],
-  [
-    'bash -c "kubectl delete ns x"',
-    "kubectl create job --from=cronjob/backup backup-now",
-    /helm is the only/,
-  ],
-  ["helm uninstall onion", "helm upgrade --install onion ./chart", /destructive helm/],
+  ['bash -c "docker rm web"', "docker compose down --dry-run", /containers are the owner's/],
+  ["npm unpublish shop-ui", "npm pack", /publishing is the owner's/],
   ["sops -d secrets.enc.yaml", "sops -e -i secrets.enc.yaml", /never decrypted/],
 ];
 
@@ -235,12 +230,12 @@ for (const [blocked, allowed, reason] of DENY_ROWS) {
 test('decideToolUse: a "*" rule matches any tool, here Read', () => {
   const read = (file_path: string) =>
     decideToolUse(policy, { toolName: "Read", input: { file_path } }, ENV);
-  assert.deepEqual(read("/etc/kube/mgmt-01.yaml"), {
+  assert.deepEqual(read("/etc/secrets/prod-db.yaml"), {
     kind: "deny",
     rule: "deny",
-    reason: "the management cluster is off limits",
+    reason: "the production systems are off limits",
   });
-  assert.deepEqual(read("/etc/kube/onion-demo-01.yaml"), { kind: "none" });
+  assert.deepEqual(read("/etc/secrets/staging-db.yaml"), { kind: "none" });
 });
 
 test("decideToolUse: an ask rule asks, after the deny rules had their turn", () => {
@@ -261,13 +256,13 @@ test("decideToolUse: write roots — inside, outside, the temp folder, a ../ esc
 });
 
 test("decideToolUse: a frozen file is denied when tracked, allowed when not", () => {
-  const frozen = write("workload/report/thresholds.md");
+  const frozen = write("docs/legal/terms.md");
   assert.ok(
-    frozen.kind === "deny" && frozen.rule === "frozen" && /thresholds\.md/.test(frozen.reason),
+    frozen.kind === "deny" && frozen.rule === "frozen" && /terms\.md/.test(frozen.reason),
   );
-  assert.equal(write("workload/report/claim-a.md").kind, "deny");
-  assert.deepEqual(write("workload/report/claim-new.md"), { kind: "none" });
-  assert.deepEqual(write("workload/report/sub/claim-a.md"), { kind: "none" });
+  assert.equal(write("docs/legal/policy-a.md").kind, "deny");
+  assert.deepEqual(write("docs/legal/policy-new.md"), { kind: "none" });
+  assert.deepEqual(write("docs/legal/sub/policy-a.md"), { kind: "none" });
 });
 
 test("decideToolUse: no rule has an opinion", () => {

@@ -15,14 +15,16 @@ looks like this: [`../research.md`](../research.md) R6.
     { "tool": "Bash", "pattern": "\\bgit\\s+push\\b[^\\n]*(\\s--force\\b|\\s-f\\b|--force-with-lease|--delete\\b|--mirror\\b|--tags\\b)", "reason": "no force, delete, mirror or tag-all pushes" },
     { "tool": "Bash", "pattern": "\\bgit\\s+push\\b[^\\n]*\\s(origin\\s+)?(main|master)\\b", "reason": "never push to main/master" },
     { "tool": "Bash", "pattern": "\\bgit\\s+(reset\\s+--hard|clean\\s+-[a-z]*f|merge|rebase|worktree)\\b", "reason": "history-rewriting git commands are the owner's" },
-    { "tool": "Bash", "pattern": "\\bnpm\\s+publish\\b", "reason": "publishing is the owner's" },
-    { "tool": "Bash", "pattern": "\\bsops\\s+(-d|--decrypt|decrypt|edit|exec-env)\\b", "reason": "secrets are never decrypted by an agent" }
+    { "tool": "Bash", "pattern": "\\bdocker\\s+(rm|rmi|push|system\\s+prune|compose\\s+down(?!\\s+--dry-run))\\b", "reason": "containers are the owner's" },
+    { "tool": "Bash", "pattern": "\\bnpm\\s+(publish|unpublish|deprecate)\\b", "reason": "publishing is the owner's" },
+    { "tool": "Bash", "pattern": "\\bsops\\s+(-d|--decrypt|decrypt|edit|exec-env)\\b", "reason": "secrets are never decrypted by an agent" },
+    { "tool": "*", "pattern": "prod-db|payments\\.shop\\.example", "reason": "the production systems are off limits" }
   ],
   "ask": [
-    { "tool": "Bash", "pattern": "\\bgit\\s+push\\b", "reason": "every push needs a human" }
+    { "tool": "Bash", "pattern": "\\bgit\\s+push\\b", "reason": "pushes need a human" }
   ],
   "writeRoots": ["."],
-  "frozen": ["docs/my-specs/*/README.md"],
+  "frozen": ["docs/legal/terms.md", "docs/legal/policy*.md"],
   "preflight": ["timeout 60 npm run --silent typecheck"],
   "repos": [],
   "systemPromptAppend": ".dex/loop-rules.md",

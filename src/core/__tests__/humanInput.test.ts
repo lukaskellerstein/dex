@@ -67,11 +67,8 @@ function question(text: string, labels: string[]): UserInputQuestion {
   };
 }
 
-const NAMESPACE = question("Which namespace hosts the agent?", [
-  "listovna (Recommended)",
-  "postara",
-]);
-const CHART = question("Which chart tool?", ["Use helm (recommended) ", "kustomize"]);
+const PROVIDER = question("Which payment provider?", ["Stripe (Recommended)", "Adyen"]);
+const RUNNER = question("Which test runner?", ["Use vitest (recommended) ", "jest"]);
 const OPEN = question("What is the SLA?", ["99.9%", "99.99%"]);
 
 /** Lets a held promise show whether it has settled. */
@@ -85,20 +82,20 @@ async function settled<T>(p: Promise<T>): Promise<boolean> {
 }
 
 test("isRecommended: the label ends in (Recommended), any case, trailing space allowed", () => {
-  assert.equal(isRecommended("Use helm (Recommended)"), true);
-  assert.equal(isRecommended("Use helm (recommended)  "), true);
-  assert.equal(isRecommended("Use helm"), false);
-  assert.equal(isRecommended("(Recommended) Use helm"), false);
+  assert.equal(isRecommended("Use vitest (Recommended)"), true);
+  assert.equal(isRecommended("Use vitest (recommended)  "), true);
+  assert.equal(isRecommended("Use vitest"), false);
+  assert.equal(isRecommended("(Recommended) Use vitest"), false);
 });
 
 test("recommended-then-review: every sub-question has a recommended option → answered now, listed for review", async () => {
-  const answers = await askQuestions(io(), "021-agent-entry", [NAMESPACE, CHART], {
+  const answers = await askQuestions(io(), "004-product-recommendations", [PROVIDER, RUNNER], {
     mode: "recommended-then-review",
     step: "clarify",
   });
   assert.deepEqual(answers, {
-    "Which namespace hosts the agent?": "listovna (Recommended)",
-    "Which chart tool?": "Use helm (recommended) ",
+    "Which payment provider?": "Stripe (Recommended)",
+    "Which test runner?": "Use vitest (recommended) ",
   });
   assert.deepEqual(
     events.map((e) => e.type),
@@ -117,15 +114,15 @@ test("recommended-then-review: every sub-question has a recommended option → a
     })),
     [
       {
-        q: "Which namespace hosts the agent?",
-        answer: "listovna (Recommended)",
-        entryId: "021-agent-entry",
+        q: "Which payment provider?",
+        answer: "Stripe (Recommended)",
+        entryId: "004-product-recommendations",
         stage: "clarify",
       },
       {
-        q: "Which chart tool?",
-        answer: "Use helm (recommended) ",
-        entryId: "021-agent-entry",
+        q: "Which test runner?",
+        answer: "Use vitest (recommended) ",
+        entryId: "004-product-recommendations",
         stage: "clarify",
       },
     ],
@@ -134,12 +131,12 @@ test("recommended-then-review: every sub-question has a recommended option → a
   assert.match(md, /## Answered by default — review \(recommended-then-review\)/);
   assert.match(
     md,
-    /- \(021-agent-entry · clarify\) "Which namespace hosts the agent\?" → \*\*listovna\*\* \(recommended\)/,
+    /- \(004-product-recommendations · clarify\) "Which payment provider\?" → \*\*Stripe\*\* \(recommended\)/,
   );
 });
 
 test("recommended-then-review: one sub-question without a marker → the whole question waits", async () => {
-  const held = askQuestions(io(), null, [NAMESPACE, OPEN], {
+  const held = askQuestions(io(), null, [PROVIDER, OPEN], {
     mode: "recommended-then-review",
     step: "plan",
   });
@@ -154,13 +151,13 @@ test("recommended-then-review: one sub-question without a marker → the whole q
 });
 
 test("wait mode: even an all-recommended question waits", async () => {
-  const held = askQuestions(io(), null, [NAMESPACE], { mode: "wait", step: "clarify" });
+  const held = askQuestions(io(), null, [PROVIDER], { mode: "wait", step: "clarify" });
   assert.equal(await settled(held), false);
   assert.equal(readState(dir)?.pendingRequests.length, 1);
 });
 
 test("a waiting question is in state.json and .dex/questions.md, and reads back after a restart", async () => {
-  void askQuestions(io(), "021-agent-entry", [OPEN], { mode: "wait", step: "clarify" });
+  void askQuestions(io(), "004-product-recommendations", [OPEN], { mode: "wait", step: "clarify" });
   const fromDisk = await loadState(dir);
   assert.equal(fromDisk?.pendingRequests[0]?.kind, "question");
   assert.equal(

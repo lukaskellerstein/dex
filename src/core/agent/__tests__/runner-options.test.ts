@@ -107,7 +107,7 @@ test("buildQueryOptions: the policy's sources, mode and stage budget; never skip
 
 const RULES = {
   deny: [{ tool: "Bash", pattern: "\\bgit\\s+push\\s+--force\\b", reason: "no force pushes" }],
-  ask: [{ tool: "Bash", pattern: "\\bkubectl\\s+apply\\b", reason: "deploys need a human" }],
+  ask: [{ tool: "Bash", pattern: "\\bnpm\\s+run\\s+deploy\\b", reason: "deploys need a human" }],
 };
 
 function deps(projectDir: string, events: OrchestratorEvent[], aborted = false): PermissionDeps {
@@ -116,7 +116,7 @@ function deps(projectDir: string, events: OrchestratorEvent[], aborted = false):
     policyEnv: { projectDir, tmpDir: os.tmpdir(), isTrackedAtHead: () => false },
     io: { projectDir, runId: "run-1", emit: (e) => events.push(e) },
     agentRunId: "agent-1",
-    entryId: "021-agent-entry",
+    entryId: "004-product-recommendations",
     questions: { mode: "wait", step: "implement" },
     isAborted: () => aborted,
     settingsAsk: [{ source: "projectSettings", content: "git push:*" }],
@@ -143,12 +143,12 @@ test("preToolUseDecision: deny (+ policy_denied), ask, or no opinion — never a
       rule: "deny",
     },
   ]);
-  assert.equal(decide("kubectl apply -f x.yaml").hookSpecificOutput?.permissionDecision, "ask");
+  assert.equal(decide("npm run deploy -- --prod").hookSpecificOutput?.permissionDecision, "ask");
   const compound = decide("git add -A && git push origin HEAD").hookSpecificOutput;
   assert.equal(compound?.permissionDecision, "ask");
   assert.equal(compound?.permissionDecisionReason, "projectSettings ask rule Bash(git push:*)");
   assert.deepEqual(decide("npm test"), {});
-  for (const command of ["git push --force x", "kubectl apply -f y", "ls", "rm -rf build"]) {
+  for (const command of ["git push --force x", "npm run deploy", "ls", "rm -rf build"]) {
     assert.notEqual(decide(command).hookSpecificOutput?.permissionDecision, "allow");
   }
   const stopped = preToolUseDecision(deps("/tmp/project", [], true), "Bash", { command: "ls" }) as {
@@ -256,7 +256,7 @@ test(
     const events: OrchestratorEvent[] = [];
     const asked = makeCanUseTool(deps(dir, events))(
       "Bash",
-      { command: "kubectl apply -f x.yaml" },
+      { command: "npm run deploy -- --prod" },
       SDK_OPTIONS as CanUseToolOptions,
     );
     const request = events.find((e) => e.type === "tool_approval_request");
@@ -266,7 +266,7 @@ test(
     resolveRequest(request.requestId, { kind: "tool_approval", decision: "approve" });
     assert.deepEqual(await asked, {
       behavior: "allow",
-      updatedInput: { command: "kubectl apply -f x.yaml" },
+      updatedInput: { command: "npm run deploy -- --prod" },
     });
   }),
 );

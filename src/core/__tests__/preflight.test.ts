@@ -45,10 +45,10 @@ test("runPreflight: the first failing command is named with its exit code; later
 test("checkRepos: clean checkouts pass; files and an empty glob are ignored", () => {
   const repo = mkTmpRepo("dex-pf-repo-");
   try {
-    fs.mkdirSync(path.join(dir, "workload"));
-    fs.renameSync(repo, path.join(dir, "workload", "svc"));
-    fs.writeFileSync(path.join(dir, "workload", "README.md"), "# not a checkout, a file\n");
-    assert.equal(checkRepos(policy({ repos: ["workload/*", "tenants/*"] }), dir), null);
+    fs.mkdirSync(path.join(dir, "services"));
+    fs.renameSync(repo, path.join(dir, "services", "svc"));
+    fs.writeFileSync(path.join(dir, "services", "README.md"), "# not a checkout, a file\n");
+    assert.equal(checkRepos(policy({ repos: ["services/*", "packages/*"] }), dir), null);
   } finally {
     rmTmp(repo);
   }
@@ -56,17 +56,17 @@ test("checkRepos: clean checkouts pass; files and an empty glob are ignored", ()
 
 test("checkRepos: a dirty checkout and a plain folder are named", () => {
   const repo = mkTmpRepo("dex-pf-repo-");
-  fs.mkdirSync(path.join(dir, "workload"));
-  fs.renameSync(repo, path.join(dir, "workload", "svc"));
-  fs.writeFileSync(path.join(dir, "workload", "svc", "wip.txt"), "x");
+  fs.mkdirSync(path.join(dir, "services"));
+  fs.renameSync(repo, path.join(dir, "services", "svc"));
+  fs.writeFileSync(path.join(dir, "services", "svc", "wip.txt"), "x");
   assert.equal(
-    checkRepos(policy({ repos: ["workload/*"] }), dir),
-    'workload/svc (repos: "workload/*") has uncommitted changes: wip.txt',
+    checkRepos(policy({ repos: ["services/*"] }), dir),
+    'services/svc (repos: "services/*") has uncommitted changes: wip.txt',
   );
-  fs.rmSync(path.join(dir, "workload", "svc", "wip.txt"));
-  fs.mkdirSync(path.join(dir, "workload", "plain"));
+  fs.rmSync(path.join(dir, "services", "svc", "wip.txt"));
+  fs.mkdirSync(path.join(dir, "services", "plain"));
   assert.equal(
-    checkRepos(policy({ repos: ["workload/*"] }), dir),
-    'workload/plain (repos: "workload/*") is not a git checkout',
+    checkRepos(policy({ repos: ["services/*"] }), dir),
+    'services/plain (repos: "services/*") is not a git checkout',
   );
 });

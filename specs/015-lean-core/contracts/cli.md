@@ -26,7 +26,7 @@ dex queue init <projectDir>
 
 ```text
 queue    : .dex/queue.json · existing project
-policy   : .dex/policy.json · deny 5 · ask 1 · frozen 1 · preflight 1 · questions recommended-then-review · pull request off
+policy   : .dex/policy.json · deny 7 · ask 1 · frozen 2 · preflight 1 · questions recommended-then-review · pull request off
 limits   : maxBudgetUsdPerStage=2 maxBudgetUsdPerRun=20 maxImplementRunsWithoutProgress=2 maxVerifyRounds=3
 
 ━━ 004-product-recommendations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

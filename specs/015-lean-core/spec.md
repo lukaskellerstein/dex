@@ -13,7 +13,7 @@ Three problems follow:
 
 1. **Every feature pays for time travel.** Dex's state rides git checkouts, so every stage commits, every jump re-syncs, and three views of the run (the state file, git, and the UI's own event log) must agree. A single Stop has been seen to leave all three disagreeing.
 2. **Dex can only start new projects.** The only way in is goal file → clarification → constitution → manifest. A project that already has specs, briefs, branch conventions and its own Claude Code setup cannot use Dex.
-3. **It runs with no brakes.** Agents run with permission checks bypassed and with the user's own settings, hooks and `ask`/`deny` rules skipped. That is acceptable on the throwaway example project. It is not acceptable on a project where an agent can deploy to a shared cluster.
+3. **It runs with no brakes.** Agents run with permission checks bypassed and with the user's own settings, hooks and `ask`/`deny` rules skipped. That is acceptable on the throwaway example project. It is not acceptable on a project where an agent can push, publish or reach production.
 
 After this feature, Dex is: a **queue** of features, a **picker** that reads the project's files to choose the next stage, one fresh agent per stage, a **policy** the project owns and Dex enforces, and a human who is asked only when it matters. The real-project check runs on a scratch clone of the dex-ecommerce example project; this feature is done when Dex runs that queue.
 
@@ -43,7 +43,7 @@ An operator stops a run, or resets the project to an earlier commit, and then re
 
 A project owner writes a policy file for the project and commits it. Dex loads the project's own Claude Code settings and rules, never bypasses them, and adds the policy's own `deny`, `ask`, write-root and frozen-file checks on top. When a tool call needs approval, the agent waits and the human approves or denies it.
 
-**Why this priority**: Without this, Dex must not run on any project where an agent can do real damage. It is the precondition for the first real user, whose own settings already mark `kubectl delete`, `helm uninstall`, `terraform apply` and `git push --force` as `ask`.
+**Why this priority**: Without this, Dex must not run on any project where an agent can do real damage. It is the precondition for any existing project, whose own settings can already mark commands such as `npm publish`, `docker push` and `git push --force` as `ask`.
 
 **Independent Test**: Run the policy rules as a table of cases (tool, input, policy → expected decision) without starting any agent. Then make one live check: a project whose own settings mark a command as `ask` shows that tool call in the approval panel instead of running it.
 
@@ -64,7 +64,7 @@ A project owner writes a policy file for the project and commits it. Dex loads t
 
 An operator has a project that already has specs, briefs, branch conventions and its own rules. They write a queue file by hand (or have Dex propose one), and Dex works through it entry by entry. Agents commit as the project's rules say. Dex itself never commits, never creates a run branch and never pushes in that project; it only switches to the branch an entry needs, and only when the tree is clean.
 
-**Why this priority**: This is the reason for the feature — Dex can only start new projects today. It is the first real user's whole need.
+**Why this priority**: This is the reason for the feature — Dex can only start new projects today. It is what an existing project needs.
 
 **Independent Test**: Copy the example project, write a queue by hand with one entry that starts at `implement` with a task filter and one entry that starts at `specify` with a base branch, and run it under the mock agent. Check that both entries reach `done`, and that the run created no Dex branch, no Dex commit and no push.
 
@@ -106,7 +106,7 @@ When an entry's in-scope tasks are all checked, a fresh agent that did not do th
 
 Agents ask questions. In the default mode, a question that comes with a recommended option is answered with it, the run goes on, and the question is kept in a list for the human to review later. A question with no recommended option waits for the human. A project can choose to wait on every question instead.
 
-**Why this priority**: The first real user's owner is not watching the run. Stopping on every question would make an unattended run impossible; answering every question blindly would hide decisions from the owner.
+**Why this priority**: An existing project's owner is often not watching the run. Stopping on every question would make an unattended run impossible; answering every question blindly would hide decisions from the owner.
 
 **Independent Test**: Under the mock agent, raise one question with a recommended option and one without. In the default mode, check that the first is answered and listed for review and the second waits. In `wait` mode, check that both wait.
 
@@ -144,7 +144,7 @@ An operator runs Dex from a terminal without the desktop app. Before the first r
 
 Some queue entries have no brief yet, only a list of source documents. Dex writes the brief first, using the previous entry's brief as the format example. Because a brief is the source of truth for every later stage, the run pauses after it by default so the owner can review it. Any stage can be marked as such a gate.
 
-**Why this priority**: The first real user's later entries (Months 2–4) need this, but the first two entries do not. It can ship after the core loop works.
+**Why this priority**: A long queue needs this for its later entries, but the first entries do not. It can ship after the core loop works.
 
 **Independent Test**: Under the mock agent, run an entry that has `generate` sources and no brief. Check that the brief is written, that the run pauses after it, and that after the owner approves, the next stage is `specify`.
 
@@ -382,11 +382,11 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
   8. Decide after the real-project check (T112, T113) whether to cut further (the next cut would be the loop UI, about 3.4k lines).
 - **Entry status is derived, not written** (plan research R2, amending the brief). The brief has Dex write each entry's `status` into the tracked queue file. Because Dex never commits, that edit would make the tree dirty, block the next branch switch, and go stale after a reset. So `done` is derived from `verify.md`, and the queue's `status` field is a human-owned override (`done` / `skipped`). Dex writes no tracked file during a run. For the same reason, spec-kit is pointed at the entry's spec folder through the agent's environment, not by writing `.specify/feature.json` (research R5).
 - **Ignore rules for Dex's runtime files are part of setup.** In a new project Dex writes them as today. In an existing project they come with the queue and policy files that the human reviews and commits; Dex does not silently edit the project's ignore file.
-- **The checkout is single-writer.** Dex runs in the project's main checkout (the first real user's sibling clones do not exist in a worktree), and nobody else edits that checkout while Dex runs.
+- **The checkout is single-writer.** Dex runs in the project's own checkout, and nobody else edits that checkout while Dex runs.
 - **Owner authorization is the project's business.** What agents may commit, push or deploy in an existing project comes from that project's own rules plus its policy file and prompt additions — not from Dex.
 - **A tool approval waits with no timeout.** Stop is the way out.
 - **The example project `dex-ecommerce` stays the end-to-end test bed**, reset through the existing fixture scripts, and a copy of it with a hand-written queue is the existing-project fixture.
-- **The first real user's queue and policy are written in that project**, not in this repo. Appendix A of the brief records their content; this feature only has to support it.
+- **A project's queue and policy are written in that project**, not in this repo; this feature only has to support them.
 
 ## Out of Scope
 

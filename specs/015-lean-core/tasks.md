@@ -9,7 +9,7 @@ description: "Task list for 015 Lean Core"
 
 **Tests**: requested. The spec's success criteria require picker tests per D-015-1 row (SC-001), policy table tests (SC-005), and mock end-to-end runs (SC-002 to SC-004). Inside each story, the test tasks come first and must fail before the implementation lands.
 
-**Organization**: Setup is the brief's Phase 0 (baseline + SDK). Foundational is the brief's Phase 1 (delete the time machine), plus the two pure modules every story reads. Then one phase per user story in priority order, and a final Polish & Dogfood phase.
+**Organization**: Setup is the brief's Phase 0 (baseline + SDK). Foundational is the brief's Phase 1 (delete the time machine), plus the two pure modules every story reads. Then one phase per user story in priority order, and a final Polish & Real-Project Check phase.
 
 **Gate after every phase**: `npm test` and `npm run typecheck` pass (never a bare `npx tsc --noEmit`), `check:size` passes, and a mock loop on a `dex-ecommerce` scratch clone finishes (quickstart § 1–2).
 
@@ -138,7 +138,7 @@ description: "Task list for 015 Lean Core"
 
 ### Tests for User Story 2
 
-- [X] T057 [P] [US2] Write src/core/__tests__/policy.test.ts first: `parsePolicy` defaults, each validation error (bad type, bad regex, missing `systemPromptAppend` file, unknown field), bypass refused for `existing` and accepted for `new`; `decideToolUse` rows — for every rule in contracts/policy-json.md one blocked and one allowed command, including `cd repo && git push -f origin x` and `bash -c "kubectl delete ns x"`; write roots (inside, outside, `os.tmpdir()`, a `../` escape); frozen (tracked → deny, untracked → allow); an `ask` rule; a `"*"` rule on `Read`; the no-opinion case
+- [X] T057 [P] [US2] Write src/core/__tests__/policy.test.ts first: `parsePolicy` defaults, each validation error (bad type, bad regex, missing `systemPromptAppend` file, unknown field), bypass refused for `existing` and accepted for `new`; `decideToolUse` rows — for every rule in contracts/policy-json.md one blocked and one allowed command, including `cd repo && git push -f origin x` and `bash -c "docker rm web"`; write roots (inside, outside, `os.tmpdir()`, a `../` escape); frozen (tracked → deny, untracked → allow); an `ask` rule; a `"*"` rule on `Read`; the no-opinion case
 - [X] T058 [P] [US2] Write src/core/__tests__/runner-options.test.ts first: `buildQueryOptions(policy, …)` gives the preset system prompt with the append file's text, keeps `PATH` while merging `policy.env` and the stage env, uses `min(config.maxTurns, maxTurnsPerStage)`, never sets `bypassPermissions`; the PreToolUse callback returns `deny` (+ `policy_denied`), `ask`, or `{}` and never `allow`; `canUseTool` with `matchedAskRule` raises a `tool_approval` request, and with nothing matched returns allow
 
 ### Implementation for User Story 2
@@ -216,7 +216,7 @@ description: "Task list for 015 Lean Core"
 
 ### Tests for User Story 5
 
-- [X] T087 [P] [US5] Write src/core/__tests__/humanInput.test.ts first: `isRecommended` on labels (`"Use helm (Recommended)"`, `"(recommended)"` with trailing space, no marker); `recommended-then-review` answers an all-recommended question, appends to `reviewList`, emits `user_input_request`, `user_input_response` and `request_resolved { by: "default" }`; a question with one sub-question lacking a marker waits; `wait` mode waits; `pendingRequests` persist to state.json and `.dex/questions.md` and load back after a simulated restart; an answer-book key match answers and consumes the item
+- [X] T087 [P] [US5] Write src/core/__tests__/humanInput.test.ts first: `isRecommended` on labels (`"Use vitest (Recommended)"`, `"(recommended)"` with trailing space, no marker); `recommended-then-review` answers an all-recommended question, appends to `reviewList`, emits `user_input_request`, `user_input_response` and `request_resolved { by: "default" }`; a question with one sub-question lacking a marker waits; `wait` mode waits; `pendingRequests` persist to state.json and `.dex/questions.md` and load back after a simulated restart; an answer-book key match answers and consumes the item
 
 ### Implementation for User Story 5
 
@@ -264,7 +264,7 @@ description: "Task list for 015 Lean Core"
 - [X] T097 [US7] Create src/core/stages/brief.ts and `buildBriefPrompt` in src/core/prompts.ts (sources, instructions, the previous entry's brief as the format example, write to `entry.brief`, commit as the project's rules say); add `brief` to the dispatch in src/core/stages/loop.ts and a `brief` writer to the mock in src/core/agent/MockAgentRunner.ts
 - [X] T098 [US7] Gates in src/core/stages/post-stage.ts: when the finished stage is in `entry.gates`, pause `gate` with a `pause` request (options Continue / Stop); nothing about the approval is stored (research R10)
 
-**Checkpoint**: Months 2–4 of the first real user's queue can start from source documents.
+**Checkpoint**: Later queue entries can start from source documents.
 
 ---
 
@@ -294,14 +294,14 @@ description: "Task list for 015 Lean Core"
 
 ## Phase 11: Polish & Real-Project Check (brief Phase 7)
 
-**Purpose**: Docs, final measurements, and the first real user.
+**Purpose**: Docs, final measurements, and the real-project check.
 
 - [X] T107 [P] Delete docs for removed features: docs/tests/branch-management/ (7 files), docs/tests/dex-ecommerce/002-delete-branch.md, docs/tests/dex-ecommerce/003-fork-branch-and-continue.md; update docs/tests/dex-ecommerce/004-pause-resume-each-step.md, the Timeline sections of README.md (lines 48, 79), docs/SOLUTION.md and docs/FINAL_PLAN.md
 - [X] T108 [P] Update .claude/rules/06-testing.md (the checkpoint tree and `attempt-*`/`selected-*` text at lines 96–145 and 373–374; the DEBUG badge fields `CurrentAttemptBranch`, `LastCheckpointTag`, `CandidateSha`; `run-mock-headless.mjs` → `dex run`) and .claude/CLAUDE.md (lines 53–54)
 - [X] T109 [P] Delete docs/my-specs/01X-state-reconciliation/ (brief open decision 7: superseded by this feature)
 - [X] T110 Final size: run scripts/loc-by-area.sh, compare with the T003 baseline per area, write the table into specs/015-lean-core/research.md § R14 for the PR description; if the total is above 21k, record it for open decision 8 (SC-007)
 - [X] T111 Final checks: `nvim-tools --json --all` adds no findings against the T003 baseline; `npm test`; `npm run typecheck`; quickstart § 1–8 end to end
-- [X] T112 Real-project dry run (SC-009) on a scratch clone of dex-ecommerce `main`, never on `onion-demo-01` (owner's decision) and never on the original: `dex queue init`, review the draft, then `dex run <clone> --dry-run`; confirm one block per open entry, 0 validation errors, exit 0 and an unchanged tree
+- [X] T112 Real-project dry run (SC-009) on a scratch clone of dex-ecommerce `main`, never on the original and never on any other project (owner's decision): `dex queue init`, review the draft, then `dex run <clone> --dry-run`; confirm one block per open entry, 0 validation errors, exit 0 and an unchanged tree
 - [X] T113 **Small real spend.** One real stage on the same clone (SC-010): `specify` for the first open entry on a cheap model with a stage budget cap; confirm no policy breach and no Dex-made commit, branch or push
 - [X] T114 Run `/sync-spec-kit` and `/update-feature-docs` for the branch
 
@@ -405,7 +405,7 @@ Task: "T034 src/core/queue.ts"  +  "T035 src/core/tree-reader.ts"
 
 - Never commit unless the owner asks (repo rule). The mock agent's `mock(<stage>)` commits happen only inside scratch clones and temp repos.
 - T012, T067 and T113 spend real money. Each one needs the owner's go-ahead first.
-- **Status (2026-11-05):** 114 of 114 done. T112 and T113 ran on a scratch clone of dex-ecommerce, not on `onion-demo-01` (owner's decision): the dry run gave 2 blocks with the tree unchanged after `dex queue init` learned to set `baseBranch` after a done entry, and one real `specify` cost $0.028. T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule on one part of a compound command is matched by Dex itself (`agent/settingsRules.ts`, research.md § R6), checked live for $0.011.
+- **Status (2026-11-05):** 114 of 114 done. T112 and T113 ran on a scratch clone of dex-ecommerce and on no other project (owner's decision): the dry run gave 2 blocks with the tree unchanged after `dex queue init` learned to set `baseBranch` after a done entry, and one real `specify` cost $0.028. T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule on one part of a compound command is matched by Dex itself (`agent/settingsRules.ts`, research.md § R6), checked live for $0.011.
 - **Where the build differs from a task's wording** (the task lines stay as written; research.md has the reasons):
   - T035: the tree reader uses `git cat-file -t` / `cat-file blob` on `<ref>:./<rel>`, not `cat-file -e` / `git show`; `headSha` was not added (`getHeadSha` exists); a test-only `statusPorcelain` helper was removed.
   - T042: `humanInput.ts` is a new file (`userInput.ts` is deleted) and exports `askQuestions` and `recordPause`, not `requestHuman()`; T048's loop entry is `runQueueLoop`.

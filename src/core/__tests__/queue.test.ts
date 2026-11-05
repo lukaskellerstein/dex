@@ -108,9 +108,9 @@ test("queue: string fields must be strings", () => {
 test("resolve: existing entries default specDir, branch and the baseBranch chain", () => {
   const queue = validateQueue(
     q([
-      { id: "020-onion", title: "Onion" },
-      { id: "021-agent", title: "Agent", branch: "feat/agent" },
-      { id: "022-pilot", title: "Pilot" },
+      { id: "020-catalog", title: "Catalog" },
+      { id: "021-cart", title: "Cart", branch: "feat/cart" },
+      { id: "022-checkout", title: "Checkout" },
       { id: "023-docs", title: "Docs", baseBranch: "main", specDir: "docs/specs/023" },
     ]),
     "q",
@@ -119,9 +119,9 @@ test("resolve: existing entries default specDir, branch and the baseBranch chain
   assert.deepEqual(
     r.map((e) => [e.id, e.specDir, e.branch, e.baseBranch]),
     [
-      ["020-onion", "specs/020-onion", "020-onion", "main"],
-      ["021-agent", "specs/021-agent", "feat/agent", "020-onion"],
-      ["022-pilot", "specs/022-pilot", "022-pilot", "feat/agent"],
+      ["020-catalog", "specs/020-catalog", "020-catalog", "main"],
+      ["021-cart", "specs/021-cart", "feat/cart", "020-catalog"],
+      ["022-checkout", "specs/022-checkout", "022-checkout", "feat/cart"],
       ["023-docs", "docs/specs/023", "023-docs", "main"],
     ],
   );

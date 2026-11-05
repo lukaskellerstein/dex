@@ -41,7 +41,7 @@ together:
 - Dex makes no commit, branch or push in an existing project;
 - no `bypassPermissions` outside the refusal check;
 - every phase ends with the tests, the typecheck and a green mock loop
-**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (22,009 at the end of the branch, after a dead-code cut and the compound-command check)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; 1 real user (`onion-demo-01`, 5 queue entries, 7 sibling repos)
+**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (22,009 at the end of the branch, after a dead-code cut and the compound-command check)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; real-project check on a scratch clone of dex-ecommerce
 
 ## Constitution Check
 
@@ -183,11 +183,11 @@ mock loop on a `dex-ecommerce` scratch clone finishes (quickstart § 1–2).
 | 4 | **Existing-project entry** | `dex queue init`; `branching.ts`; gates; `brief` stage; autonomous `clarify`; `verify.md` + fix phase; failure policy; check-only prerequisites; preflight | dirty-tree pauses in the mock fixture: the mock commits, so the tree stays clean |
 | 5 | **Headless CLI** | `cli.ts`, `bin`, TTY and no-TTY input, answer book, `--once` / `--dry-run` / `--status` | stdin handling under `node --test` |
 | 6 | **UI** | `useRunSnapshot`, `QueuePanel`, approval and pause cards, timeline and profile UI removed, `d3-*` removed | runs in parallel with Phase 7 |
-| 7 | **Real-project check** | `dex queue init` and `dex run --dry-run` on a scratch clone of dex-ecommerce, then one real `specify` | never on `onion-demo-01` or the original repo (owner's decision) |
+| 7 | **Real-project check** | `dex queue init` and `dex run --dry-run` on a scratch clone of dex-ecommerce, then one real `specify` | never on the original repo or any other project (owner's decision) |
 
 ### How the phases ran
 
-The brief's Phases 0–7 above were carried out as tasks.md Phases 1–11 (the user stories were split out), and research.md's "Phase N gate" notes use the tasks.md numbers: Phase 2 deletes, 3 is the picker loop (US1), 4 the policy (US2), 5 the existing project (US3), 6 the failure policy (US4), 7 questions (US5), 8 the CLI (US6), 9 brief and gates (US7), 10 the app (US8), 11 polish. Each phase ended with the tests, the typecheck, `check:size` and a mock loop. Open at the end: T012 and T067 (real agent runs, waiting for the owner's approval), T112 and T113 (the owner's steps on `onion-demo-01`) and T114 (this sync and the feature docs).
+The brief's Phases 0–7 above were carried out as tasks.md Phases 1–11 (the user stories were split out), and research.md's "Phase N gate" notes use the tasks.md numbers: Phase 2 deletes, 3 is the picker loop (US1), 4 the policy (US2), 5 the existing project (US3), 6 the failure policy (US4), 7 questions (US5), 8 the CLI (US6), 9 brief and gates (US7), 10 the app (US8), 11 polish. Each phase ended with the tests, the typecheck, `check:size` and a mock loop. All 114 tasks are done. T012, T067 and T113 are real agent runs on dex-ecommerce scratch clones, about $0.12 in all.
 
 ## Where the build differs from the approved plan
 

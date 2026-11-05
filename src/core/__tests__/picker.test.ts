@@ -259,8 +259,8 @@ test("picker: existing project reads an entry's own branch while another is chec
   const dir = mkTmpRepo();
   try {
     // 020 is finished on its own branch; 021 has a brief on main and no branch yet.
-    execSync("git switch -q -c 020-onion", { cwd: dir });
-    for (const [rel, content] of Object.entries(doneEntryFiles("020-onion"))) {
+    execSync("git switch -q -c 020-catalog", { cwd: dir });
+    for (const [rel, content] of Object.entries(doneEntryFiles("020-catalog"))) {
       commitFile(dir, rel, content, `add ${rel}`);
     }
     execSync("git switch -q main", { cwd: dir });
@@ -270,19 +270,19 @@ test("picker: existing project reads an entry's own branch while another is chec
       version: 3,
       kind: "existing",
       entries: [
-        { id: "020-onion", title: "Onion" },
-        { id: "021-agent", title: "Agent", brief: "docs/021.md", baseBranch: "main" },
+        { id: "020-catalog", title: "Catalog" },
+        { id: "021-cart", title: "Cart", brief: "docs/021.md", baseBranch: "main" },
       ],
     };
     const d = pickNext({ projectDir: dir, queue, runBranch: null });
-    assertStage(d, "021-agent", "specify");
+    assertStage(d, "021-cart", "specify");
 
     const view = describeQueue({ projectDir: dir, queue, runBranch: null });
     assert.deepEqual(
       view.entries.map((e) => [e.id, e.status, e.nextStage]),
       [
-        ["020-onion", "done", null],
-        ["021-agent", "active", "specify"],
+        ["020-catalog", "done", null],
+        ["021-cart", "active", "specify"],
       ],
     );
   } finally {
