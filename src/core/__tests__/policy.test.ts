@@ -257,9 +257,7 @@ test("decideToolUse: write roots — inside, outside, the temp folder, a ../ esc
 
 test("decideToolUse: a frozen file is denied when tracked, allowed when not", () => {
   const frozen = write("docs/legal/terms.md");
-  assert.ok(
-    frozen.kind === "deny" && frozen.rule === "frozen" && /terms\.md/.test(frozen.reason),
-  );
+  assert.ok(frozen.kind === "deny" && frozen.rule === "frozen" && /terms\.md/.test(frozen.reason));
   assert.equal(write("docs/legal/policy-a.md").kind, "deny");
   assert.deepEqual(write("docs/legal/policy-new.md"), { kind: "none" });
   assert.deepEqual(write("docs/legal/sub/policy-a.md"), { kind: "none" });
