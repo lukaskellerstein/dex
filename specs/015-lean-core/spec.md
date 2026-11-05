@@ -364,7 +364,7 @@ Recorded at the end of the implementation, from the evidence in [research.md](re
 | SC-004 | Met. The existing-project fixture ends `queue_complete`; the only new branch is the one the mock `specify` made; every new commit is `mock(...)`; exit 0 proves no push was tried. |
 | SC-005 | Policy table cases met. The live check (a project `ask` rule reaching the approval card) is **open** (T067, needs the owner's approval). The approval card has component tests, and the live UI check (T106) covered everything but that card, because the mock makes no tool calls. |
 | SC-006 | Met. `bypassPermissions` appears in `policy.ts` and its test only. |
-| SC-007 | **Not met.** 22,086 lines after the format pass (21,876, or 22.2% below, at the end of the branch, after a dead-code cut); 22,086 is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. |
+| SC-007 | **Not met.** 22,086 lines after the format pass (21,982, or 21.8% below, at the end of the branch, after a dead-code cut and the compound-command check); 22,086 is 21.4% below the 28,110 baseline, not 25%. The additions came out larger than estimated (the CLI, the snapshot path, the approval UI). The target is unchanged; research § R14 has the table and the candidate cut for the owner's open decision 8. |
 | SC-008 | Met by tests (`failure-policy`, `loop`): two implement runs with no new task, or three failed verify rounds, pause with no further agent run. |
 | SC-009 | **Open** (T112, owner step: the owner writes the onion-demo-01 queue and policy first). |
 | SC-010 | **Open** (T113, owner step, real spend). |

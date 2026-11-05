@@ -510,7 +510,9 @@ exports with no caller left the tree — `countCommitsBetween`,
 `discoverNewSpecDir` (parser.ts), `updateRunCyclesCompleted` and
 `upsertFailureCount` (runs.ts), `AgentRunnerFactory`, and six style
 fragments in `renderer/styles/tokens.ts`. Core 9,586, main 524, renderer
-11,766; **grand total 21,876** (−22.2%). SC-007 stays unmet by 876 lines.
+11,766; grand total 21,876 (−22.2%). The compound-command check
+(`agent/settingsRules.ts`, R6) then added 106 lines: core 9,692, **grand
+total 21,982** (−21.8%). SC-007 stays unmet by 982 lines.
 
 ### Phase 0 measurements (2026-11-05, tree at `7ec23aa`)
 

@@ -123,7 +123,7 @@ grep -rn bypassPermissions src   # only policy.ts (the refusal) and its test
 bash scripts/loc-by-area.sh      # prints lines per area; compare with research.md § R14 baseline
 ```
 
-Result: 22,086 lines after the format pass (21,876 at the end of the branch, after a dead-code cut)
+Result: 22,086 lines after the format pass (21,982 at the end of the branch, after a dead-code cut and the compound-command check)
 against the 21k target. **SC-007 is not met**; research.md § R14 has the table.
 
 ## 9. Live permission check (SC-005, real agent, small cost)

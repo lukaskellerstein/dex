@@ -85,7 +85,11 @@ export function preToolUseDecision(
   return {};
 }
 
-function describeRule(source: string, toolName: string, content: string | null | undefined): string {
+function describeRule(
+  source: string,
+  toolName: string,
+  content: string | null | undefined,
+): string {
   return `${source} ask rule ${toolName}${content ? `(${content})` : ""}`;
 }
 

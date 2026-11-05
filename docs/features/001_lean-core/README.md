@@ -364,14 +364,14 @@ Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clon
 
 ## Size and open items
 
-**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 21,876, which is 22.2% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
+**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 21,982, which is 21.8% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called, and the compound-command check added 106 lines). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
 
 | Area | Baseline (`7ec23aa`) | After | Change |
 |---|---:|---:|---:|
-| core | 11,740 | 9,586 | −2,154 (−18%) |
+| core | 11,740 | 9,692 | −2,048 (−17%) |
 | main | 1,104 | 524 | −580 (−53%) |
 | renderer | 15,266 | 11,766 | −3,500 (−23%) |
-| **total** | **28,110** | **21,876** | **−6,234 (−22.2%)** |
+| **total** | **28,110** | **21,982** | **−6,128 (−21.8%)** |
 
 The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the dogfood run whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
 

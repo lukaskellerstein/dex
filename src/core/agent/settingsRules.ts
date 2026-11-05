@@ -15,9 +15,18 @@ export interface SettingsAskRule {
 }
 
 const SOURCE_FILES = {
-  user: { source: "userSettings", file: (_dir: string, home: string) => path.join(home, ".claude", "settings.json") },
-  project: { source: "projectSettings", file: (dir: string) => path.join(dir, ".claude", "settings.json") },
-  local: { source: "localSettings", file: (dir: string) => path.join(dir, ".claude", "settings.local.json") },
+  user: {
+    source: "userSettings",
+    file: (_dir: string, home: string) => path.join(home, ".claude", "settings.json"),
+  },
+  project: {
+    source: "projectSettings",
+    file: (dir: string) => path.join(dir, ".claude", "settings.json"),
+  },
+  local: {
+    source: "localSettings",
+    file: (dir: string) => path.join(dir, ".claude", "settings.local.json"),
+  },
 } as const;
 
 function askList(file: string): string[] {
@@ -64,7 +73,10 @@ function commandParts(command: string): string[] {
 }
 
 /** The first rule that matches any part of the command, or null. */
-export function matchSettingsAsk(rules: SettingsAskRule[], command: string): SettingsAskRule | null {
+export function matchSettingsAsk(
+  rules: SettingsAskRule[],
+  command: string,
+): SettingsAskRule | null {
   const parts = commandParts(command);
   for (const rule of rules) {
     if (rule.content === null) return rule;
