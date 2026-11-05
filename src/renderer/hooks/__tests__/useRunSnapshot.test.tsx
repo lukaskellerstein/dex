@@ -23,7 +23,7 @@ vi.mock("../../services/projectService.js", () => ({
   projectService: { getRunSnapshot: (dir: string) => getRunSnapshotMock(dir) },
 }));
 
-import { startActionFor, useRunSnapshot } from "../useRunSnapshot.js";
+import { queueProgress, startActionFor, useRunSnapshot } from "../useRunSnapshot.js";
 
 function snapshot(stage: string): RunSnapshot {
   return {
@@ -188,5 +188,34 @@ describe("startActionFor", () => {
     expect(startActionFor(snap({ state: state("paused", "/p/GOAL.md") }), 0)).toBe("resume");
     expect(startActionFor(snap({ state: state("completed") }), 2)).toBe("build");
     expect(startActionFor(snap({}), 0)).toBe("none");
+  });
+});
+
+describe("queueProgress", () => {
+  const row = (id: string, status: "done" | "active" | "pending" | "skipped") => ({
+    id,
+    title: id,
+    status,
+    nextStage: null,
+    reason: "r",
+    taskPhase: null,
+    costUsd: 0,
+  });
+
+  it("counts the queue's entries: skipped ones do not run, pending ones are the cycles still to come", () => {
+    const snapshot: RunSnapshot = {
+      state: null,
+      errors: [],
+      queue: {
+        kind: "new",
+        entries: [row("001-a", "done"), row("002-b", "active"), row("003-c", "pending"), row("004-d", "skipped")],
+      },
+    };
+    expect(queueProgress(snapshot)).toEqual({ done: 1, total: 3, pending: 1 });
+  });
+
+  it("is null without a queue", () => {
+    expect(queueProgress(null)).toBeNull();
+    expect(queueProgress({ state: null, queue: null, errors: [] })).toBeNull();
   });
 });

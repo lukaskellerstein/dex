@@ -286,7 +286,7 @@ description: "Task list for 015 Lean Core"
 - [X] T103 [US8] Pause cards and review list in src/renderer/components/loop/ClarificationPanel.tsx: gate, limit, dirty tree, frozen file and preflight requests with their options (answered through `answer-request`), and the `reviewList` entries
 - [X] T104 [US8] Replace inference with the snapshot: delete `NEXT_STAGE_AFTER` (lines 20–36) in src/renderer/hooks/useLoopState.ts and the duplicated cycle rebuild in `loadRunHistory` (lines 185–336) in src/renderer/hooks/useOrchestrator.ts; derive `dexStatus` in src/renderer/hooks/useProject.ts and `canStart` in src/renderer/components/layout/Topbar.tsx (line 43) from the snapshot
 - [X] T105 [US8] Update src/renderer/hooks/__tests__/useLoopState.test.tsx, useRunSession.test.tsx and useUserQuestion.test.tsx to the snapshot model
-- [ ] T106 [US8] UI check with electron-playwright on a mock run (`dev-setup.sh`, quickstart § 2 fixture opened through the welcome screen): the queue panel rows update per stage; a tool approval can be approved; a reload keeps the pending request; `browser_find` for "Timeline", "Make this the new main", "Delete", "Profile" finds nothing
+- [X] T106 [US8] UI check with electron-playwright on a mock run (`dev-setup.sh`, quickstart § 2 fixture opened through the welcome screen): the queue panel rows update per stage; a tool approval can be approved; a reload keeps the pending request; `browser_find` for "Timeline", "Make this the new main", "Delete", "Profile" finds nothing
 
 **Checkpoint**: The app shows what the files say, and only that.
 
@@ -300,7 +300,7 @@ description: "Task list for 015 Lean Core"
 - [X] T108 [P] Update .claude/rules/06-testing.md (the checkpoint tree and `attempt-*`/`selected-*` text at lines 96–145 and 373–374; the DEBUG badge fields `CurrentAttemptBranch`, `LastCheckpointTag`, `CandidateSha`; `run-mock-headless.mjs` → `dex run`) and .claude/CLAUDE.md (lines 53–54)
 - [X] T109 [P] Delete docs/my-specs/01X-state-reconciliation/ (brief open decision 7: superseded by this feature)
 - [X] T110 Final size: run scripts/loc-by-area.sh, compare with the T003 baseline per area, write the table into specs/015-lean-core/research.md § R14 for the PR description; if the total is above 21k, record it for open decision 8 (SC-007)
-- [ ] T111 Final checks: `nvim-tools --json --all` adds no findings against the T003 baseline; `npm test`; `npm run typecheck`; quickstart § 1–8 end to end
+- [X] T111 Final checks: `nvim-tools --json --all` adds no findings against the T003 baseline; `npm test`; `npm run typecheck`; quickstart § 1–8 end to end
 - [ ] T112 **Owner step.** The owner writes `.dex/queue.json`, `.dex/policy.json` and `.dex/loop-rules.md` in `~/Projects/Github/onion-ai-eu/onion-demo-01` (brief Appendix A); then run `dex run <onion-demo-01> --dry-run`, confirm 5 blocks and 0 validation errors, and hand the output to the owner for sign-off (SC-009)
 - [ ] T113 **Owner step, real spend.** With the owner watching, `dex run <onion-demo-01> --once` for `021-agent-entry` `specify`; confirm no policy breach in the trace and no Dex-made commit, branch or push (SC-010)
 - [ ] T114 Run `/sync-spec-kit` and `/update-feature-docs` for the branch

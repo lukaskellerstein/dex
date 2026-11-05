@@ -1,6 +1,6 @@
 /**
  * What: The app's queue and status model (research R17, FR-043): `project:get-run-snapshot` read on mount, on every stage-boundary event (`run_started`, `step_started`, `step_completed`, `paused`, `run_completed`, `loop_terminated`) and on `refresh()`. The newest answer wins; a failed read keeps the last snapshot.
- * Not: Infers nothing from events, and does not follow the live trace (`agent_step`, `subagent_*` stay event-driven in useLiveTrace). `startActionFor` reads the snapshot; it decides nothing the files do not say.
+ * Not: Infers nothing from events, and does not follow the live trace (`agent_step`, `subagent_*` stay event-driven in useLiveTrace). `startActionFor` and `queueProgress` read the snapshot; they decide nothing the files do not say.
  * Deps: projectService.getRunSnapshot, orchestratorService.subscribeEvents.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -70,4 +70,19 @@ export function startActionFor(snapshot: RunSnapshot | null, unfinishedSpecs: nu
   const open = queue.entries.some((e) => e.status === "active" || e.status === "pending");
   if (!open) return "none";
   return state ? "resume" : "start-loop";
+}
+
+/** The queue's entry counts: done, all that will run (skipped ones do not), and not started yet. */
+export interface QueueProgress {
+  done: number;
+  total: number;
+  pending: number;
+}
+
+/** Entry counts from the queue view, for the cycle count and the placeholder cycles; null without a queue. */
+export function queueProgress(snapshot: RunSnapshot | null): QueueProgress | null {
+  const entries = snapshot?.queue?.entries;
+  if (!entries) return null;
+  const count = (status: string) => entries.filter((e) => e.status === status).length;
+  return { done: count("done"), total: entries.length - count("skipped"), pending: count("pending") };
 }

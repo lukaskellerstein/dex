@@ -398,22 +398,24 @@ core 11,740, renderer 15,266, main 1,104.
 The target (21k) is at the edge. If Phase 6 ends above it, the brief's open
 decision 8 applies: decide after the dogfood run.
 
-**Final measurement** (2026-11-05, after Phase 10, T110; `bash
-scripts/loc-by-area.sh`, non-test `.ts`/`.tsx` under `src/`):
+**Final measurement** (2026-11-05, after Phase 11 and the biome format pass,
+T110; `bash scripts/loc-by-area.sh`, non-test `.ts`/`.tsx` under `src/`). The
+Phase 0 tree was biome-formatted, so the count after the format pass is the
+one to compare; before it, the same code counted 21,439.
 
 | Area | Baseline | After | Change |
 |---|---:|---:|---:|
-| core total | 11,740 | 9,220 | −2,520 (−21%) |
+| core total | 11,740 | 9,778 | −1,962 (−17%) |
 | core time machine | 2,360 | 0 | −2,360 |
-| core `state.ts` | 759 | 256 | −503 |
-| core loop (`stages/`, `prompts.ts`, `parser.ts`, `agent/`) | 5,345 | 4,116 | −1,229 |
-| main total | 1,104 | 519 | −585 (−53%) |
-| renderer total | 15,266 | 11,700 | −3,566 (−23%) |
+| core `state.ts` | 759 | 262 | −497 |
+| core loop (`stages/`, `prompts.ts`, `parser.ts`, `agent/`) | 5,345 | 4,399 | −946 |
+| main total | 1,104 | 524 | −580 (−53%) |
+| renderer total | 15,266 | 11,784 | −3,482 (−23%) |
 | renderer `components/checkpoints/` | 3,096 | 0 | −3,096 |
-| **grand total** | **28,110** | **21,439** | **−6,671 (−23.7%)** |
+| **grand total** | **28,110** | **22,086** | **−6,024 (−21.4%)** |
 
-**SC-007 is not met:** 21,439 is 439 lines above the 21k target, and the drop
-is 23.7%, not 25%. The additions came out larger than the ~1,900 estimated:
+**SC-007 is not met:** 22,086 is 1,086 lines above the 21k target, and the
+drop is 21.4%, not 25%. The additions came out larger than the ~1,900 estimated:
 the `dex` CLI (`cli.ts` + `cli/`, ~610 lines with the dry run, the terminal
 input and the event printer), the snapshot path (`run-snapshot.ts`,
 `useRunSnapshot`, `QueuePanel`, `PauseCard`) and the approval UI. The brief's
@@ -710,7 +712,7 @@ Note for the quickstart: the root commit of `dex-ecommerce` holds
 - **Tests:** core 201 pass (+2 `run-snapshot`), renderer 56 (+21:
   `useRunSnapshot` and `startActionFor` 10, `ClarificationPanel` 4,
   `QueuePanel` 3, `buildLoopStateFromRun` 3, `useLoopState` 1), `check:size`
-  pass, typecheck clean. LOC: total 21,439 (§ R14, final measurement).
+  pass, typecheck clean. LOC: total 21,439 before the format pass, 22,086 after (§ R14).
 - **One read for the CLI and the app:** `run-snapshot.ts` serves both
   `project:get-run-snapshot` and `dex run --status`. Per-entry cost sums the
   run record's agent runs by `featureSlug`, which `run-stage.ts` now sets to
@@ -737,9 +739,29 @@ Note for the quickstart: the root commit of `dex-ecommerce` holds
   implement phases in a cycle's cost and every agent run in the total, shows
   an open record of a run that ended as stopped, and takes the last cycle of
   an unfinished run as the one to resume.
-- **T106 (the live UI check) is not done:** the Electron binary is missing in
-  this worktree (`node_modules/electron/` has no `path.txt` and no app), so
-  `dev-setup.sh` cannot start the app here.
+- **T106, the live UI check** (2026-11-05, electron-playwright on this
+  worktree's `dev-setup.sh`, mock stages slowed to 2.5 s, two scratch clones):
+  - New project (§ 2 fixture, `questions: "wait"`, one mock question on the
+    first entry's `clarify`): the queue panel rows follow every stage; the
+    question card shows; a renderer reload keeps it; the answer resumes the
+    stage; the run ends with all three entries done.
+  - Existing project (§ 5 fixture, `gates: ["plan"]` on `901-fixture-b`): the
+    app's Start runs the queue loop; the run pauses at the gate with the pause
+    card and Resume in the top bar; Continue resumes and the run completes.
+  - `browser_find` for Timeline, "Make this the new main", Delete and Profile
+    finds nothing. No console errors.
+  - **Not checked live:** the tool-approval card. The mock makes no tool
+    calls; the card has unit tests, and T067 checks it with a real agent.
+  - **Fixed on the way:** the cycle count and the placeholder cycles were
+    guesses (`completed/seen cycles`, always three placeholders). They now come
+    from the snapshot (`queueProgress`): done of the entries that will run, and
+    one placeholder per entry not started, at most three.
+  - **Seen, not changed:** a renderer reload goes back to the welcome screen
+    while the run goes on (the open project lives in renderer state); the
+    pending request survives it.
+  - The worktree's Electron binary was missing: `@electron/get`'s cached zip
+    was whole, but its extract step wrote one file and stopped. A plain
+    `unzip` of the same zip plus `path.txt` fixed it.
 
 ### Final checks (2026-11-05, T111)
 
@@ -751,9 +773,11 @@ Note for the quickstart: the root commit of `dex-ecommerce` holds
   the flag did not filter); § 7 `bypassPermissions` only in `policy.ts` and
   its test; § 8 in § R14.
 - `nvim-tools --json --all` against the Phase 0 baseline: lint, types
-  (`tsc` ok), markdown and shell add no finding. **Open:** 65 files this
-  branch changed are not biome-formatted. `nvim-tools --fix-all` skips files
-  with uncommitted changes, so the format pass waits for the owner.
+  (`tsc` ok), markdown and shell add no finding. 65 files this branch
+  changed were not biome-formatted; after the owner's go-ahead they were
+  committed, then formatted in a separate commit (`nvim-tools -t biome --fix`
+  per file, so the 4 baseline findings under `.claude/` stay as they were).
+  Tests and typecheck pass after it.
 
 ## R15 — Mock runner: entry-keyed fixtures, real task ticks, agent-style commits
 

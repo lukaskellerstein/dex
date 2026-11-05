@@ -352,6 +352,8 @@ export interface CycleTimelineProps {
   onSelectSpec: (specName: string) => void;
   /** Latest "interesting" agent step in the running stage — used for the live indicator. */
   latestAction?: LatestAction | null;
+  /** Queue entries not started yet; without a queue the count is unknown and 3 placeholders show. */
+  upcoming?: number;
 }
 
 export function CycleTimeline({
@@ -364,6 +366,7 @@ export function CycleTimeline({
   onImplPhaseClick,
   onSelectSpec,
   latestAction,
+  upcoming,
 }: CycleTimelineProps) {
   // Active cycle expanded by default, completed ones collapsed
   const [manualExpanded, setManualExpanded] = useState<Set<number>>(new Set());
@@ -420,11 +423,12 @@ export function CycleTimeline({
     );
   }
 
-  // Show ghost skeletons when running or paused (loop isn't finished)
+  // Ghost skeletons while the loop is not finished: one per queue entry not started, at most three.
   const lastCycleNumber = cycles.length > 0 ? cycles[cycles.length - 1].cycleNumber : 0;
   const hasPausedCycle = !isRunning && cycles.some((c) => c.status === "running");
-  const ghostCount = isRunning || hasPausedCycle ? 3 : 0;
   const ghostOpacities = [0.35, 0.2, 0.1];
+  const ghostCount =
+    isRunning || hasPausedCycle ? Math.min(upcoming ?? ghostOpacities.length, ghostOpacities.length) : 0;
 
   return (
     <div>

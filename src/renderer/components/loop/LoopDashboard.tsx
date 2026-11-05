@@ -3,6 +3,7 @@ import type { RunSnapshot } from "../../../core/run-snapshot.js";
 import type { LoopTermination, PrerequisiteCheck, StepType } from "../../../core/types.js";
 import type { LatestAction, UiLoopCycle, UiLoopStage } from "../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../hooks/useProject.js";
+import { queueProgress } from "../../hooks/useRunSnapshot.js";
 import { QueuePanel } from "../queue/QueuePanel.js";
 import { ProcessStepper } from "./ProcessStepper.js";
 import { ClarificationPhase } from "./phases/ClarificationPhase.js";
@@ -184,6 +185,7 @@ export function LoopDashboard({
             onSelectSpec={onSelectSpec}
             debugBadge={debugBadge}
             latestAction={latestAction}
+            progress={queueProgress(snapshot)}
           />
         )}
 
