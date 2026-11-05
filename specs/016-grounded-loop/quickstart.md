@@ -105,12 +105,18 @@ with red acceptance yields `fail`.
 
 ## 6. The UI (FR-038)
 
-With `dev-setup.sh` running (CDP on 9333), open the step 2 clone in the app and
-start its mock run:
+With `dev-setup.sh` running (CDP on 9333), make a fresh clone as in step 2 and
+give it a queue: copy `.dex/queue.json` from a step 2 run. Without one the app
+shows no Start, because every spec on `main` is done. To see a pause, override
+one entry's `tests` stage in `.dex/mock-config.json` so it writes `0` to
+`.dex/fake/acceptance`: that entry pauses at red-first and writes a digest.
+Open the clone in the app and start its mock run:
 
 - the live trace shows a gate card (`gate-card`) for every gate: the baseline
   card opens the stage it guards, and the red-first, progress and done cards
-  close theirs. A run read from history shows none (the cards are not in
+  close theirs. A closing card stays only until the next stage opens, so a
+  mock run shows it for milliseconds; it stays when the run pauses or ends on
+  it. A run read from history shows none (the cards are not in
   `steps.jsonl`);
 - a paused run's pause card links its digest (`pause-digest-link`) when the
   pause wrote one;

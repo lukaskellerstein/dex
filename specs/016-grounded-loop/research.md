@@ -573,6 +573,122 @@ fixed default, `LOOP_DEFAULTS`):
 - The run cost nothing and left the clone clean (`main`, one commit ahead of
   its scratch `origin`). SC-004 is still open.
 
+The owner chose to run it again with the variable removed
+(`env -u ANTHROPIC_API_KEY`), so Claude Code used the machine's login:
+
+```text
+   ▸ specify
+   ✓ specify 161.2s · $0.70
+   ⚠ left uncommitted: .specify/feature.json, specs/003-promo-codes/checklists/requirements.md, specs/003-promo-codes/spec.md
+■ user_abort · $0.70
+```
+
+- The spec is 193 lines: 7 user stories (cart redemption, admin create, error
+  messages, automatic discounts, admin edit, reporting, checkout
+  re-validation) and more than 13 FRs, admin pages among them. The clone has
+  no UI, so the `tests` stage must test the cart and promo modules' API.
+- **The agent did not commit.** The policy's `settingSources` includes
+  `user`, so the agent loaded the owner's global `CLAUDE.md` ("never commit
+  unless asked"). It read that as the project's commit rule, which Dex's prompt
+  tells it to follow, and skipped the commit. Every stage on this machine will
+  do the same while `user` is loaded and the project says nothing about commits.
+- **No entry branch.** The agent wrote the spec by hand and ran no spec-kit
+  script. The clone has no `.specify/extensions.yml`, so spec-kit's git
+  extension, which makes the branch, never ran. The picker now stops the entry:
+  `branch "003-promo-codes" does not exist, but "main" already has
+  specs/003-promo-codes/spec.md; create the branch or set "branch" in
+  queue.json`.
+- Both are setup gaps of the clone, not gate defects. They need the owner's
+  call before `clarify` runs.
+
+The owner's fix, in the clone only: a `CLAUDE.md` on `main` that asks every
+stage to commit its own work (`2b713ed`), and the branch `003-promo-codes`
+from `main` with the spec committed on it (`58d52c7`). Then one `--once` per
+stage, the key removed each time:
+
+| Stage | Time | Cost | Commit by the agent |
+|---|---|---|---|
+| `specify` | 161 s | $0.70 | none (before the rule) |
+| `clarify` | 231 s | $1.39 | `cfee73e` |
+| `plan` | 380 s | $1.33 | `60bcf9e` (7 files) |
+| `tasks` | 342 s | $1.36 | `ac33773`: 42 tasks in 10 task phases |
+| `tests` + red-first | 1027 s | $3.59 | `127abdf`: vitest, 7 test files, 2 helpers |
+| **Total** | 36 min | **$8.37** | every tree clean after its stage |
+
+The `tests` stage set up its own runner (R19): `package.json`, its lock file
+and `vitest.config.ts`. `acceptance.json` runs
+`npx vitest run tests/promotions/acceptance`, lists 9 files (7 tests and 2
+helpers, all frozen now) and maps 27 tests to SC-001…SC-007. The tests call
+the modules' API (`src/promotions/promotions.js`, `src/admin/promotions.js`),
+because the clone has no server and no UI.
+
+`red-first-1.json`: gate `pass`, "the acceptance tests fail by an assertion
+(exit 1)". **That reason is not what happened.** The tail says
+`Test Files 7 failed (7)`, `Tests no tests`: every file failed to load,
+because the modules it imports do not exist yet (`Cannot find module
+'../../src/admin/promotions.js'`). Vitest exits 1 for a load error as for a
+failed assertion, so the exit-code rule (R2) cannot tell them apart. Here it
+is the right red — the feature is missing. But a test file with a wrong import
+path would pass red-first the same way, and stay red after a correct
+implementation. Open finding for the owner; the gate is unchanged.
+
+Then `implement`, one `--once` per task phase. The clone's policy declares no
+fast checks, so the progress gate read the ticked tasks only:
+
+| Stage | Time | Cost | Progress gate |
+|---|---|---|---|
+| `implement` phase 1 (Setup) | 96 s | $1.19 | pass: T001–T003 ticked |
+| `implement` phase 2 (Foundational) | 334 s | $2.46 | pass |
+| `implement` phase 3 (US1, cart) | 173 s | $1.62 | pass |
+| `implement` phase 4 (US2, admin create) | 241 s | $1.57 | pass |
+
+**The owner stopped the run during phase 5, for its cost.** The run record
+says $15.21; the part of phase 5 that ran before the stop is not in it. The
+done gate never ran, so SC-004 is half met: red-first on real tests, yes; the
+same tests green at done, not shown. T091 (the rest of the queue) is skipped
+by the owner.
+
+The lesson for the next real run: pick the smallest entry that reaches every
+gate, not the next one in the queue. `003-promo-codes` has 7 user stories and
+42 tasks in 10 task phases. A one-function entry with one task phase goes
+through the same gates (red-first, progress, done) at a fraction of the cost
+and time.
+
+### The UI over CDP (T083, FR-038)
+
+2026-11-05, the dev server from this worktree, CDP on 9333. A fresh
+dex-ecommerce clone set up as quickstart § 2, with two changes:
+
+- `.dex/queue.json` copied from a § 2 run. Without a queue, a project whose
+  specs are all done gets no Start button: `startActionFor` returns `none`
+  (015, R17), and the overview shows the specs instead of the loop start panel.
+- The mock config overrides one entry's `tests` stage to write `0` to
+  `.dex/fake/acceptance`, so that entry pauses at red-first
+  (`red_first_green`) and writes a digest. `002-cart-and-checkout` first, then
+  a fourth entry `004-wishlist-sharing` added to the queue.
+
+Started and resumed from the app. What showed:
+
+| Check | Seen |
+|---|---|
+| Gate cards in the live trace (`gate-card`), by a DOM observer over one Resume run | baseline `pass` (unit, lint), red-first `pass` (exit 1), progress `pass` ("T008 ticked; every fast check is green"), done `fail` ("the acceptance run is red", 1 re-run), done `pass` |
+| The trace of a finished stage, read from history | no gate cards, as designed |
+| The pause card | "The new tests pass before the feature exists", with `pause-digest-link` "Read the digest for 004-wishlist-sharing" |
+| The link | opens `digest-view` with `.dex/digests/004-wishlist-sharing.md`: "paused at tests: red_first_green", the diff, the tasks, the acceptance run |
+| The queue panel | `queue-row-digest` on every done entry and on the paused one; none on `003` while it was pending |
+| Console | 0 errors; 1 warning, Electron's dev-mode CSP note |
+
+Two things for the owner, neither changed:
+
+- A card that closes a stage (red-first, progress, done) stays in the live
+  trace only until the next stage opens, because each stage starts a new step
+  list (`useLiveTrace`). In a mock run that is milliseconds. It stays when the
+  run pauses or ends on it.
+- The stage list's "paused" mark goes to the first stage of the cycle with no
+  record in this run. When `specify`, `plan` and `tasks` were done on `main`
+  before the run, it marks `Specify`, though the run paused after `tests`.
+  That rule is 015's; 016 only added the `Tests` row.
+
 ## Final checks
 
 ### No gate passes on an agent's word (T092, SC-006, SC-007)
