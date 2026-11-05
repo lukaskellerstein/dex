@@ -78,7 +78,7 @@ is no per-entry branch switching.
 |---|---|
 | absent | the picker derives it |
 | `"skipped"` | the picker passes over the entry |
-| `"done"` | the picker treats the entry as done without reading `verify.md` (used by the v2 migration, and for features finished before Dex) |
+| `"done"` | the picker treats the entry as done without reading its verify record (used by the v2 migration, and for features finished before Dex) |
 
 ## `dex queue init <projectDir>`
 

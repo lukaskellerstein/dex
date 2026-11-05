@@ -66,7 +66,7 @@ All gaps from the original Ralph Wiggum comparison. Each is marked as resolved (
 ### G7 — Resolved: Failed Feature Recovery
 
 **Ralph:** Operator throws out plan and regenerates via PLANNING mode.
-**Our solution:** The operator does the same, and the loop makes it cheap. Deleting `plan.md` and `tasks.md` sends the entry back to `plan`, because the picker reads only the files: no spec → `specify`; no `## Clarifications` → `clarify`; no plan or tasks → `plan` / `tasks`; an unchecked in-scope task → `implement`; no `verify.md` for the current `tasks.md` → `verify`; a passing `verify.md` → the entry is done.
+**Our solution:** The operator does the same, and the loop makes it cheap. Deleting `plan.md` and `tasks.md` sends the entry back to `plan`, because the picker reads only the files: no spec → `specify`; no `## Clarifications` → `clarify`; no plan or tasks → `plan` / `tasks`; an unchecked in-scope task → `implement`; no passing verify record for the entry as it is now → `verify`; a passing one → the entry is done.
 
 When verification fails, the verify agent appends a phase of concrete fix tasks to `tasks.md` and the loop implements it. Two `implement` runs that check no new task, or three failed verify rounds, pause the run for the human instead of spending more.
 
@@ -175,7 +175,7 @@ Manifest extraction turns the plan into a queue of features, `.dex/queue.json`. 
 4. **Plan** (separate `query()`) — run `/speckit.plan` to generate plan.md
 5. **Tasks** (separate `query()`) — run `/speckit.tasks` to generate tasks.md
 6. **Implement** (separate `query()` per phase) — run `/speckit.implement` per task phase
-7. **Verify** (separate `query()`, a fresh agent) — run build, tests, and functional validation (browser-based e2e via MCP tools for web projects); write `verify.md`; on failure, append a phase of fix tasks to `tasks.md`
+7. **Verify** (separate `query()`, a fresh agent) — run build, tests, and functional validation (browser-based e2e via MCP tools for web projects); return a structured verdict, which Dex records in `.dex/evidence/` keyed by the entry branch's HEAD; on failure, append a phase of fix tasks to `tasks.md`
 8. Loop back to step 1
 
 **Termination conditions:**

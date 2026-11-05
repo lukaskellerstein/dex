@@ -36,7 +36,7 @@ node "$DEX/dist/core/cli.js" run "$SCRATCH/new" --status          # every entry:
 git log --format=%s | grep -cE '^\[checkpoint:|^dex:' || true     # expect 0
 ```
 
-Observed: exit 0, 3 entries, every `verify.md` `passed`, 27 steps (6 project steps
+Observed: exit 0, 3 entries, every verify record `passed` (`.dex/evidence/`; until Phase 12, `verify.md`), 27 steps (6 project steps
 + 3 entries × 7 stages), 0 tags, a clean tree. `dist/core/cli.js` comes from the
 `tsc` build (`npm run build`). A `.dex/mock-config.json` in the old
 `dex_loop.cycles` shape is refused with a pointer to the fixture. The clone needs
@@ -123,7 +123,7 @@ grep -rn bypassPermissions src   # only policy.ts (the refusal) and its test
 bash scripts/loc-by-area.sh      # prints lines per area; compare with research.md § R14 baseline
 ```
 
-Result: 22,086 lines after the format pass (22,009 at the end of the branch, after a dead-code cut and the compound-command check)
+Result: 22,086 lines after the format pass (22,207 at the end of the branch, after a dead-code cut, the compound-command check and Phase 12)
 against the 21k target. **SC-007 is not met**; research.md § R14 has the table.
 
 ## 9. Live permission check (SC-005, real agent, small cost)
@@ -186,3 +186,32 @@ to 2.5 s, two scratch clones:
 - Seen, not changed: a renderer reload goes back to the welcome screen while the
   run goes on (the open project lives in renderer state); the pending request
   survives it.
+
+## 12. Verify records and the spec-kit env (Phase 12, SC-011, SC-012)
+
+Done on 2026-11-05 with the mock on two dex-ecommerce scratch clones (§ 5 and § 2
+set up as above), then one real `verify`:
+
+```bash
+# existing-project clone, after § 5 ran to queue_complete
+cat .dex/evidence/901-fixture-b/verify.json | jq '{verdict, key}'   # key == git rev-parse 901-fixture-b
+git status --porcelain                                              # empty: the evidence folder ignores itself
+echo late > late.txt && git add late.txt && git commit -qm "a late change"
+node "$DEX/dist/core/cli.js" run . --status    # 901-fixture-b: verify — branch has commits since the last verify
+node "$DEX/dist/core/cli.js" run . --dry-run   # env: CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 SPECIFY_FEATURE=… NO_PERSIST=1
+```
+
+- Existing project: exit 0, both records `passed`, each `key` equal to its
+  branch HEAD, no `verify.md`, empty `git status`, 7 agent commits (a passing
+  verify commits nothing). After one late commit, `901-fixture-b` went back to
+  `verify` and `900-fixture-a` stayed done.
+- New project: exit 0, three records `passed` with `spec:` keys, empty
+  `git status`, `evidence/` in `.dex/.gitignore`, every entry done although
+  later entries committed after earlier ones.
+- One real `verify` for `901-fixture-b` (`claude-haiku-5-5`, 15 turns, policy
+  `maxBudgetUsdPerStage: 0.08`, run through the CLI's own `main()`): 31 s,
+  $0.01. The agent returned `failed` (the mock-made feature has no test file),
+  Dex wrote the record keyed by the HEAD the agent checked, the agent appended
+  `Verify fixes V1` and committed it, `git status` stayed empty, and
+  `.specify/feature.json` did not change. The picker then chose `implement`
+  phase 2.

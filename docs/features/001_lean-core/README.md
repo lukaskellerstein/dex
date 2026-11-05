@@ -38,8 +38,8 @@ flowchart LR
     RSN["run-snapshot.ts"]
   end
   subgraph FILES["Project files"]
-    TRACKED["tracked: .dex/queue.json, .dex/policy.json, spec folders with verify.md"]
-    RUNTIME["runtime: .dex/state.json, .dex/questions.md, .dex/runs/"]
+    TRACKED["tracked: .dex/queue.json, .dex/policy.json, spec folders"]
+    RUNTIME["runtime: .dex/state.json, .dex/questions.md, .dex/runs/, .dex/evidence/"]
   end
   RS --> SNAP --> RSN
   QP --> RS
@@ -101,8 +101,8 @@ The picker takes the first entry that is not `done` or `skipped` and checks its 
 | `tasks.md` is missing | `tasks` |
 | the `tasks` filter names an id that `tasks.md` lacks | pause `invalid_input` |
 | an in-scope task is unchecked | `implement` on the first task phase that has one |
-| `verify.md` is missing, unparsable, failed, or carries another `Tasks-SHA256` | `verify` |
-| `verify.md` passed for `sha256(tasks.md)` as it is now | entry `done`; next entry |
+| no verify record in `.dex/evidence/<id>/`, or it failed, or its key or `tasks.md` hash differs from the entry now | `verify` |
+| a passing record for the entry as it is now | entry `done`; next entry |
 
 Which tree is read (research R3): a new project reads its working tree. An existing project reads the entry's branch: the working tree if that branch is checked out, else `git cat-file` on the ref. If the branch does not exist yet, the picker reads the base branch, where only `brief` and `specify` are allowed. The picker never switches branches.
 
@@ -138,7 +138,7 @@ The hook never returns `allow`, so the project's own deny and ask rules always r
 | Feature list | `.dex/feature-manifest.json` v2 | `.dex/queue.json` v3; a v2 manifest is migrated once |
 | Git | a checkpoint commit and tag per stage, timeline, jump, promote with an AI conflict resolver | Dex commits nothing; agents commit as the project's rules say; an existing project only gets a clean-tree `git switch` |
 | Permissions | `bypassPermissions`; the user's settings, hooks and ask/deny rules skipped | `settingSources` loaded, `default` mode; the policy's deny, ask, write roots and frozen files on top; bypass refused for an existing project |
-| Checking the work | AI feature evaluation, verify-fix and learnings stages | a fresh `verify` agent writes `verify.md`; a failure appends a fix phase; counters pause a stuck entry |
+| Checking the work | AI feature evaluation, verify-fix and learnings stages | a fresh `verify` agent returns a structured verdict that Dex records in `.dex/evidence/` (keyed by the entry branch's HEAD); a failure appends a fix phase; counters pause a stuck entry |
 | Questions | `autoClarification` picked the first option | an option labelled `(Recommended)` is taken and listed for review; otherwise the run waits |
 | Entry points | the Electron app (and `scripts/run-mock-headless.mjs`) | the app and the `dex` CLI, over the same `run()` |
 | UI state | built from events, with next-stage guessing (`NEXT_STAGE_AFTER`) | a snapshot re-read from disk on six stage-boundary events |
@@ -188,7 +188,8 @@ The branch touches 207 files: about 15.6k lines added and 21.0k removed. Of the 
 | `src/core/orchestrator.ts` | Separate paths for new and existing projects; Resume runs the queue loop; no reconcile |
 | `src/core/run-lifecycle.ts` | Loads the policy; no run branch for an existing project; a PR only with `openPullRequest` |
 | `src/core/state.ts` | State v2: run id, status, cost, counters, pending requests, the config snapshot. 759 → 262 lines; reconcile and drift removed |
-| `src/core/prompts.ts` | One builder per stage (R11); one implement prompt that says "commit as this project's rules say"; a verify prompt that carries `Tasks-SHA256`; learnings, gap and evaluation prompts removed |
+| `src/core/evidence.ts` | New in Phase 12: verify records in `.dex/evidence/<id>/verify.json` (the folder ignores itself), `VERIFY_SCHEMA`, and the key — the entry branch's HEAD in an existing project, a content hash of the spec folder in a new one (research R19) |
+| `src/core/prompts.ts` | One builder per stage (R11); one implement prompt that says "commit as this project's rules say"; a verify prompt that asks for a structured verdict and no file; every spec-kit stage gets `SPECIFY_FEATURE`, `SPECIFY_FEATURE_DIRECTORY` and `SPECIFY_FEATURE_NO_PERSIST=1`; learnings, gap and evaluation prompts removed |
 | `src/core/stages/cycle-stages.ts` | Now `runImplement` and `runVerify` |
 | `src/core/stages/prerequisites.ts` | Check-only for an existing project: no `git init`, no `specify init`, no repo creation |
 | `src/core/stages/manifest-extraction.ts` | Writes `queue.json` v3 |
@@ -196,7 +197,7 @@ The branch touches 207 files: about 15.6k lines added and 21.0k removed. Of the 
 | `src/core/stages/build.ts` | A queued spec folder keeps its entry's `tasks` scope in build mode |
 | `src/core/stages/clarification.ts` | Skipped when the queue already exists (it used to check for existing specs) |
 | `src/core/agent/ClaudeAgentRunner.ts` | A thin adapter over `claudeSession.ts` (101 lines); `runOneShot` removed |
-| `src/core/agent/MockAgentRunner.ts`, `MockConfig.ts` | Fixtures keyed by entry id; ticks tasks, writes `verify.md` and briefs, commits `mock(<stage>): <entry>`, honours Stop, can ask questions |
+| `src/core/agent/MockAgentRunner.ts`, `MockConfig.ts` | Fixtures keyed by entry id; ticks tasks, returns the verify verdict as structured output, writes briefs, commits `mock(<stage>): <entry>`, honours Stop, can ask questions |
 | `src/core/agent/AgentRunner.ts`, `steps.ts` | Profiles and `OneShot*` removed; `limitHit` replaces the SDK subtype; the cost table uses current prices and matches the longest prefix first |
 | `src/core/git.ts` | `branchExists`, `switchBranch`, `isTrackedAtHead`, `frozenChangesSince` (argument lists, no shell) |
 | `src/core/events.ts`, `types.ts` | See [API Changes](#api-changes) |
@@ -241,7 +242,7 @@ The older [Branch Management](../branch-management/README.md) doc describes feat
 |---|---|---|
 | `settingSources` | Which Claude Code settings agents load | `["user", "project", "local"]` |
 | `permissionMode` | Agent permission mode; `bypassPermissions` is refused for an existing project | `"default"` |
-| `env` | Extra environment for every agent | `{}` |
+| `env` | Extra environment for every agent, merged over the default | `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}`: loop agents neither read nor write the machine owner's personal auto memory |
 | `deny` | `{tool, pattern, reason}` rules; a regex on the call's subject (the whole Bash command, the absolute file path, the URL) | `[]` |
 | `ask` | Same shape; a match holds the call for a human | `[]` |
 | `writeRoots` | The only paths `Edit`, `Write`, `MultiEdit` and `NotebookEdit` may target | `["."]`, plus the OS temp folder |
@@ -261,6 +262,7 @@ Other configuration:
 | `.dex/dex-config.json` `conflictResolver` | Removed | — |
 | `RunConfig` | `once` added; `maxLoopCycles`, `maxBudgetUsd`, `maxVerifyRetries`, `maxLearningsPerCategory` and `stepMode` removed. Limits come from the policy only | — |
 | `SPECIFY_FEATURE_DIRECTORY` | Set in the agent's environment for every spec-kit stage, so Dex never writes the tracked `.specify/feature.json` (research R5) | the entry's `specDir` |
+| `SPECIFY_FEATURE`, `SPECIFY_FEATURE_NO_PERSIST` | Set next to it (Phase 12): the entry's branch, and `1`. spec-kit 1.2.5 reads the first and not yet the second, so its scripts can still rewrite `feature.json` (research R5) | the entry's `branch`; `1` |
 | `GIT_BRANCH_NAME` | Set for `specify` in an existing project, so spec-kit creates the branch with the queue's exact name | the entry's `branch` |
 | `package.json` `bin.dex` | The CLI entry point | `dist/core/cli.js` |
 
@@ -316,7 +318,7 @@ Every entity is a file. "Tracked" files live in the project's git; "runtime" fil
 |---|---|---|
 | `.dex/queue.json` (v3) | yes | the human, `dex queue init`, manifest extraction, the v2 migration; never during a run |
 | `.dex/policy.json` | yes | the human (or `dex queue init`, with every default spelled out) |
-| `specs/<id>/verify.md` | yes | the `verify` agent |
+| `.dex/evidence/<id>/verify.json` | no | Dex, from the `verify` agent's structured verdict |
 | `.dex/state.json` (v2) | no | Dex |
 | `.dex/questions.md` | no | Dex, regenerated on every request change |
 | `.dex/runs/<runId>.json` | no | Dex (`runs.ts`, unchanged) |
@@ -325,7 +327,7 @@ Every entity is a file. "Tracked" files live in the project's git; "runtime" fil
 - **Migration.** When `queue.json` is missing and `.dex/feature-manifest.json` exists, `loadQueue` writes a `kind: "new"` queue once and keeps `completed` as `status: "done"`. The manifest file stays. A dry run and the snapshot migrate in memory only.
 - **State v2.** It holds only what files cannot say: `runId`, `status`, `pauseReason` and `pauseDetail`, `kind`, `runBranch`, `current`, `cumulativeCostUsd`, per-entry `implementRunsWithoutProgress`, `pendingRequests`, `reviewList`, `answerBook`, and the config snapshot. A file with any other version reads as absent, because position comes from files.
 - **Pause reasons.** `user_abort`, `gate`, `question`, `tool_approval`, `dirty_tree`, `frozen_changed`, `preflight_failed`, `limit_reached`, `no_progress`, `invalid_input`.
-- **`verify.md`.** Dex parses three header lines: `**Verdict**: passed|failed`, `**Tasks-SHA256**: <64 hex>` and `**Checked**: <ISO-8601>`. Dex computes the hash right before the stage, and the agent copies it verbatim. On failure the agent appends `## Phase <max+1>: Verify fixes V<k>` to `tasks.md`; the phase number stays numeric so the parser and `--phase N` keep working. Verify rounds are counted from those phases, so the count survives a reset.
+- **Verify record.** `{version: 1, entryId, key, tasksHash, checked, verdict, summary, commands, criteria}` in `.dex/evidence/<id>/verify.json`. Dex takes the key and the `tasks.md` hash right before the stage, so the record names what the agent checked; a later commit on the entry's branch (existing project) or a change in its spec folder (new project) sends the entry back to `verify` ([`contracts/evidence.md`](../../../specs/015-lean-core/contracts/evidence.md)). Until Phase 12 the agent wrote a tracked `verify.md` instead. On failure the agent appends `## Phase <max+1>: Verify fixes V<k>` to `tasks.md`; the phase number stays numeric so the parser and `--phase N` keep working. Verify rounds are counted from those phases, so the count survives a reset.
 
 ## Dependencies
 
@@ -339,7 +341,7 @@ The SDK now ships a native per-platform binary (about 320 MB on darwin-arm64) in
 
 ## Testing
 
-Final run (2026-11-05, after the T106 cycle-count fix): `npm test` gave core 201 pass, renderer 58 pass and `check:size` pass. `npm run typecheck` was clean. `nvim-tools --json --all` added no finding against the Phase 0 baseline.
+Final run (2026-11-05, after Phase 12): `npm test` gave core 216 pass, renderer 58 pass and `check:size` pass. `npm run typecheck` was clean. `nvim-tools --json --all` added no finding against the Phase 0 baseline.
 
 ```bash
 npm test                     # core (node --test) + renderer (vitest) + check:size
@@ -349,7 +351,7 @@ bash scripts/loc-by-area.sh  # size per area
 grep -rn bypassPermissions src   # only policy.ts (the refusal) and its test
 ```
 
-New core suites: `picker`, `queue`, `queue-init`, `tree-reader`, `policy`, `humanInput`, `branching`, `preflight`, `loop`, `failure-policy`, `existing-project`, `cli`, `run-snapshot`, `agent/runner-options` and `agent/claudeSession`. New renderer suites: `useRunSnapshot`, `QueuePanel`, `ToolApprovalCard`, `ClarificationPanel` and `buildLoopStateFromRun`.
+New core suites: `evidence`, `picker`, `queue`, `queue-init`, `tree-reader`, `policy`, `humanInput`, `branching`, `preflight`, `loop`, `failure-policy`, `existing-project`, `cli`, `run-snapshot`, `agent/runner-options` and `agent/claudeSession`. New renderer suites: `useRunSnapshot`, `QueuePanel`, `ToolApprovalCard`, `ClarificationPanel` and `buildLoopStateFromRun`.
 
 Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clones of `~/Projects/Github/lukaskellerstein/dex-ecommerce` ([`quickstart.md`](../../../specs/015-lean-core/quickstart.md)):
 
@@ -360,28 +362,30 @@ Key end-to-end scenarios, all under the mock agent at zero cost, on scratch clon
 | Reset to a mid-run commit, then Resume | § 4 | continues from the stage the files imply, with no repair step |
 | Existing project: entry A from `implement` with a task filter, entry B from `specify` on base A | § 5 | exit 0; the only new branch is spec-kit's `901-fixture-b`; every new commit is `mock(…)`; out-of-scope `T006` stays open |
 | Picker, queue and policy tables | § 6 | 73 cases pass |
+| Verify records (Phase 12) | § 12 | each record\'s key is its branch HEAD; one late commit sends the entry back to `verify`; `git status` stays empty |
 | Live UI (T106, electron-playwright) | — | queue rows follow every stage; a question card survives a reload; a gate pauses with the pause card and Continue resumes; no Timeline, promote, delete or profile control anywhere |
 
 ## Size and open items
 
-**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 22,009, which is 21.7% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called, the compound-command check added 106 lines, and the `queue init` base-branch rule 27). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
+**SC-007 is not met.** The target was 21k lines or fewer (at least 25% smaller). The result at the end of the branch is 22,207, which is 21.0% smaller (22,086 at the T110 measurement; a later cut removed `uiPrefs.ts` and 13 exports that nothing called, the compound-command check added 106 lines, the `queue init` base-branch rule 27, and Phase 12's verify records 198). Counted as non-test `.ts`/`.tsx` under `src/`, after the biome format pass (research § R14):
 
 | Area | Baseline (`7ec23aa`) | After | Change |
 |---|---:|---:|---:|
-| core | 11,740 | 9,719 | −2,021 (−17%) |
+| core | 11,740 | 9,917 | −1,823 (−16%) |
 | main | 1,104 | 524 | −580 (−53%) |
 | renderer | 15,266 | 11,766 | −3,500 (−23%) |
-| **total** | **28,110** | **22,009** | **−6,101 (−21.7%)** |
+| **total** | **28,110** | **22,207** | **−5,903 (−21.0%)** |
 
 The additions came out larger than the ~1,900 lines estimated: the CLI is about 610 lines, plus the snapshot path and the approval UI. The brief's open decision 8 applies: decide after the real-project check whether to cut further. One candidate is the renderer's event-built stage history (`useLoopState` plus `buildLoopStateFromRun`, about 400 lines), which could read the run record through the snapshot instead.
 
-The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.09 in all:
+The live checks ran on `claude-haiku-5-5` with a stage budget cap, for about $0.10 in all:
 
 - **T012**: one real `specify` stage on the 0.3 SDK wrote `spec.md` with the preset system prompt, for $0.013 in 36 s (`scripts/smoke-stage.mjs`).
 - **T067**: a project-settings `ask` rule for `git push` now reaches the approval card. The first run found that the SDK reports a plain rule-forced ask as `decisionReasonType: "rule"`, not as `matchedAskRule`, so Dex had allowed the push. After the fix the card held the command, nothing reached the remote, and the agent reported the denial.
+- **T125**: one real `verify` on the existing-project clone returned a structured verdict that Dex recorded in `.dex/evidence/`, keyed by the HEAD the agent checked, for $0.01 in 31 s; `git status` stayed empty.
 
 Compound commands: the SDK reports a settings `ask` rule on one part of a compound command (`git add -A && git push`) the same way as a compound command that matches no rule. So Dex reads the Bash ask rules of the settings files itself and matches each part of the command (`agent/settingsRules.ts`, research § R6). Live, the card held that command and the agent reported the denial.
 
-The real-project check (T112, T113) ran on a scratch clone of dex-ecommerce, never on another project: `dex queue init` and `--dry-run` gave one block per open entry with the tree unchanged, and one real `specify` cost $0.028 with no Dex-made commit, branch or push. It found one flaw, now fixed: the drafted queue paused because a done entry's branch was gone, so `dex queue init` now sets `baseBranch` after a done entry. All 114 tasks are done.
+The real-project check (T112, T113) ran on a scratch clone of dex-ecommerce, never on another project: `dex queue init` and `--dry-run` gave one block per open entry with the tree unchanged, and one real `specify` cost $0.028 with no Dex-made commit, branch or push. It found one flaw, now fixed: the drafted queue paused because a done entry's branch was gone, so `dex queue init` now sets `baseBranch` after a done entry. All 126 tasks are done, Phase 12 included.
 
 Seen but not changed: reloading the renderer returns to the welcome screen while the run goes on, because the open project lives in renderer state. The pending request survives the reload.

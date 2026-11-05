@@ -108,7 +108,7 @@ description: "Task list for 015 Lean Core"
 
 ### Implementation for User Story 1
 
-- [X] T040 [US1] Create src/core/picker.ts: `readVerifyRecord` (regexes in contracts/verify-md.md), `tasksHash` (sha256 of the bytes of tasks.md), `entryTree` (research R3), `stageFor(entry, tree)` in D-015-1 order, `pickNext(...) → PickerDecision`, and `describeQueue(...) → QueueView` (data-model.md § Picker decision, contracts/ipc-events.md § QueueView); no writes, no branch switches
+- [X] T040 [US1] Create src/core/picker.ts: `readVerifyRecord` (regexes in contracts/evidence.md), `tasksHash` (sha256 of the bytes of tasks.md), `entryTree` (research R3), `stageFor(entry, tree)` in D-015-1 order, `pickNext(...) → PickerDecision`, and `describeQueue(...) → QueueView` (data-model.md § Picker decision, contracts/ipc-events.md § QueueView); no writes, no branch switches
 - [X] T041 [US1] Rewrite src/core/state.ts to `DexStateV2` (data-model.md § Run state): keep `saveState`/`loadState` (`version !== 2` → `null`)/`updateState`/the lock/`ensureRuntimeIgnore`; delete `detectStaleState`, `resolveWorkingTreeConflict`, `reconcileState` and every drift helper, `STEP_ORDER`, `artifacts`, `lastCommit`, `failureCounts`, `featuresCompleted/Skipped`; delete `DriftSummary` from src/core/types.ts, the `state_reconciling`/`state_reconciled` events from src/core/events.ts, and the `state_reconciled` case in src/renderer/hooks/useRunSession.ts (line 108)
 - [X] T042 [US1] Rename src/core/userInput.ts to src/core/humanInput.ts with the `PendingRequest` union (`question` | `pause`; `tool_approval` comes in US2): `requestHuman()` persists to `state.pendingRequests` and renders `.dex/questions.md` (contracts/cli.md format), `resolveRequest(requestId, answer)`, `cancelAll()` on Stop; update callers in src/core/agent/ClaudeAgentRunner.ts, src/core/stages/prerequisites.ts (lines 121, 180, 234, 418, 440), src/core/orchestrator.ts and src/main/ipc/orchestrator.ts
 - [X] T043 [US1] Update `StepType` in src/core/types.ts: add `brief`, `clarify`; remove `gap_analysis`, `learnings`, `implement_fix`, `create_branch`, `commit`; delete `GapAnalysisDecision` and `FailureRecord`; `TerminationReason` = `queue_complete | user_abort | paused | budget_exceeded | failed`; update `STEP_LABELS` and `CYCLE_STAGES` in src/renderer/components/loop/StageList.logic.ts (lines 9–17) to brief, specify, clarify, plan, tasks, implement, verify
@@ -199,7 +199,7 @@ description: "Task list for 015 Lean Core"
 
 ### Implementation for User Story 4
 
-- [X] T083 [US4] Extend the `verify` prompt in src/core/prompts.ts with the fix-phase rules in contracts/verify-md.md (`## Phase <max+1>: Verify fixes V<k>`, continuing task ids, commit as the project's rules say), and add `countVerifyRounds` to src/core/picker.ts (research R8)
+- [X] T083 [US4] Extend the `verify` prompt in src/core/prompts.ts with the fix-phase rules in contracts/evidence.md (`## Phase <max+1>: Verify fixes V<k>`, continuing task ids, commit as the project's rules say), and add `countVerifyRounds` to src/core/picker.ts (research R8)
 - [X] T084 [US4] Failure policy in src/core/stages/loop.ts and src/core/stages/post-stage.ts: count checked in-scope tasks before and after each `implement` and keep `state.counters[entryId].implementRunsWithoutProgress`; pause `limit_reached` at `maxImplementRunsWithoutProgress`; pause before the next stage when verify rounds reach `maxVerifyRounds` and the entry is not done (research R9)
 - [X] T085 [US4] Limits: check `maxBudgetUsdPerRun` against `cumulativeCostUsd` before each stage (stop with `budget_exceeded`); in src/core/agent/ClaudeAgentRunner.ts map the result subtypes `error_max_budget_usd` and `error_max_turns` to a new `StepResult.limitHit`; post-stage pauses `limit_reached` with the limit in `pauseDetail`
 - [X] T086 [US4] Remove `maxVerifyRetries`, `maxLearningsPerCategory` and `maxLoopCycles` from `RunConfig` in src/core/config.ts and their uses in src/core (policy limits replace them); support a verify `rounds` list in src/core/agent/MockConfig.ts and create fixtures/mock/verify-fails-once.json
@@ -305,6 +305,25 @@ description: "Task list for 015 Lean Core"
 - [X] T113 **Small real spend.** One real stage on the same clone (SC-010): `specify` for the first open entry on a cheap model with a stage budget cap; confirm no policy breach and no Dex-made commit, branch or push
 - [X] T114 Run `/sync-spec-kit` and `/update-feature-docs` for the branch
 
+## Phase 12: The brief's changes of 2026-11-05 — verify records, spec-kit env, no personal memory
+
+**Purpose**: Build the three edits the brief gained after the build started (its "Changes after the build started"): verify records in `.dex/evidence/<id>/` keyed by the entry's HEAD, `SPECIFY_FEATURE` and `SPECIFY_FEATURE_NO_PERSIST=1` for every spec-kit stage, and a default policy `env` that turns off the personal auto memory.
+
+**Independent Test**: a commit on a done entry's branch sends the entry back to `verify`; a whole mock run leaves `git status` clean and writes no `verify.md`.
+
+- [X] T115 Add Phase 12 to spec.md (FR-028, FR-030, FR-033, FR-049, the policy `env` default, SC-011, SC-012) and to this file
+- [X] T116 [P] Write src/core/__tests__/evidence.test.ts first: the existing-project key is the branch HEAD and a new commit changes it; the new-project key is a hash of the spec folder that only that folder changes; write then read; the folder's `.gitignore` keeps `git status` empty; an unreadable record is null; `parseVerdict` needs `passed` or `failed`
+- [X] T117 Create src/core/evidence.ts: `VERIFY_SCHEMA`, `evidenceKey`, `readVerifyRecord`, `writeVerifyRecord` (atomic, writes `.dex/evidence/.gitignore` with `*`), `parseVerdict`, `tasksHash` (moved from picker.ts) — contracts/evidence.md, research R19
+- [X] T118 The verify row of the picker reads the record: `stageFor(entry, tree, evidence)` gets the record and the key lazily, only when the entry reaches verify; rewrite the verify fixtures in src/core/__tests__/picker.test.ts as records, and add the cases "a spec-folder change after verify", "later work outside the spec folder keeps a new-project entry done" and "a commit on the entry branch after done → verify again" (SC-011)
+- [X] T119 `runVerify` in src/core/stages/cycle-stages.ts takes the key before the stage, runs with `outputFormat: VERIFY_SCHEMA`, and writes the record from the verdict; `buildVerifyPrompt` in src/core/prompts.ts drops the `Tasks-SHA256` line and the verdict file, and says "on a pass, change no file and make no commit"
+- [X] T120 The mock verify in src/core/agent/MockAgentRunner.ts returns the scripted verdict as structured output and writes no `verify.md`; src/core/__tests__/loop.test.ts reads the records and checks `git status` is empty; src/core/__tests__/existing-project.test.ts counts 7 agent commits (a passing verify commits nothing)
+- [X] T121 `stageEnv` in src/core/prompts.ts adds `SPECIFY_FEATURE=<branch>` and `SPECIFY_FEATURE_NO_PERSIST=1` next to `SPECIFY_FEATURE_DIRECTORY`; src/core/__tests__/cli.test.ts checks the whole `env` line of the dry run
+- [X] T122 `DEFAULT_POLICY.env` in src/core/policy.ts is `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}` and `parsePolicy` merges the project's `env` over it; src/core/__tests__/policy.test.ts covers the merge and the opt-out
+- [X] T123 `RUNTIME_IGNORE_ENTRIES` in src/core/state.ts gains `evidence/`
+- [X] T124 Mock end to end on dex-ecommerce scratch clones (quickstart § 12): the existing-project fixture (§ 5) and a new project (§ 2) both end `queue_complete` with every record `passed`, no `verify.md` and an empty `git status`; one late commit on `901-fixture-b` sends it back to `verify` and `900-fixture-a` stays done
+- [X] T125 **Small real spend.** One real `verify` on the existing-project clone (`claude-haiku-5-5`, 15 turns, $0.08 stage cap): the structured verdict becomes the record, keyed by the HEAD the agent checked; `git status` stays empty and `.specify/feature.json` does not change. Cost $0.01
+- [X] T126 Update contracts/evidence.md (was verify-md.md), data-model.md, research.md (R5, R19), quickstart.md § 12, plan.md, and the feature docs
+
 ---
 
 ## Dependencies & Execution Order
@@ -329,6 +348,7 @@ flowchart LR
   U7 --> P
   U8 --> P
   U4 --> P
+  P --> P12["Phase 12<br/>brief changes of 2026-11-05"]
 ```
 
 ### User story dependencies
@@ -405,7 +425,7 @@ Task: "T034 src/core/queue.ts"  +  "T035 src/core/tree-reader.ts"
 
 - Never commit unless the owner asks (repo rule). The mock agent's `mock(<stage>)` commits happen only inside scratch clones and temp repos.
 - T012, T067 and T113 spend real money. Each one needs the owner's go-ahead first.
-- **Status (2026-11-05):** 114 of 114 done. T112 and T113 ran on a scratch clone of dex-ecommerce and on no other project (owner's decision): the dry run gave 2 blocks with the tree unchanged after `dex queue init` learned to set `baseBranch` after a done entry, and one real `specify` cost $0.028. T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule on one part of a compound command is matched by Dex itself (`agent/settingsRules.ts`, research.md § R6), checked live for $0.011.
+- **Status (2026-11-05):** 126 of 126 done. Phase 12 (T115–T126) builds the brief's three later edits; its one real stage, a `verify` on Haiku, cost $0.01. T112 and T113 ran on a scratch clone of dex-ecommerce and on no other project (owner's decision): the dry run gave 2 blocks with the tree unchanged after `dex queue init` learned to set `baseBranch` after a done entry, and one real `specify` cost $0.028. T012 and T067 ran on `claude-haiku-5-5` with a stage budget cap: $0.013 for T012, and about $0.06 for T067 across its seven diagnostic and final runs. T067 found that a plain settings ask rule reaches `canUseTool` as `decisionReasonType: "rule"`, not as `matchedAskRule`; `permissions.ts` now holds both, and the tool-approval card passed live. A settings ask rule on one part of a compound command is matched by Dex itself (`agent/settingsRules.ts`, research.md § R6), checked live for $0.011.
 - **Where the build differs from a task's wording** (the task lines stay as written; research.md has the reasons):
   - T035: the tree reader uses `git cat-file -t` / `cat-file blob` on `<ref>:./<rel>`, not `cat-file -e` / `git show`; `headSha` was not added (`getHeadSha` exists); a test-only `statusPorcelain` helper was removed.
   - T042: `humanInput.ts` is a new file (`userInput.ts` is deleted) and exports `askQuestions` and `recordPause`, not `requestHuman()`; T048's loop entry is `runQueueLoop`.
@@ -417,4 +437,5 @@ Task: "T034 src/core/queue.ts"  +  "T035 src/core/tree-reader.ts"
   - T091: the dry run judges each entry on its own tree (it does not pretend earlier entries are done) and lists only `active` and `pending` entries.
   - T097: there is no `src/core/stages/brief.ts`; `brief` runs through `buildStagePrompt` and `runStage`.
   - The fix-phase header is `## Phase <N>: Verify fixes V<k>` throughout (R8), not `## Phase Vn:`.
+  - T040, T044, T047, T052, T083: Phase 12 replaced `verify.md` and its `Tasks-SHA256` line with the records in `.dex/evidence/` (T117–T120). The task lines name the first design.
 - `reset-example-to.sh initial` force-pushes `dex-ecommerce`'s `origin`. These tasks use scratch clones instead, and `pristine` / `<checkpoint>` where `$EX` itself is needed.

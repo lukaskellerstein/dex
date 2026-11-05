@@ -9,7 +9,7 @@ machine.
 | `.dex/queue.json` | yes | human, `dex queue init`, manifest extraction, v2 migration | picker, queue panel, CLI |
 | `.dex/policy.json` | yes | human | runner, preflight, post-stage |
 | `.dex/.gitignore` | yes | setup (new project) or `dex queue init`, only when absent | git |
-| `specs/<id>/verify.md` | yes | the `verify` agent | picker |
+| `.dex/evidence/<id>/verify.json` | no (the folder ignores itself) | Dex, from the `verify` agent's structured verdict | picker |
 | `specs/<id>/tasks.md` | yes | spec-kit `tasks`, `implement` agents, `verify` agent (fix phase) | picker, parser, task board |
 | `.dex/state.json` | no (runtime) | Dex | Dex, renderer, CLI |
 | `.dex/questions.md` | no (runtime) | Dex (`renderQuestionsFile`; removed when nothing waits and the review list is empty) | the human, CLI |
@@ -70,7 +70,7 @@ picker, the implement counter, the implement prompt and build mode all use it. T
 parser reads `[x]` and `[X]` alike (spec-kit writes `[X]`).
 
 **Derived status** (not stored): `skipped` (human) → `done` (human) →
-`done` (verify.md passes for the current `tasks.md` hash) → `active` (the first
+`done` (a passing verify record matches the entry's key and `tasks.md` now) → `active` (the first
 entry that is neither) → `pending` (every later entry).
 
 ### Migration: `.dex/feature-manifest.json` v2 → queue v3
@@ -226,18 +226,28 @@ clarification steps follow `autoClarification`, every other stage follows
 already ended, so nothing waits on it and the IPC answer path does not carry it.
 `.dex/questions.md` is regenerated from `pendingRequests` and `reviewList`.
 
-## Verification record — `specs/<id>/verify.md`
+## Verification record — `.dex/evidence/<id>/verify.json`
 
-Written by the `verify` agent; Dex parses only the three header lines. Exact
-format in [`contracts/verify-md.md`](contracts/verify-md.md).
+Written by Dex after each `verify` stage from the agent's structured verdict;
+not tracked. Exact format in [`contracts/evidence.md`](contracts/evidence.md).
 
-```text
-**Verdict**: passed | failed
-**Tasks-SHA256**: <64 hex>      ← copied verbatim from the prompt; Dex computes it
-**Checked**: <ISO-8601>
+```ts
+interface VerifyRecord {
+  version: 1;
+  entryId: string;
+  key: string;          // existing: the entry branch's HEAD; new: "spec:" + sha256 of the spec folder
+  tasksHash: string;    // sha256(tasks.md) when the stage started
+  checked: string;      // ISO-8601
+  verdict: "passed" | "failed";
+  summary: string;
+  commands: Array<{ command: string; exitCode: number }>;
+  criteria: Array<{ criterion: string; met: boolean; note: string }>;
+}
 ```
 
-Valid for picking only when the hash equals `sha256(tasks.md)` now.
+Valid for picking only when `key` and `tasksHash` equal the entry's key and
+`sha256(tasks.md)` now. The key is taken before the stage, so it names what the
+agent checked (research R19).
 
 ## Picker decision
 
@@ -251,11 +261,11 @@ type PickerDecision =
 `reason` is the matched row of the D-015-1 table, in words (for the trace,
 `--dry-run` and the queue panel). The picker only ever pauses with
 `invalid_input`; every other pause reason comes from a guard around the stage
-(`stages/post-stage.ts`, `branching.ts`, `preflight.ts`). A `verify.md` with a
-matching hash and verdict `failed` also yields `verify`.
+(`stages/post-stage.ts`, `branching.ts`, `preflight.ts`). A verify record that
+matches and says `failed` also yields `verify`.
 
 `describeEntries` / `describeQueue` give the queue panel's view: `skipped` and
-`done` from the human override or `verify.md`, the first other entry `active`, every
+`done` from the human override or the verify record, the first other entry `active`, every
 later one `pending`. Each entry is judged on its own tree, so a later entry shows
 its own first stage.
 

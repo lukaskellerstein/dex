@@ -71,7 +71,7 @@ Odd things, all fixed or recorded:
 ## R2 — Entry status is derived from files; Dex never writes `queue.json` during a run
 
 **Decision.** `status` in `queue.json` is human-owned and optional (`done` /
-`skipped` overrides). The picker derives `done` from `verify.md` and `active` /
+`skipped` overrides). The picker derives `done` from the files and the verify record (R19) and `active` /
 `pending` from position. Dex writes `queue.json` only in three setup moments:
 manifest extraction, the v2 migration, and `dex queue init`. The run's own view
 of status lives in the picker's output, never in a tracked file.
@@ -84,7 +84,7 @@ of status lives in the picker's output, never in a tracked file.
   tree), and a checkout to a branch whose committed `queue.json` differs refuses
   outright.
 - A written status also breaks D-015-1's own promise: after a reset to an older
-  commit, the file says `done` for an entry whose `verify.md` no longer exists.
+  commit, the file says `done` for an entry whose files no longer say so.
   A derived status cannot go stale.
 - The spec's first draft papered over this with "the clean-tree check ignores
   `.dex/`". That rule does not survive a checkout that would overwrite the
@@ -115,7 +115,7 @@ non-done entry's decision; it switches no branch.
 
 **Rationale.**
 
-- In an existing project, entry N's `verify.md` lives on branch N. Deciding whether
+- In an existing project, entry N's spec folder lives on branch N. Deciding whether
   N is done while the checkout is on N+1 needs N's files without a checkout, or
   every picker call would flip branches.
 - The working tree is used for the current branch so that uncommitted progress
@@ -158,16 +158,18 @@ needs the files.
 ## R5 — `SPECIFY_FEATURE_DIRECTORY` through the agent's environment, not `.specify/feature.json`
 
 **Decision.** For `specify`, `clarify`, `plan`, `tasks`, `implement` and
-`verify`, Dex sets `SPECIFY_FEATURE_DIRECTORY=<specDir>` in the agent's `env`
-and puts the absolute spec path in the command arguments (as today). For
-`specify` in an existing project it also sets `GIT_BRANCH_NAME=<branch>`. Dex
-does not write `.specify/feature.json`.
+`verify`, Dex sets `SPECIFY_FEATURE=<branch>`, `SPECIFY_FEATURE_DIRECTORY=<specDir>`
+and `SPECIFY_FEATURE_NO_PERSIST=1` in the agent's `env` (the first and the last
+since Phase 12), and puts the absolute spec path in the command arguments (as
+today). For `specify` in an existing project it also sets
+`GIT_BRANCH_NAME=<branch>`. Dex does not write `.specify/feature.json`.
 
 **Rationale.**
 
 - spec-kit's `common.sh` resolves the feature folder from
   `SPECIFY_FEATURE_DIRECTORY` first and `.specify/feature.json` second (lines
-  198–215). The env variable wins and writes nothing.
+  198–215). The env variable wins. `SPECIFY_FEATURE` is what `get_current_branch`
+  returns; Dex switches to the entry's branch before each stage, so the two agree.
 - `.specify/feature.json` is tracked in spec-kit projects (it is modified in
   this very checkout). Writing it before each stage would make the tree dirty
   and block the next branch switch, which is the R2 problem again.
@@ -176,6 +178,18 @@ does not write `.specify/feature.json`.
 - The check-only prerequisites (R12) confirm the project's `common.sh` knows
   `SPECIFY_FEATURE_DIRECTORY`, and fail with a clear message on an older
   spec-kit.
+
+**Finding (Phase 12, spec-kit 1.2.5).** The env variable does not stop the write.
+`get_feature_paths` in `common.sh` persists `SPECIFY_FEATURE_DIRECTORY` into
+`.specify/feature.json` unless its caller passes `--no-persist`, and only
+`check-prerequisites.sh --paths-only` does. No script reads
+`SPECIFY_FEATURE_NO_PERSIST`, and the `speckit-specify` skill tells the agent to
+write the file itself (its step "Persist the resolved path"). The brief's
+reason for `SPECIFY_FEATURE_NO_PERSIST` holds only for a spec-kit that reads it.
+The owner chose to set it anyway (2026-11-05): it costs nothing and is ready
+for such a spec-kit. So FR-028 holds for Dex, which writes no tracked file; an
+agent's spec-kit run can still change `feature.json`, as any agent edit can. In
+the real verify check (quickstart § 12) it did not change.
 
 **Alternatives considered.** Writing `feature.json` as the brief says — rejected
 for the dirty-tree reason above. Setting the variables only in the prompt text —
@@ -341,7 +355,7 @@ up.
 ## R8 — The verify fix phase keeps a numeric phase number
 
 **Decision.** The fix phase header is
-`## Phase <max+1>: Verify fixes V<k>` (contracts/verify-md.md). The verify-round
+`## Phase <max+1>: Verify fixes V<k>` (contracts/evidence.md). The verify-round
 counter is the number of `Verify fixes V*` phases in `tasks.md`.
 
 **Rationale.** `parser.ts` `PHASE_HEADER` is `/^## (?:TaskPhase|Phase) (\d+): (.+)$/`.
@@ -407,7 +421,7 @@ reads.
 | `clarify` | `/speckit-clarify` + autonomous rules: answer from the brief, repo and docs; record Q and A; **always** write `## Clarifications` with a `### Session <date>` (write "No critical ambiguities" when there are none); ask only when nothing answers and a wrong guess costs more than a day | R9 guard backs it up |
 | `plan`, `tasks` | `/speckit-plan <specPath>`, `/speckit-tasks <specPath>` | as today |
 | `implement` | `/speckit-implement <specPath> --phase N`; in-scope ids when filtered; "commit as this project's rules say" | replaces Dex's `git add -A -- ':!.dex/' && git commit` line (`run-phase.ts:129`, `prompts.ts:454`) |
-| `verify` | brief Acceptance/DoD + spec success criteria; run the acceptance commands; never edit code; write `verify.md` with the given `Tasks-SHA256` line; on failure append the fix phase; commit as the project's rules say | fresh agent (always: one query per stage) |
+| `verify` | brief Acceptance/DoD + spec success criteria; run the acceptance commands; never edit code; change nothing on a pass; return the verdict as structured output (R19); on failure append the fix phase; commit as the project's rules say | fresh agent (always: one query per stage) |
 
 `buildImplementPrompt` (`prompts.ts:432`, the loop variant) and `buildPrompt`
 (`run-phase.ts:105`, the build variant) merge into one builder. The learnings,
@@ -513,8 +527,7 @@ fragments in `renderer/styles/tokens.ts`. Core 9,586, main 524, renderer
 11,766; grand total 21,876 (−22.2%). The compound-command check
 (`agent/settingsRules.ts`, R6) then added 106 lines: core 9,692, **grand
 total 21,982** (−21.8%). The `baseBranch` rule in `dex queue init`
-(T112) added 27: core 9,719, **grand total 22,009** (−21.7%). SC-007 stays
-unmet by 1,009 lines.
+(T112) added 27: core 9,719, **grand total 22,009** (−21.7%). Phase 12 (the verify records) then added 198 lines in core: core 9,917, **grand total 22,207** (−21.0%). SC-007 stays unmet by 1,207 lines.
 
 ### Phase 0 measurements (2026-11-05, tree at `7ec23aa`)
 
@@ -579,7 +592,7 @@ Note for the quickstart: the root commit of `dex-ecommerce` holds
   it up. FR-031 deletes the learnings stage, which removes the write.
 - **Tree reader:** `gitRef` uses `git cat-file -t` / `git cat-file blob` with
   `<ref>:./<rel>`, not `cat-file -e` / `git show`: `-t` tells a file from a
-  folder, `blob` returns the bytes untouched (the Tasks-SHA256 check needs
+  folder, `blob` returns the bytes untouched (the `tasks.md` hash check needs
   them), and `./` keeps paths relative to the project, not the repo root.
 - **`git.ts`:** `headSha` was not added — `getHeadSha` already exists. The new
   `branchExists` / `switchBranch` use `execFileSync` with an argument list:
@@ -886,9 +899,11 @@ and replaces `dex_loop.cycles[]` (cycle-index keyed, with `gap_analysis` and
 - Lookup by entry id, falling back to `"*"`.
 - `implement` ticks every task of the phase it is given, in `tasks.md`
   (today's mock never ticks, so a filter or resume cannot be tested).
-- `verify` takes a list of rounds (`[{ "verdict": "failed", "fixTasks": [...] }, { "verdict": "passed" }]`)
-  and writes `verify.md` with the `Tasks-SHA256` line it parses **from the
-  prompt** — so the mock tests the contract the real agent follows.
+- `verify` takes a list of rounds (`[{ "verdict": "failed", "fixTasks": [...] }, { "verdict": "passed" }]`),
+  reads the round, the next phase number and the next task id **from the
+  prompt**, and returns the round's verdict as its structured output — so the
+  mock tests the contract the real agent follows. (Before Phase 12 it wrote
+  `verify.md` with a `Tasks-SHA256` line; R19.)
 - After each stage the mock commits `mock(<stage>): <entryId>` with `git add -A`,
   as an agent following the project's rules would. Today's `git add -A`
   (`MockAgentRunner.ts:426`) without a commit goes. Tests tell agent commits from
@@ -928,3 +943,48 @@ disagreeing after Stop): there is one source, and the renderer just shows it.
 - **`gsap`.** Unused (no imports), but the constitution names it as the
   animation library; removing it is a constitution change, out of scope. The
   three `d3-*` packages, used only by the timeline, are removed.
+
+## R19 — Verify records live outside git, keyed by what the agent checked (Phase 12)
+
+**Decision.** The brief's change of 2026-11-05 (D-015-1, D-015-5). The verify
+agent returns its verdict as structured output (`VERIFY_SCHEMA`, the SDK's
+`outputFormat`), and Dex writes `.dex/evidence/<id>/verify.json`. The folder
+carries its own `.gitignore` (`*`), so the record is untracked in any project,
+whatever its `.dex/.gitignore` says. The record's key is:
+
+- **existing project:** the entry branch's HEAD (`git rev-parse refs/heads/<branch>`);
+- **new project:** `spec:` + sha256 over every file of the entry's spec folder,
+  read from the working tree.
+
+Dex takes the key right before the stage starts, and the picker counts an entry
+as done only when a passing record's key and `tasksHash` equal the entry's now.
+
+**Rationale.**
+
+- `verify.md` was a tracked file the agent wrote and Dex trusted. A commit after
+  the verdict did not invalidate it, so a done entry stayed done after any later
+  change. A HEAD key fixes that for an existing project: each entry has its own
+  branch, and any commit on it sends the entry back to `verify`.
+- A new project runs every entry on one run branch (R4). A HEAD key there would
+  undo every earlier entry at the next entry's first commit, and the loop would
+  verify old entries again and again. The spec folder is what an entry owns on
+  that branch, so its content is the key. Later entries' code changes do not
+  undo it; a change to the entry's own spec, plan or tasks does. The owner chose
+  this split (2026-11-05).
+- A content hash, not `git rev-parse HEAD:./<specDir>`: the tree object misses
+  uncommitted files, and a spec folder that is not committed yet would have no
+  key at all, so the entry could never be done.
+- The key comes from before the stage. If the agent commits during a passing
+  stage, the record names a HEAD that is no longer current: the picker asks for
+  `verify` again, and the no-progress guard (R9) pauses with the reason. The
+  prompt tells the agent to change nothing on a pass.
+
+**Alternatives considered.** Key by HEAD in both kinds of project — breaks new
+projects as above. A git tree hash for new projects — misses uncommitted files.
+Keep `verify.md` and add a HEAD line — a tracked file whose content goes stale
+with the very commit it describes.
+
+**Evidence.** `evidence.test.ts`, `picker.test.ts` (the three key cases), and
+quickstart § 12: on dex-ecommerce clones every record's key equals its branch
+HEAD; one late commit sent `901-fixture-b` back to verify; one real verify on
+Haiku ($0.01) wrote a record keyed by the HEAD it checked.

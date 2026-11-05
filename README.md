@@ -72,8 +72,8 @@ The **picker** chooses the next stage from the project's files alone — no AI d
 | `plan.md` is missing                                                  | `plan`                                            |
 | `tasks.md` is missing                                                 | `tasks`                                           |
 | An in-scope task is unchecked                                         | `implement`, on the first task phase that has one |
-| `verify.md` is missing, or records a different `tasks.md` fingerprint | `verify`                                          |
-| `verify.md` records a pass for the current `tasks.md` fingerprint     | the entry is `done`; go to the next entry         |
+| No verify record for the entry as it is now (`.dex/evidence/`)       | `verify`                                          |
+| A passing verify record for the entry as it is now                   | the entry is `done`; go to the next entry         |
 
 Stages listed in an entry's `skip` count as done. `verify` runs in a fresh agent that did not implement the work; when it fails, it appends a `## Phase N: Verify fixes V<k>` section to `tasks.md`, which sends the loop back to `implement`. A stuck entry — two `implement` runs that check no new task, or three failed verify rounds — pauses for the human. Re-planning is a human act: delete `plan.md` and `tasks.md`.
 
@@ -114,7 +114,7 @@ graph TD
 
     subgraph FS["Filesystem"]
         Proj[".dex/ — queue, policy, state, runs"]
-        Specs["specs/{id}/ — spec, plan, tasks, verify.md"]
+        Specs["specs/{id}/ — spec, plan, tasks"]
     end
 
     Claude["ClaudeAgentRunner → Claude Agent SDK"]

@@ -41,7 +41,7 @@ together:
 - Dex makes no commit, branch or push in an existing project;
 - no `bypassPermissions` outside the refusal check;
 - every phase ends with the tests, the typecheck and a green mock loop
-**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (22,009 at the end of the branch, after a dead-code cut and the compound-command check)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; real-project check on a scratch clone of dex-ecommerce
+**Scale/Scope**: 28,110 → ≤ ~21k lines of source planned; **22,086 built (22,207 at the end of the branch, after a dead-code cut, the compound-command check and Phase 12)**, so SC-007 is not met (research § R14). 207 files changed: 71 deleted, 67 added (23 of them tests and test helpers), 69 modified; real-project check on a scratch clone of dex-ecommerce
 
 ## Constitution Check
 
@@ -49,7 +49,7 @@ together:
 
 | Principle | Status | Evidence |
 |---|---|---|
-| I. Clean-Context Orchestration | ✅ pass | One `query()` per stage; `verify` always runs in a fresh agent that did not implement; context comes only from files (brief, spec, tasks, `verify.md`). |
+| I. Clean-Context Orchestration | ✅ pass | One `query()` per stage; `verify` always runs in a fresh agent that did not implement; context comes only from files (brief, spec, tasks); the verdict goes to `.dex/evidence/`. |
 | II. Platform-Agnostic Core | ✅ pass | `queue.ts`, `picker.ts`, `policy.ts`, `humanInput.ts`, `branching.ts`, `cli.ts` all live in `src/core` with no Electron import. The CLI is the proof: it runs core without Electron. |
 | III. Test Before Report | ✅ pass | Each phase has a DoD in `quickstart.md`. The constitution still names `npx tsc --noEmit` and "chrome-devtools MCP"; the newer `.claude/rules/06-testing.md` (`npm run typecheck`, electron-playwright) is followed. That is an elaboration, not a conflict. |
 | IV. Simplicity First | ⚠️ one justified exception | The v2 → v3 manifest migration is a compatibility shim, which the principle forbids. The brief requires it (D-015-4). See Complexity Tracking. Everything else removes code: there is no state v1 → v2 shim (old state is treated as absent, because position comes from files). |
@@ -77,7 +77,7 @@ specs/015-lean-core/
 ├── contracts/
 │   ├── queue-json.md    # .dex/queue.json v3 + `dex queue init`
 │   ├── policy-json.md   # .dex/policy.json + the permission chain
-│   ├── verify-md.md     # specs/<id>/verify.md + the fix phase
+│   ├── evidence.md      # .dex/evidence/<id>/verify.json + the fix phase
 │   ├── cli.md           # `dex run`, `dex queue init`, exit codes, questions.md
 │   └── ipc-events.md    # IPC channels and orchestrator events: delete / change / add
 ├── checklists/requirements.md
@@ -90,7 +90,8 @@ specs/015-lean-core/
 src/core/
 ├── queue.ts                 # ADD  load / validate / resolve defaults / migrate v2 → v3 / save; isInScope, isFixPhase
 ├── queue-init.ts            # ADD  `dex queue init` (moved out of queue.ts: it also writes policy.json and .dex/.gitignore)
-├── picker.ts                # ADD  pickNext + describeQueue/describeEntries over TreeReader (R2, R3); verify.md reader
+├── evidence.ts              # ADD  verify records keyed by HEAD or spec folder (R19, Phase 12)
+├── picker.ts                # ADD  pickNext + describeQueue/describeEntries over TreeReader (R2, R3); the verify row reads evidence.ts
 ├── tree-reader.ts           # ADD  workingTree(dir) | gitRef(dir, ref) via `git cat-file -t` / `cat-file blob` on `<ref>:./<rel>`
 ├── policy.ts                # ADD  parsePolicy, loadPolicy, decideToolUse, refusal (pure, no SDK)
 ├── branching.ts             # ADD  dirtyFiles / isTreeClean (minus runtime paths, `--untracked-files=all`, `--no-optional-locks`), prepareBranch, stageBranch (R4)
@@ -112,13 +113,13 @@ src/core/
 │   ├── permissions.ts       # ADD  preToolUseDecision (PreToolUse hook) and makeCanUseTool (AskUserQuestion, approvals, else allow)
 │   ├── ClaudeAgentRunner.ts # CHANGE thin: two entry points over claudeSession; drop runOneShot; `limitHitOf` maps result subtypes
 │   ├── AgentRunner.ts       # CHANGE drop profile, worktreePath, OneShot*
-│   ├── MockAgentRunner.ts   # CHANGE entry-keyed, ticks tasks, writes verify.md, agent-style commits (R15)
+│   ├── MockAgentRunner.ts   # CHANGE entry-keyed, ticks tasks, returns the verify verdict, agent-style commits (R15)
 │   └── MockConfig.ts        # CHANGE entries map replaces cycles[]
 ├── stages/
 │   ├── loop.ts              # ADD  replaces main-loop.ts: picker → guards → preflight → prepareBranch → stage → post-stage (`runQueueLoop`)
 │   ├── post-stage.ts        # ADD  replaces finalize.ts: state, emit, dirty report, frozen, gates, no-progress
 │   ├── (brief.ts)           # NOT BUILT: `brief` runs through the generic file-stage path (buildStagePrompt + runStage), like `specify`
-│   ├── cycle-stages.ts      # CHANGE becomes implement + verify runners (verify.md, fix phase); learnings out
+│   ├── cycle-stages.ts      # CHANGE becomes implement + verify runners (structured verdict → evidence record); learnings out
 │   ├── run-phase.ts         # CHANGE scope filter, project commit rule, merged prompt builder;
 │   │                        #        TodoWrite path out, tasks.md re-parse on write instead (R1)
 │   ├── run-stage.ts         # CHANGE no finalize call (post-stage is the caller's)
@@ -180,14 +181,14 @@ mock loop on a `dex-ecommerce` scratch clone finishes (quickstart § 1–2).
 | 1 | **Delete the time machine** | Files → Delete from the brief. Stage commits go, and the mock agent commits instead (R15). Resume still uses `lastCompletedStep` until Phase 2. Before deleting, copy the git test helpers out of `branchOps.test.ts`. | dangling imports in `App.tsx` / `LoopDashboard.tsx`. Typecheck after every deleted folder. |
 | 2 | **Queue + picker** | `queue.ts`, `tree-reader.ts`, `picker.ts`, `stages/loop.ts`, state v2. Delete reconcile, gap analysis, `main-loop.ts`. Manifest extraction writes v3. Picker tests per D-015-1 row, plus filter, `skip` and migration. | new-project parity: the mock loop must still take every feature to `done` |
 | 3 | **Policy + permissions** | `policy.ts` + table tests; `buildQueryOptions(policy)`; PreToolUse returns `{}` without an opinion; `canUseTool` → `humanInput` approvals; `bypassPermissions` gone | the SDK permission chain (R6). The live check (quickstart § 9) proves it. |
-| 4 | **Existing-project entry** | `dex queue init`; `branching.ts`; gates; `brief` stage; autonomous `clarify`; `verify.md` + fix phase; failure policy; check-only prerequisites; preflight | dirty-tree pauses in the mock fixture: the mock commits, so the tree stays clean |
+| 4 | **Existing-project entry** | `dex queue init`; `branching.ts`; gates; `brief` stage; autonomous `clarify`; verify verdict + fix phase; failure policy; check-only prerequisites; preflight | dirty-tree pauses in the mock fixture: the mock commits, so the tree stays clean |
 | 5 | **Headless CLI** | `cli.ts`, `bin`, TTY and no-TTY input, answer book, `--once` / `--dry-run` / `--status` | stdin handling under `node --test` |
 | 6 | **UI** | `useRunSnapshot`, `QueuePanel`, approval and pause cards, timeline and profile UI removed, `d3-*` removed | runs in parallel with Phase 7 |
 | 7 | **Real-project check** | `dex queue init` and `dex run --dry-run` on a scratch clone of dex-ecommerce, then one real `specify` | never on the original repo or any other project (owner's decision) |
 
 ### How the phases ran
 
-The brief's Phases 0–7 above were carried out as tasks.md Phases 1–11 (the user stories were split out), and research.md's "Phase N gate" notes use the tasks.md numbers: Phase 2 deletes, 3 is the picker loop (US1), 4 the policy (US2), 5 the existing project (US3), 6 the failure policy (US4), 7 questions (US5), 8 the CLI (US6), 9 brief and gates (US7), 10 the app (US8), 11 polish. Each phase ended with the tests, the typecheck, `check:size` and a mock loop. All 114 tasks are done. T012, T067 and T113 are real agent runs on dex-ecommerce scratch clones, about $0.12 in all.
+The brief's Phases 0–7 above were carried out as tasks.md Phases 1–11 (the user stories were split out), and research.md's "Phase N gate" notes use the tasks.md numbers: Phase 2 deletes, 3 is the picker loop (US1), 4 the policy (US2), 5 the existing project (US3), 6 the failure policy (US4), 7 questions (US5), 8 the CLI (US6), 9 brief and gates (US7), 10 the app (US8), 11 polish. Each phase ended with the tests, the typecheck, `check:size` and a mock loop. All 126 tasks are done; Phase 12 (T115–T126) added the brief's three edits of 2026-11-05. T012, T067 and T113 are real agent runs on dex-ecommerce scratch clones, about $0.12 in all.
 
 ## Where the build differs from the approved plan
 

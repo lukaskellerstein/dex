@@ -146,14 +146,14 @@ flowchart TB
         PICK -->|no Clarifications| CLAR["Clarify\nautonomous"]
         PICK -->|no plan / tasks| PLAN
         PICK -->|unchecked task| IMPL
-        PICK -->|no current verify.md| VERIFY
+        PICK -->|no current verify record| VERIFY
         PICK -->|every entry done| DONE[Loop Terminates]
 
         SPECIFY --> PICK
         CLAR --> PICK
         PLAN["Plan / Tasks\n/speckit.plan, /speckit.tasks"] --> PICK
         IMPL["Implement\n/speckit.implement per task phase"] --> PICK
-        VERIFY["Verify\nfresh agent: build + tests + browser E2E\nwrites verify.md"] --> PICK
+        VERIFY["Verify\nfresh agent: build + tests + browser E2E\nreturns a verdict"] --> PICK
     end
 
     subgraph "Safeguards"
@@ -220,7 +220,7 @@ flowchart LR
     PL -->|No| P["plan / tasks"]
     PL -->|Yes| T{In-scope task\nunchecked?}
     T -->|Yes| I["implement\nfirst open task phase"]
-    T -->|No| V{verify.md passed for\nthis tasks.md?}
+    T -->|No| V{verify passed for\nthis HEAD and tasks.md?}
     V -->|No| VE["verify"]
     V -->|Yes| D["entry done\nnext entry"]
 
@@ -273,7 +273,7 @@ flowchart TB
         VBUILD --> VTEST[Run full test suite]
         VTEST --> E2E["Browser E2E\n(Playwright/CDP)"]
         E2E --> SCREENSHOT[Take screenshots\nVerify UI flows]
-        SCREENSHOT --> RECORD["Write verify.md\nverdict + tasks.md fingerprint"]
+        SCREENSHOT --> RECORD["Dex records the verdict\nkeyed by HEAD + tasks.md"]
     end
 
     subgraph "Loop-Level Safeguards"

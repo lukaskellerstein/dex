@@ -33,7 +33,7 @@
 
 - Validated in one pass on 2026-11-05; two wording fixes applied (FR-045, FR-047) to remove interface and SDK names.
 - Deliberate exceptions to "no implementation details", because they are user-facing contracts rather than internals:
-  - the files a human reads or writes (`.dex/queue.json`, `.dex/policy.json`, `.dex/questions.md`, `specs/<id>/verify.md`, `tasks.md`);
+  - the files a human reads or writes (`.dex/queue.json`, `.dex/policy.json`, `.dex/questions.md`, `.dex/evidence/<id>/verify.json`, `tasks.md`);
   - the headless commands (`dex run`, `dex queue init`) and their flags;
   - the tool names a policy rule targets (Edit, Write, NotebookEdit, shell commands).
 - The audience is the Dex operator, a software engineer. "Non-technical stakeholder" is read as "no code-level knowledge of Dex needed".
