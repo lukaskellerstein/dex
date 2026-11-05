@@ -1,6 +1,8 @@
 import { FolderOpen, Pause, Play, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import type { RunSnapshot } from "../../../core/run-snapshot.js";
 import type { RunConfig } from "../../../core/types.js";
+import { startActionFor } from "../../hooks/useRunSnapshot.js";
 
 interface AggregateStats {
   totalSpecs: number;
@@ -15,7 +17,8 @@ export interface TopbarProps {
   projectDir: string | null;
   aggregate: AggregateStats;
   isRunning: boolean;
-  isPausedLoop: boolean;
+  /** The run snapshot: Start, Resume or nothing (research R17). */
+  snapshot: RunSnapshot | null;
   onOpenProject: () => void;
   onGoHome: () => void;
   onRefreshProject: () => void;
@@ -31,7 +34,7 @@ export function Topbar({
   projectDir,
   aggregate,
   isRunning,
-  isPausedLoop,
+  snapshot,
   onOpenProject,
   onGoHome,
   onRefreshProject,
@@ -40,7 +43,8 @@ export function Topbar({
   onStop,
   debugBadge,
 }: TopbarProps) {
-  const canStart = !!projectDir && (aggregate.unfinishedSpecs > 0 || isPausedLoop) && !isRunning;
+  const action = startActionFor(snapshot, aggregate.unfinishedSpecs);
+  const canStart = !!projectDir && action !== "none" && !isRunning;
 
   return (
     <div
@@ -214,7 +218,7 @@ export function Topbar({
       {projectDir && debugBadge && <div style={{ flexShrink: 0 }}>{debugBadge}</div>}
 
       {/* Run Controls (compact) — only when there's something to start or resume. */}
-      {projectDir && (isRunning || aggregate.unfinishedSpecs > 0 || isPausedLoop) && (
+      {projectDir && (isRunning || canStart) && (
         <div style={{ flexShrink: 0 }}>
           {isRunning ? (
             <button
@@ -255,7 +259,7 @@ export function Topbar({
               }}
             >
               <Play size={11} />
-              {isPausedLoop ? "Resume" : "Start"}
+              {action === "resume" ? "Resume" : "Start"}
             </button>
           )}
         </div>

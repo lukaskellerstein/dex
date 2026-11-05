@@ -1,4 +1,5 @@
 import { ipcRenderer } from "electron";
+import type { RequestAnswer } from "../../core/humanInput.js";
 import type { OrchestratorEvent, RunConfig } from "../../core/types.js";
 
 // Module-level fan-out: a single ipcRenderer listener feeds N renderer
@@ -15,8 +16,8 @@ const ipcHandler = (_e: Electron.IpcRendererEvent, data: OrchestratorEvent): voi
 export const orchestratorApi = {
   startRun: (config: RunConfig) => ipcRenderer.invoke("orchestrator:start", config),
   stopRun: () => ipcRenderer.invoke("orchestrator:stop"),
-  answerQuestion: (requestId: string, answers: Record<string, string>) =>
-    ipcRenderer.invoke("orchestrator:answer-question", requestId, answers),
+  answerRequest: (requestId: string, answer: RequestAnswer) =>
+    ipcRenderer.invoke("orchestrator:answer-request", requestId, answer),
   getProjectState: (dir: string) => ipcRenderer.invoke("orchestrator:getProjectState", dir),
   getRunState: () =>
     ipcRenderer.invoke("orchestrator:getRunState") as Promise<{

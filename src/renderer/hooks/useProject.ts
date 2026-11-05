@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import type { AgentRunRecord, SpecStats } from "../../core/runs.js";
-import type { DexState } from "../../core/state.js";
 import type { TaskPhase } from "../../core/types.js";
 import { historyService } from "../services/historyService.js";
-import { orchestratorService } from "../services/orchestratorService.js";
 import { projectService } from "../services/projectService.js";
+import { useRunSnapshot } from "./useRunSnapshot.js";
 
 export interface SpecSummary {
   name: string;
@@ -22,42 +21,8 @@ export function useProject() {
   const [selectedSpec, setSelectedSpec] = useState<string | null>(null);
   const [phases, setPhases] = useState<TaskPhase[]>([]);
   const [phaseStats, setPhaseStats] = useState<Map<number, AgentRunRecord>>(new Map());
-  const [dexStatus, setDexStatus] = useState<DexState["status"] | null>(null);
-
-  const refreshDexStatus = useCallback(async (dir: string | null) => {
-    if (!dir) {
-      setDexStatus(null);
-      return;
-    }
-    try {
-      const state = await orchestratorService.getProjectState(dir);
-      setDexStatus(state?.status ?? null);
-    } catch {
-      setDexStatus(null);
-    }
-  }, []);
-
-  // Re-read state.json whenever a status-changing orchestrator event fires so
-  // the topbar Resume button reflects reality (paused vs completed/failed).
-  useEffect(() => {
-    if (!projectDir) {
-      setDexStatus(null);
-      return;
-    }
-    void refreshDexStatus(projectDir);
-    const unsub = orchestratorService.subscribeEvents((evt) => {
-      if (
-        evt.type === "run_started" ||
-        evt.type === "run_completed" ||
-        evt.type === "paused" ||
-        evt.type === "loop_reset" ||
-        evt.type === "head_changed"
-      ) {
-        void refreshDexStatus(projectDir);
-      }
-    });
-    return unsub;
-  }, [projectDir, refreshDexStatus]);
+  // The queue and run status, read fresh on every stage boundary (research R17).
+  const { snapshot, refresh: refreshSnapshot } = useRunSnapshot(projectDir);
 
   const loadSpecs = async (dir: string) => {
     const specList = await projectService.listSpecs(dir);
@@ -135,6 +100,7 @@ export function useProject() {
 
   const refreshProject = async () => {
     if (!projectDir) return;
+    void refreshSnapshot();
     const specList = await loadSpecs(projectDir);
     // If the selected spec no longer exists, deselect it
     if (selectedSpec && !specList.includes(selectedSpec)) {
@@ -224,7 +190,7 @@ export function useProject() {
     setPhases,
     phaseStats,
     aggregate,
-    dexStatus,
+    snapshot,
     clearProject,
     openProject,
     openProjectPath,

@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -40,24 +40,56 @@ export function getHeadSha(projectDir: string): string {
   return exec("git rev-parse HEAD", projectDir);
 }
 
-export function countCommitsBetween(projectDir: string, fromSha: string, toSha: string): number {
-  const count = exec(`git rev-list --count ${fromSha}..${toSha}`, projectDir);
-  return parseInt(count, 10) || 0;
+/**
+ * git with an argument list — no shell, so branch names and paths from
+ * queue.json cannot inject commands. Output is not trimmed: porcelain status
+ * lines start with a space.
+ */
+function gitArgs(args: string[], cwd: string): string {
+  return execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-export function getCommittedFileContent(
-  projectDir: string,
-  ref: string,
-  filePath: string,
-): string | null {
+/** True when the local branch `name` exists. */
+export function branchExists(projectDir: string, name: string): boolean {
   try {
-    return exec(`git show ${ref}:${filePath}`, projectDir);
+    gitArgs(["show-ref", "--verify", "--quiet", `refs/heads/${name}`], projectDir);
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
-// commitCheckpoint moved to src/core/checkpoints/commit.ts as part of 011-A0.
+/** `git switch <name>`. Throws (with git's stderr) when git refuses, for example on a dirty tree. */
+export function switchBranch(projectDir: string, name: string): void {
+  gitArgs(["switch", "--quiet", name], projectDir);
+}
+
+/** True when `absPath` is a file committed at HEAD (the policy's frozen check). */
+export function isTrackedAtHead(projectDir: string, absPath: string): boolean {
+  const rel = path.relative(projectDir, absPath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
+  try {
+    gitArgs(["cat-file", "-e", `HEAD:./${rel.split(path.sep).join("/")}`], projectDir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Files matching `globs` that were modified, deleted or renamed since `sha` —
+ * in commits up to HEAD or in the working tree (research R13). A file created
+ * after `sha` does not count: frozen means "once committed".
+ */
+export function frozenChangesSince(projectDir: string, sha: string, globs: string[]): string[] {
+  if (globs.length === 0) return [];
+  const pathspecs = globs.map((g) => `:(glob)${g}`);
+  const diff = (...range: string[]) =>
+    gitArgs(["diff", "--name-only", "--diff-filter=MDR", ...range, "--", ...pathspecs], projectDir)
+      .split("\n")
+      .filter(Boolean);
+  return [...new Set([...diff(sha, "HEAD"), ...diff(sha)])].sort();
+}
 
 export function createBranch(projectDir: string): string {
   const date = new Date().toISOString().slice(0, 10);
@@ -118,89 +150,6 @@ ${diffStat || "No changes."}
 `;
 
   // Write body to a temp file to avoid shell escaping issues
-  const bodyFile = path.join(os.tmpdir(), `dex-pr-body-${crypto.randomUUID()}.md`);
-  try {
-    fs.writeFileSync(bodyFile, body, "utf-8");
-    const prUrl = exec(
-      `gh pr create --base ${baseBranch} --head ${branchName} --title "${title}" --body-file "${bodyFile}"`,
-      projectDir,
-    );
-    return prUrl;
-  } catch {
-    return null;
-  } finally {
-    try {
-      fs.unlinkSync(bodyFile);
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-// ── Loop-specific PR (T021) ──
-
-export function createLoopPullRequest(
-  projectDir: string,
-  branchName: string,
-  baseBranch: string,
-  terminationReason: string,
-  cyclesCompleted: number,
-  featuresCompleted: string[],
-  featuresSkipped: string[],
-  totalCost: number,
-  totalDurationMs: number,
-): string | null {
-  try {
-    exec(`git push -u origin ${branchName}`, projectDir);
-  } catch {
-    return null;
-  }
-
-  const commitLog = exec(
-    `git log ${baseBranch}..${branchName} --pretty=format:"- %s" --reverse`,
-    projectDir,
-  );
-
-  const diffStat = exec(`git diff --stat ${baseBranch}..${branchName}`, projectDir);
-
-  const durationMin = (totalDurationMs / 60_000).toFixed(1);
-  const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "n/a";
-
-  const title = `Dex loop: ${featuresCompleted.length} feature${featuresCompleted.length === 1 ? "" : "s"} completed`;
-
-  const completedList =
-    featuresCompleted.length > 0 ? featuresCompleted.map((f) => `  - ${f}`).join("\n") : "  _none_";
-  const skippedList =
-    featuresSkipped.length > 0 ? featuresSkipped.map((f) => `  - ${f}`).join("\n") : "  _none_";
-
-  const body = `## Summary
-
-Autonomous loop run by Dex orchestrator.
-
-- **Termination reason**: ${terminationReason}
-- **Cycles completed**: ${cyclesCompleted}
-- **Duration**: ${durationMin} min
-- **Cost**: ${costStr}
-
-## Features completed
-
-${completedList}
-
-## Features skipped
-
-${skippedList}
-
-## Commits
-
-${commitLog || "_No commits were made._"}
-
-## Diff stats
-
-\`\`\`
-${diffStat || "No changes."}
-\`\`\`
-`;
-
   const bodyFile = path.join(os.tmpdir(), `dex-pr-body-${crypto.randomUUID()}.md`);
   try {
     fs.writeFileSync(bodyFile, body, "utf-8");

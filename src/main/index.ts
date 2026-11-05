@@ -3,10 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
 import { registerAppConfigHandlers } from "./ipc/appConfig.js";
-import { registerCheckpointsHandlers } from "./ipc/checkpoints.js";
 import { registerHistoryHandlers } from "./ipc/history.js";
 import { registerOrchestratorHandlers } from "./ipc/orchestrator.js";
-import { registerProfilesHandlers } from "./ipc/profiles.js";
 import { registerProjectHandlers } from "./ipc/project.js";
 
 // One-shot cleanup of the legacy SQLite directory retired in 007-sqlite-removal.
@@ -74,8 +72,6 @@ function createWindow(): void {
   registerProjectHandlers();
   registerOrchestratorHandlers(() => mainWindow);
   registerHistoryHandlers();
-  registerCheckpointsHandlers();
-  registerProfilesHandlers();
   registerAppConfigHandlers();
 
   // Surface renderer-side errors (window.onerror / unhandledrejection) into

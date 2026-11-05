@@ -4,7 +4,8 @@ import type { Task, TaskPhase } from "./types.js";
 
 const PHASE_HEADER = /^## (?:TaskPhase|Phase) (\d+): (.+)$/;
 const PURPOSE_LINE = /^\*\*Purpose\*\*: (.+)$/;
-const TASK_LINE = /^- \[([ x~])\] (T\d+)\s+(.+)$/;
+// spec-kit writes `[X]`; hand edits often use `[x]`. Both mean done.
+const TASK_LINE = /^- \[([ xX~])\] (T\d+)\s+(.+)$/;
 const BRACKET_TAG = /\[([^\]]+)\]/g;
 
 function extractTags(raw: string): {
@@ -49,12 +50,13 @@ export function deriveTaskPhaseStatus(tasks: Task[]): "complete" | "partial" | "
 }
 
 function parseTaskStatus(marker: string): Task["status"] {
-  if (marker === "x") return "done";
+  if (marker === "x" || marker === "X") return "done";
   if (marker === "~") return "code_exists";
   return "not_done";
 }
 
-function parseTasksMd(content: string): TaskPhase[] {
+/** Parses tasks.md content into its task phases. Pure — callers choose where the content comes from. */
+export function parseTasksMd(content: string): TaskPhase[] {
   const lines = content.split("\n");
   const phases: TaskPhase[] = [];
   let currentTaskPhase: TaskPhase | null = null;
@@ -144,29 +146,7 @@ export function extractTaskIds(content: string): string[] {
   return ids;
 }
 
-// Gap analysis is now deterministic via the feature manifest (see manifest.ts).
-// The regex-based parseGapAnalysisResult and GAP_DECISION_RE have been removed.
-
 // ── T015: Discover New Spec Directory ──
-
-export function discoverNewSpecDir(projectDir: string, knownSpecs: string[]): string | null {
-  const candidates = [path.join(projectDir, "specs"), path.join(projectDir, ".specify", "specs")];
-
-  for (const specsRoot of candidates) {
-    if (fs.existsSync(specsRoot)) {
-      const entries = fs.readdirSync(specsRoot, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const relPath = path.relative(projectDir, path.join(specsRoot, entry.name));
-        if (!knownSpecs.includes(relPath)) {
-          return relPath;
-        }
-      }
-    }
-  }
-
-  return null;
-}
 
 export function parseTasksFile(projectDir: string, specDir: string): TaskPhase[] {
   const tasksPath = path.join(projectDir, specDir, "tasks.md");

@@ -1,14 +1,3 @@
-// ── State Management Types (used by both types.ts and state.ts) ──
-
-export interface DriftSummary {
-  missingArtifacts: string[];
-  modifiedArtifacts: string[];
-  taskRegressions: Record<string, string[]>;
-  taskProgressions: Record<string, string[]>;
-  extraCommits: number;
-  pendingQuestionReask: boolean;
-}
-
 // ── Macro Phase (4 user-facing buckets) ──
 
 export type Phase = "prerequisites" | "clarification" | "loop" | "completion";
@@ -72,45 +61,33 @@ export interface SubagentInfo {
 
 // ── Process Step Types ──
 
+/**
+ * Every stage the orchestrator can run. The new-project stages come first; the
+ * per-entry stages (brief … verify) match `StageName` in queue.ts.
+ */
 export type StepType =
   | "prerequisites"
-  | "create_branch"
   | "clarification"
   | "clarification_product"
   | "clarification_technical"
   | "clarification_synthesis"
   | "constitution"
   | "manifest_extraction"
-  | "gap_analysis"
+  | "brief"
   | "specify"
+  | "clarify"
   | "plan"
   | "tasks"
   | "implement"
-  | "implement_fix"
   | "verify"
-  | "learnings"
-  | "completion"
-  | "commit";
-
-export type GapAnalysisDecision =
-  | { type: "NEXT_FEATURE"; name: string; description: string; featureId: number }
-  | { type: "RESUME_FEATURE"; specDir: string }
-  | { type: "REPLAN_FEATURE"; specDir: string }
-  | { type: "RESUME_AT_STEP"; specDir: string; resumeAtStep: StepType }
-  | { type: "GAPS_COMPLETE" };
-
-export interface FailureRecord {
-  specDir: string;
-  implFailures: number;
-  replanFailures: number;
-}
+  | "completion";
 
 export type TerminationReason =
-  | "gaps_complete"
-  | "budget_exceeded"
-  | "max_cycles_reached"
+  | "queue_complete"
   | "user_abort"
-  | "consecutive_failures";
+  | "paused"
+  | "budget_exceeded"
+  | "failed";
 
 export interface LoopTermination {
   reason: TerminationReason;

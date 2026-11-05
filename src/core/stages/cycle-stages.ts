@@ -1,394 +1,223 @@
 /**
- * What: The cohesive Implement → Verify → Learnings stage block of one autonomous-loop cycle. `runImplementVerifyLearnings` runs the implement stage (with phase loop and per-stage trace), then verify (with structured-output + fix-retry loop), then learnings (with insights append). Returns cost + pass/fail signal so the caller can update its accumulators.
- * Not: Does not own gap analysis, specify, plan, or tasks (those run before this helper in the cycle iterator). Does not own failure-counter state mutation, manifest status updates, or featuresCompleted bookkeeping — caller threads results back. Does not own cycle-level abort handling — the surrounding try/catch in main-loop catches AbortError.
- * Deps: runStage / runPhase / RunTaskState (from orchestrator.js, circular-but-call-time-safe), prompts.{buildVerifyPrompt, buildVerifyFixPrompt, buildLearningsPrompt, VERIFY_SCHEMA, LEARNINGS_SCHEMA}, manifest.appendLearnings, runs.{startAgentRun, completeAgentRun}.
+ * What: The two stages that need more than one prompt — `runImplement` (one task phase per call, through the runner's runTaskPhase) and `runVerify` (Dex keys the entry right before the stage, the agent returns its verdict as structured output, and Dex writes the evidence record). Both return what post-stage needs.
+ * Not: Does not decide which phase or whether verify runs — the picker does. Writes no run state (post-stage does).
+ * Deps: runStage, getActiveContext, parser.parseTasksMd, evidence.*, queue.{isFixPhase, isInScope}, prompts.{buildImplementPrompt, buildVerifyPrompt, stageEnv}, runs.*.
  */
 
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
-import type { OrchestrationContext } from "../context.js";
-import type { RunLogger } from "../log.js";
-import { appendLearnings, loadManifest, updateFeatureStatus } from "../manifest.js";
-// Circular: orchestrator.ts hosts runStage / runPhase / RunTaskState / AbortError;
-// both sides export only functions/classes so ESM init is safe.
-import { AbortError, RunTaskState, runPhase, runStage } from "../orchestrator.js";
-import { parseTasksFile } from "../parser.js";
+import type { LimitHit } from "../agent/AgentRunner.js";
 import {
-  buildLearningsPrompt,
-  buildVerifyFixPrompt,
-  buildVerifyPrompt,
-  LEARNINGS_SCHEMA,
+  evidenceKey,
+  parseVerdict,
+  tasksHash,
   VERIFY_SCHEMA,
+  type VerifyVerdict,
+  writeVerifyRecord,
+} from "../evidence.js";
+import { getActiveContext } from "../orchestrator.js";
+import { parseTasksMd } from "../parser.js";
+import {
+  buildImplementPrompt,
+  buildVerifyPrompt,
+  stageEnv,
+  type VerifyExtras,
 } from "../prompts.js";
+import { isFixPhase, isInScope, type QueueV3, type ResolvedEntry } from "../queue.js";
 import * as runs from "../runs.js";
-import { updateState } from "../state.js";
-import type { RunConfig } from "../types.js";
-import { finalizeStageCheckpoint } from "./finalize.js";
+import type { RunConfig, TaskPhase } from "../types.js";
+import { runStage } from "./run-stage.js";
 
-export interface ImplementVerifyLearningsInput {
-  ctx: OrchestrationContext;
+export interface StageDeps {
   config: RunConfig;
   runId: string;
-  cycleNumber: number;
-  specDir: string;
-  fullPlanPath: string;
-  rlog: RunLogger;
+  kind: QueueV3["kind"];
+  /** The project goal for new projects (read-only context); null for existing ones. */
+  goalPath: string | null;
 }
 
-export interface ImplementVerifyLearningsOutput {
-  /** Cost accumulated across implement + verify (with retries) + learnings. */
-  cycleCost: number;
-  /** Whether the final verification passed (after any fix-retry loop). */
-  verifyPassed: boolean;
+export interface ImplementResult {
+  cost: number;
+  /** Checked in-scope tasks before and after the run (research R9). */
+  checkedBefore: number;
+  checkedAfter: number;
+  limitHit: LimitHit | null;
 }
 
-/**
- * Runs implement → verify (with fix-retry) → learnings for one cycle's
- * targeted spec dir. Throws `AbortError` on user abort; the surrounding
- * try/catch in `runMainLoop` handles it as a clean exit.
- */
-export async function runImplementVerifyLearnings(
-  input: ImplementVerifyLearningsInput,
-): Promise<ImplementVerifyLearningsOutput> {
-  const { ctx, config, runId, cycleNumber, specDir, fullPlanPath, rlog } = input;
-  const emit = ctx.emit;
-  const abort = ctx.abort;
-  const state = ctx.state;
-  const projectDir = ctx.projectDir;
+function readTasks(projectDir: string, entry: ResolvedEntry): string {
+  return fs.readFileSync(path.join(projectDir, entry.specDir, "tasks.md"), "utf-8");
+}
 
-  let cycleCost = 0;
+/** Checked tasks that count toward the entry: its scope, plus every fix phase. */
+export function countCheckedInScope(entry: ResolvedEntry, phases: TaskPhase[]): number {
+  return phases.flatMap((p) => p.tasks.filter((t) => isInScope(entry, p, t) && t.status === "done"))
+    .length;
+}
 
-  // ── Implement stage ─────────────────────────────────────────────────────
-  const implSpecPath = specDir.startsWith("/") ? specDir : path.join(projectDir, specDir);
+function ctxOrThrow() {
+  const ctx = getActiveContext();
+  if (!ctx) throw new Error("cycle-stages called before currentContext was resolved");
+  return ctx;
+}
 
-  state.currentStep = "implement";
-  state.specDir = specDir;
-  // Update FeatureArtifacts.status to "implementing"
-  updateState(projectDir, {
-    artifacts: { features: { [specDir]: { status: "implementing" } } },
-  } as never).catch(() => {});
+/** One `/speckit-implement --phase N` agent for `entry`. */
+export async function runImplement(
+  deps: StageDeps,
+  entry: ResolvedEntry,
+  taskPhase: number,
+  cycleNumber: number,
+): Promise<ImplementResult> {
+  const ctx = ctxOrThrow();
+  const { projectDir, emit, rlog, state } = ctx;
+  const phases = parseTasksMd(readTasks(projectDir, entry));
+  const phase = phases.find((p) => p.number === taskPhase);
+  if (!phase) throw new Error(`${entry.specDir}/tasks.md has no phase ${taskPhase}`);
+  const checkedBefore = countCheckedInScope(entry, phases);
 
-  // Stage-level phase record so the UI shows implement in the stage list.
-  const implStageTraceId = crypto.randomUUID();
-  runs.startAgentRun(projectDir, runId, {
-    agentRunId: implStageTraceId,
-    runId,
-    specDir,
-    taskPhaseNumber: cycleNumber,
-    taskPhaseName: "loop:implement",
+  const agentRunId = crypto.randomUUID();
+  runs.startAgentRun(projectDir, deps.runId, {
+    agentRunId,
+    runId: deps.runId,
+    specDir: entry.specDir,
+    taskPhaseNumber: phase.number,
+    taskPhaseName: phase.name,
     step: "implement",
     cycleNumber,
-    featureSlug: path.basename(specDir),
+    featureSlug: entry.id,
     startedAt: new Date().toISOString(),
     status: "running",
   });
-
-  // Mirror what `runStage` does for every other cycle stage — bind the
-  // logger to a `phase-<cycle>_implement/` directory and write the
-  // `TaskPhase N started: implement` line to run.log. Without this,
-  // implement is invisible in run.log and any sub-agent it spawns logs
-  // to whichever phase dir the previous stage left dangling.
-  rlog.startAgentRun(cycleNumber, "implement", implStageTraceId);
-  rlog.agentRun("INFO", `runImplement: implement stage for cycle ${cycleNumber}`);
-
+  rlog.startAgentRun(cycleNumber, "implement", agentRunId);
+  rlog.agentRun("INFO", `runImplement: ${entry.id} phase ${phase.number} (${phase.name})`);
+  Object.assign(state, {
+    currentStep: "implement",
+    specDir: entry.specDir,
+    agentRunId,
+    taskPhaseNumber: phase.number,
+    taskPhaseName: phase.name,
+  });
   emit({
     type: "step_started",
-    runId,
+    runId: deps.runId,
     cycleNumber,
     step: "implement",
-    agentRunId: implStageTraceId,
-    specDir,
+    agentRunId,
+    specDir: entry.specDir,
+    taskPhaseNumber: phase.number,
+  });
+  emit({ type: "tasks_updated", taskPhases: phases });
+  emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
+
+  const r = await ctx.runner.runTaskPhase({
+    config: { ...deps.config, specDir: entry.specDir },
+    prompt: buildImplementPrompt(entry, projectDir, { phase, goalPath: deps.goalPath }),
+    runId: deps.runId,
+    taskPhase: phase,
+    agentRunId,
+    abortController: ctx.abort,
+    emit,
+    rlog,
+    env: stageEnv(entry, "implement", deps.kind),
+    entryId: entry.id,
+    policy: ctx.policy,
   });
 
-  const implStageStart = Date.now();
-  let implStageCost = 0;
-  let implStageInputTokens = 0;
-  let implStageOutputTokens = 0;
-  let activePhaseTraceId: string | null = null;
-  let implStageFailed = false;
-
-  // Parse tasks.md to get phases, then run each phase.
-  // RunTaskState is created ONCE and reused across all phases so that
-  // progress from earlier phases is preserved (promote-only semantics).
-  const phases = parseTasksFile(projectDir, specDir);
-  const implConfig = { ...config, specDir };
-  const runTaskState = new RunTaskState(phases);
-
-  // Initial task state so the UI can show the spec card immediately.
-  emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
-
-  try {
-    for (const phase of phases) {
-      if (abort.signal.aborted) break;
-      if (phase.status === "complete") continue;
-
-      const agentRunId = crypto.randomUUID();
-      activePhaseTraceId = agentRunId;
-      runs.startAgentRun(projectDir, runId, {
-        agentRunId,
-        runId,
-        specDir,
-        taskPhaseNumber: phase.number,
-        taskPhaseName: phase.name,
-        step: null,
-        cycleNumber,
-        featureSlug: path.basename(specDir),
-        startedAt: new Date().toISOString(),
-        status: "running",
-      });
-
-      state.agentRunId = agentRunId;
-      state.taskPhaseNumber = phase.number;
-      state.taskPhaseName = phase.name;
-
-      emit({ type: "task_phase_started", taskPhase: phase, iteration: 0, agentRunId });
-
-      const phaseResult = await runPhase(
-        implConfig,
-        phase,
-        agentRunId,
-        runId,
-        emit,
-        rlog,
-        runTaskState,
-      );
-      runs.completeAgentRun(projectDir, runId, agentRunId, {
-        status: "completed",
-        costUsd: phaseResult.cost,
-        durationMs: phaseResult.durationMs,
-        inputTokens: phaseResult.inputTokens || null,
-        outputTokens: phaseResult.outputTokens || null,
-      });
-      activePhaseTraceId = null;
-      cycleCost += phaseResult.cost;
-      implStageCost += phaseResult.cost;
-      implStageInputTokens += phaseResult.inputTokens;
-      implStageOutputTokens += phaseResult.outputTokens;
-
-      // Reconcile task state from disk
-      const freshPhases = parseTasksFile(projectDir, specDir);
-      runTaskState.reconcileFromDisk(freshPhases);
-      emit({ type: "tasks_updated", taskPhases: runTaskState.getPhases() });
-      emit({
-        type: "task_phase_completed",
-        taskPhase: { ...phase, status: "complete" },
-        cost: phaseResult.cost,
-        durationMs: phaseResult.durationMs,
-      });
-    }
-  } catch (implErr) {
-    implStageFailed = true;
-    if (activePhaseTraceId) {
-      try {
-        runs.completeAgentRun(projectDir, runId, activePhaseTraceId, {
-          status: "failed",
-          costUsd: 0,
-          durationMs: Date.now() - implStageStart,
-        });
-      } catch {
-        /* best-effort */
-      }
-    }
-    throw implErr;
-  } finally {
-    // Always close the loop:implement stage trace, even on exception.
-    const implStageDurationMs = Date.now() - implStageStart;
-    const implAborted = abort.signal.aborted;
-    const implFinalStatus = implAborted ? "stopped" : implStageFailed ? "failed" : "completed";
-    runs.completeAgentRun(projectDir, runId, implStageTraceId, {
-      status: implFinalStatus,
-      costUsd: implStageCost,
-      durationMs: implStageDurationMs,
-      inputTokens: implStageInputTokens || null,
-      outputTokens: implStageOutputTokens || null,
-    });
-    emit({
-      type: "step_completed",
-      runId,
-      cycleNumber,
-      step: "implement",
-      agentRunId: implStageTraceId,
-      costUsd: implStageCost,
-      durationMs: implStageDurationMs,
-      ...(implAborted ? { stopped: true } : {}),
-    });
-  }
-
-  // Post-stage checkpoint for the implement stage. Mirrors runStage's call in
-  // run-stage.ts:108 — produces the `[checkpoint:implement:<cycle>]` commit
-  // that the Timeline canvas filters on. Skipped on abort/failure.
-  if (!implStageFailed && !abort.signal.aborted) {
-    await finalizeStageCheckpoint({
-      ctx,
-      runId,
-      agentRunId: implStageTraceId,
-      cycleNumber,
-      step: "implement",
-      specDir,
-      rlog,
-      stepModeOverride: Boolean(config.stepMode),
-      abortController: abort,
-    });
-  }
-
-  if (abort.signal.aborted) throw new AbortError();
-
-  // ── Verify with fix-retry ───────────────────────────────────────────────
-  state.currentStep = "verify";
-  updateState(projectDir, {
-    artifacts: { features: { [specDir]: { status: "verifying" } } },
-  } as never).catch(() => {});
-
-  const verifyPrompt = buildVerifyPrompt(config, implSpecPath, fullPlanPath);
-  const verifyResult = await runStage(
-    config,
-    verifyPrompt,
-    emit,
-    rlog,
-    runId,
+  const after = parseTasksMd(readTasks(projectDir, entry));
+  const stopped = ctx.abort.signal.aborted;
+  runs.completeAgentRun(projectDir, deps.runId, agentRunId, {
+    status: stopped ? "stopped" : "completed",
+    costUsd: r.cost,
+    durationMs: r.durationMs,
+    inputTokens: r.inputTokens || null,
+    outputTokens: r.outputTokens || null,
+  });
+  emit({ type: "tasks_updated", taskPhases: after });
+  emit({
+    type: "task_phase_completed",
+    taskPhase: after.find((p) => p.number === phase.number) ?? phase,
+    cost: r.cost,
+    durationMs: r.durationMs,
+  });
+  emit({
+    type: "step_completed",
+    runId: deps.runId,
     cycleNumber,
-    "verify",
-    specDir,
-    { type: "json_schema", schema: VERIFY_SCHEMA as unknown as Record<string, unknown> },
-  );
-  cycleCost += verifyResult.cost;
-
-  type VerifyOutput = {
-    passed: boolean;
-    buildSucceeded: boolean;
-    testsSucceeded: boolean;
-    failures: Array<{ criterion: string; description: string; severity: string }>;
-    summary: string;
+    step: "implement",
+    agentRunId,
+    costUsd: r.cost,
+    durationMs: r.durationMs,
+    ...(stopped ? { stopped: true } : {}),
+  });
+  return {
+    cost: r.cost,
+    checkedBefore,
+    checkedAfter: countCheckedInScope(entry, after),
+    limitHit: r.limitHit ?? null,
   };
+}
 
-  let verification: VerifyOutput = (verifyResult.structuredOutput as VerifyOutput | null) ?? {
-    passed: false,
-    buildSucceeded: false,
-    testsSucceeded: false,
-    failures: [
-      {
-        criterion: "structured_output",
-        description: "Verify agent did not return structured output",
-        severity: "blocking",
-      },
-    ],
-    summary: "Verification could not be evaluated — structured output was null",
+/** `T<max+1>`, padded like the file's ids (T009 → T010). */
+function nextTaskId(phases: TaskPhase[]): string {
+  const ids = phases.flatMap((p) => p.tasks.map((t) => t.id));
+  const max = Math.max(0, ...ids.map((id) => Number(id.slice(1))));
+  const width = Math.max(3, ...ids.map((id) => id.length - 1));
+  return `T${String(max + 1).padStart(width, "0")}`;
+}
+
+/** What the verify prompt states about tasks.md: the round, and where a fix phase goes. */
+export function verifyFacts(tasksMd: string): VerifyExtras {
+  const phases = parseTasksMd(tasksMd);
+  return {
+    round: phases.filter(isFixPhase).length + 1,
+    nextPhaseNumber: Math.max(0, ...phases.map((p) => p.number)) + 1,
+    nextTaskId: nextTaskId(phases),
   };
+}
 
-  if (!verification.passed) {
-    const blockingFailures = verification.failures.filter((f) => f.severity === "blocking");
-    if (blockingFailures.length > 0) {
-      const maxRetries = config.maxVerifyRetries ?? 1;
-      for (let retryNum = 1; retryNum <= maxRetries; retryNum++) {
-        const currentBlocking = verification.failures.filter((f) => f.severity === "blocking");
-        rlog.run(
-          "WARN",
-          `runLoop: verify found ${currentBlocking.length} blocking failure(s) — fix attempt ${retryNum}/${maxRetries}`,
-        );
-        emit({
-          type: "verify_failed",
-          runId,
-          cycleNumber,
-          blockingCount: currentBlocking.length,
-          summary: verification.summary,
-        });
-
-        if (abort.signal.aborted) throw new AbortError();
-
-        const fixPrompt = buildVerifyFixPrompt(config, implSpecPath, currentBlocking);
-        const fixResult = await runStage(
-          config,
-          fixPrompt,
-          emit,
-          rlog,
-          runId,
-          cycleNumber,
-          "implement_fix",
-          specDir,
-        );
-        cycleCost += fixResult.cost;
-
-        if (abort.signal.aborted) throw new AbortError();
-
-        const reVerifyResult = await runStage(
-          config,
-          verifyPrompt,
-          emit,
-          rlog,
-          runId,
-          cycleNumber,
-          "verify",
-          specDir,
-          { type: "json_schema", schema: VERIFY_SCHEMA as unknown as Record<string, unknown> },
-        );
-        cycleCost += reVerifyResult.cost;
-
-        verification = (reVerifyResult.structuredOutput as VerifyOutput | null) ?? {
-          passed: false,
-          buildSucceeded: false,
-          testsSucceeded: false,
-          failures: [
-            {
-              criterion: "structured_output",
-              description: "Re-verify agent did not return structured output",
-              severity: "blocking",
-            },
-          ],
-          summary: "Re-verification could not be evaluated — structured output was null",
-        };
-
-        if (verification.passed) {
-          rlog.run("INFO", `runLoop: re-verify passed on attempt ${retryNum}`);
-          break;
-        }
-        if (retryNum === maxRetries) {
-          rlog.run(
-            "WARN",
-            `runLoop: re-verify still failing after ${maxRetries} fix attempt(s) — proceeding to learnings`,
-          );
-        }
-      }
-    }
+/**
+ * The verify agent: fresh context, returns its verdict as structured output. Dex
+ * keys the record with what the agent checked — the entry as it was when the
+ * stage started — so a commit during the stage sends the entry back to verify.
+ */
+export async function runVerify(
+  deps: StageDeps,
+  entry: ResolvedEntry,
+  cycleNumber: number,
+): Promise<{ cost: number; verdict: VerifyVerdict | null; limitHit: LimitHit | null }> {
+  const ctx = ctxOrThrow();
+  const key = evidenceKey(ctx.projectDir, deps.kind, entry);
+  if (key === null) {
+    throw new Error(
+      `verify ${entry.id}: cannot key the record (no branch "${entry.branch}" or no ${entry.specDir})`,
+    );
   }
-
-  if (abort.signal.aborted) throw new AbortError();
-
-  // Flip the manifest BEFORE the learnings checkpoint commit so the commit at
-  // [checkpoint:learnings:N] captures the feature as `completed`. If we wait
-  // until after IVL returns, fork-from-learnings sees an `active` feature with
-  // a specDir, gap_analysis takes the LLM/RESUME_FEATURE branch, and the
-  // resumed run re-iterates implement→verify→learnings.
-  if (verification.passed) {
-    const manifest = loadManifest(projectDir);
-    const entry = manifest?.features.find((f) => f.specDir === specDir);
-    if (entry) updateFeatureStatus(projectDir, entry.id, "completed");
-  }
-
-  // ── Learnings ───────────────────────────────────────────────────────────
-  state.currentStep = "learnings";
-  const learningsPrompt = buildLearningsPrompt(config, implSpecPath);
-  const learningsResult = await runStage(
-    config,
-    learningsPrompt,
-    emit,
-    rlog,
-    runId,
+  const tasksMd = readTasks(ctx.projectDir, entry);
+  const prompt = buildVerifyPrompt(entry, ctx.projectDir, verifyFacts(tasksMd));
+  const r = await runStage({
+    outputFormat: {
+      type: "json_schema",
+      schema: VERIFY_SCHEMA as unknown as Record<string, unknown>,
+    },
+    config: deps.config,
+    prompt,
+    runId: deps.runId,
     cycleNumber,
-    "learnings",
-    specDir,
-    { type: "json_schema", schema: LEARNINGS_SCHEMA as unknown as Record<string, unknown> },
-  );
-  cycleCost += learningsResult.cost;
-
-  const learnings = learningsResult.structuredOutput as {
-    insights: Array<{ category: string; insight: string; context: string }>;
-  } | null;
-
-  if (learnings?.insights?.length) {
-    appendLearnings(projectDir, learnings.insights, config.maxLearningsPerCategory);
-  } else if (!learnings) {
-    rlog.run("WARN", "runLoop: learnings structured output was null — skipping append");
+    step: "verify",
+    specDir: entry.specDir,
+    env: stageEnv(entry, "verify", deps.kind),
+    entryId: entry.id,
+  });
+  const verdict = parseVerdict(r.structuredOutput);
+  if (verdict) {
+    writeVerifyRecord(ctx.projectDir, {
+      version: 1,
+      entryId: entry.id,
+      key,
+      tasksHash: tasksHash(tasksMd),
+      checked: new Date().toISOString(),
+      ...verdict,
+    });
   }
-
-  return { cycleCost, verifyPassed: verification.passed };
+  return { cost: r.cost, verdict, limitHit: r.limitHit };
 }

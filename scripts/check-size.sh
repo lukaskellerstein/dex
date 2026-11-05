@@ -17,12 +17,6 @@ set -euo pipefail
 ALLOWLIST=(
   src/core/state.ts                   # perpetual — 01X-state-reconciliation
   src/core/agent/ClaudeAgentRunner.ts # perpetual — TBD SDK-adapter spec
-  # Added 2026-08-03. Both arrived with 010-interactive-timeline, after this
-  # list was written, and were never assessed against the limit. Cohesive
-  # single-purpose modules (one layout pass; one SVG+zoom component), so the
-  # split would be arbitrary. Revisit under a timeline-rendering spec.
-  src/renderer/components/checkpoints/timelineLayout.ts
-  src/renderer/components/checkpoints/TimelineGraph.tsx
 )
 
 # Find files >600 LOC under src/. `wc -l` emits a trailing "total" line we filter out.

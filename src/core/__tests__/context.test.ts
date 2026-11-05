@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createContext, type OrchestrationContext, type RunState } from "../context.ts";
+import { DEFAULT_POLICY } from "../policy.ts";
 
 // Minimal fakes — context.ts is a pure builder, so we only need a shape that
 // satisfies the interface, not actual runner / logger / emit behaviour.
@@ -31,6 +32,8 @@ test("createContext: returns a value with all required fields", () => {
     },
     emit: noop,
     rlog: fakeRlog,
+    kind: "new",
+    policy: DEFAULT_POLICY,
   });
 
   assert.equal(ctx.abort, abort, "abort should be the same instance");
@@ -39,22 +42,8 @@ test("createContext: returns a value with all required fields", () => {
   assert.equal(ctx.emit, noop, "emit threaded through");
   assert.equal(ctx.rlog, fakeRlog, "rlog threaded through");
   assert.equal(ctx.state.runId, "test-run", "state threaded through");
-});
-
-test("createContext: pendingQuestion starts empty", () => {
-  const ctx = createContext({
-    abort: new AbortController(),
-    runner: fakeRunner,
-    state: { ...baseState },
-    projectDir: "/tmp/dex-test",
-    releaseLock: async () => {},
-    emit: noop,
-    rlog: fakeRlog,
-  });
-
-  assert.equal(ctx.pendingQuestion.promise, null);
-  assert.equal(ctx.pendingQuestion.resolve, null);
-  assert.equal(ctx.pendingQuestion.requestId, null);
+  assert.equal(ctx.kind, "new", "kind threaded through");
+  assert.equal(ctx.policy, DEFAULT_POLICY, "policy threaded through");
 });
 
 test("createContext: state field is mutable (mirrors orchestrator.ts:380 mutation pattern)", () => {
@@ -67,6 +56,8 @@ test("createContext: state field is mutable (mirrors orchestrator.ts:380 mutatio
     releaseLock: async () => {},
     emit: noop,
     rlog: fakeRlog,
+    kind: "new",
+    policy: DEFAULT_POLICY,
   });
 
   // The orchestrator updates ctx.state.X = Y after each phase boundary.
@@ -90,6 +81,8 @@ test("createContext: abort signal flows through ctx", () => {
     releaseLock: async () => {},
     emit: noop,
     rlog: fakeRlog,
+    kind: "new",
+    policy: DEFAULT_POLICY,
   });
 
   assert.equal(ctx.abort.signal.aborted, false);
@@ -109,6 +102,8 @@ test("createContext: releaseLock is callable and awaitable", async () => {
     },
     emit: noop,
     rlog: fakeRlog,
+    kind: "new",
+    policy: DEFAULT_POLICY,
   });
 
   await ctx.releaseLock();

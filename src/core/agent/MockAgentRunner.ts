@@ -1,13 +1,15 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { VerifyVerdict } from "../evidence.js";
 import { deriveGoalPaths, type GoalPaths } from "../goal-paths.js";
-import type { AgentStep, RunConfig } from "../types.js";
+import { askQuestions, questionModeFor } from "../humanInput.js";
+import type { Policy } from "../policy.js";
+import { loadQueue, type StageName } from "../queue.js";
+import type { AgentStep, EmitFn, RunConfig, StepType, UserInputQuestion } from "../types.js";
 import type {
   AgentRunner,
-  OneShotContext,
-  OneShotResult,
   StepContext,
   StepResult,
   TaskPhaseContext,
@@ -18,18 +20,15 @@ import {
   type MockConfig,
   MockConfigInvalidPathError,
   MockConfigMissingEntryError,
-  type MockOneShotResponse,
+  type MockQuestion,
   PHASE_OF_STEP,
   type StepDescriptor,
+  stageScript,
+  type VerifyDescriptor,
+  type VerifyRound,
 } from "./MockConfig.js";
 
-/**
- * Inline step constructor. Duplicates the helper in ./steps.ts — importing
- * from there would pull in the shared module chain which node --test
- * --experimental-strip-types cannot currently resolve (ESM .js→.ts). The mock
- * is otherwise self-contained, so the duplication buys testability at the
- * cost of ~10 lines.
- */
+/** Inline step constructor, so the mock stays self-contained. */
 function mkStep(
   type: AgentStep["type"],
   sequenceIndex: number,
@@ -52,51 +51,67 @@ const ALLOWED_TOKENS = [
   "specDir",
   "cycle",
   "feature",
-  // Per-run uniqueness — for mock-config paths that would otherwise collide
-  // across re-runs of the same project (e.g. `specs/mock-c1-f-001/spec.md`
-  // generated identically by every run, fighting for the same folder).
-  // `{runId}` is the full orchestrator runId, `{shortRunId}` is the first 6
-  // characters — short enough to use as a path-component postfix (e.g.
-  // `f-001-{shortRunId}` in `cycle.feature.id`), long enough that two
-  // back-to-back runs won't collide in practice.
+  // Per-run uniqueness: `{runId}` is the full orchestrator runId, `{shortRunId}`
+  // its first 6 characters — short enough for a path component.
   "runId",
   "shortRunId",
-  // Goal-derivative tokens (014 — file-name-agnostic clarification). Resolve
-  // to the absolute paths the orchestrator expects given the user's chosen
-  // goal file. mock-config.json should use these instead of hardcoding
-  // `GOAL_*.md` so picking a non-default goal file (e.g. `PROJECT.md`,
-  // `docs/.../README.md`) Just Works.
+  // The goal file and its derivatives (014), so a config works for any goal name.
   "goalFile",
   "goalProductDomain",
   "goalTechnicalDomain",
   "goalClarified",
 ] as const;
 
+interface TemplateCtx {
+  cycleNumber: number;
+  featureId: string | null;
+  specDir: string | null;
+  runId: string;
+}
+
+/** What the verify prompt tells the agent about a fix phase (contracts/evidence.md). */
+interface VerifyPromptFacts {
+  round: number;
+  phaseNumber: number;
+  firstTaskId: string;
+}
+
+function parseVerifyPrompt(prompt: string): VerifyPromptFacts {
+  const phase = /^## Phase (\d+): Verify fixes V(\d+)\s*$/m.exec(prompt);
+  const task = /^- \[ \] (T\d+) /m.exec(prompt)?.[1];
+  if (!phase || !task) {
+    throw new Error("mock verify: the prompt lacks the fix-phase header or the first fix task id");
+  }
+  return { round: Number(phase[2]), phaseNumber: Number(phase[1]), firstTaskId: task };
+}
+
+/** The ids the implement prompt names as in scope; null when the whole phase is. */
+function scopeFromPrompt(prompt: string): Set<string> | null {
+  const m = /Only these tasks are in scope: ([^.]+)\./.exec(prompt);
+  return m ? new Set(m[1].split(",").map((s) => s.trim())) : null;
+}
+
+function nthTaskId(first: string, offset: number): string {
+  const width = first.length - 1;
+  return `T${String(Number(first.slice(1)) + offset).padStart(width, "0")}`;
+}
+
 /**
- * Deterministic, scripted agent backend (009-testing-checkpointing). Replays a
- * project-local mock-config.json instead of calling the Claude SDK. Each stage
- * sleeps for its configured delay, executes declared filesystem side effects
- * (writes / appends), emits exactly one synthetic agent_step per stage, and
- * returns the structured output (if any) verbatim.
+ * Deterministic, scripted agent backend (009, re-keyed by entry in 015). Replays
+ * `.dex/mock-config.json` instead of calling the Claude SDK. Each stage sleeps
+ * for its delay, applies its writes and appends, and commits like an agent that
+ * follows the project's rules (`mock(<stage>): <entryId>`). `implement` also
+ * ticks the phase's in-scope tasks, and `verify` returns the scripted verdict
+ * as structured output and appends the fix phase the prompt names on failure —
+ * so the mock follows the same contracts the real agent does (research R15).
  *
  * Failure modes are loud by design: missing script entries and unknown
- * substitution tokens throw typed errors that name the offending coordinates
- * (spec FR-010, FR-011).
+ * substitution tokens throw typed errors that name the offending coordinates.
  */
 export class MockAgentRunner implements AgentRunner {
   private readonly config: MockConfig;
   private readonly projectDir: string;
   private readonly goalPaths: GoalPaths;
-  /**
-   * Tracks which cycles have already had their `stages.implement` side effects
-   * applied. The orchestrator's implement flow bypasses `runStage("implement")`
-   * and instead calls `runPhase` once per phase parsed from the fixture tasks.md.
-   * To still produce non-empty diffs per cycle (spec SC-004), we apply the
-   * cycle's implement writes on the FIRST `runPhase` for a new specDir and
-   * no-op on subsequent calls within the same cycle.
-   */
-  private readonly implementAppliedForSpecDir = new Map<string, number>();
-  private nextImplementCycleIndex = 0;
 
   constructor(runConfig: RunConfig, projectDir: string) {
     this.config = loadMockConfig(projectDir);
@@ -109,103 +124,54 @@ export class MockAgentRunner implements AgentRunner {
     const { cycleNumber, step, specDir, prompt, emit, rlog, runId } = ctx;
     const start = Date.now();
     const phase = PHASE_OF_STEP[step];
+    const entryId = ctx.entryId ?? null;
+    const descriptor = this.lookup(phase, step, entryId);
 
-    // Look up the descriptor for this step.
-    let descriptor: StepDescriptor;
-    let featureId: string | null = null;
-    if (phase === "dex_loop") {
-      const cycleIdx = cycleNumber - 1;
-      const cycles = this.config.dex_loop.cycles;
-      if (cycleIdx < 0 || cycleIdx >= cycles.length) {
-        throw new MockConfigMissingEntryError(
-          phase,
-          step,
-          cycleNumber,
-          null,
-          `cycles exhausted — script declares ${cycles.length} cycle(s) but orchestrator requested cycle ${cycleNumber}. Add a cycle or terminate earlier with a gap_analysis decision of 'GAPS_COMPLETE'`,
-        );
-      }
-      const cycle = cycles[cycleIdx];
-      // Render the feature ID through the same template engine as paths so
-      // mock-config can postfix `{shortRunId}` (or any other run-scoped
-      // token) directly on `cycle.feature.id`. Then `{feature}` in any
-      // path template inherits the uniqueness without each path having to
-      // append `{shortRunId}` itself.
-      featureId = this.renderTemplate(cycle.feature.id, {
-        cycleNumber,
-        featureId: null,
-        specDir: specDir ?? null,
-        runId,
+    rlog.agentRun("INFO", `mock.runStep: phase=${phase} step=${step} entry=${entryId ?? "(none)"}`);
+    const emitStep = this.stepEmitter(emit);
+    emitStep("user_message", prompt);
+    emitStep("text", `${phase}/${step}${entryId ? ` (${entryId})` : ""}`, {
+      mockStep: step,
+      mockPhase: phase,
+      cycleNumber,
+      featureId: entryId,
+    });
+
+    await sleep(descriptor.delay);
+    const aborted = () => ctx.abortController?.signal.aborted ?? false;
+    if (descriptor.asks && !aborted()) {
+      await this.ask(descriptor.asks, {
+        ...ctx,
+        entryId,
+        step,
+        autoClarification: ctx.config.autoClarification ?? false,
       });
-      const found = (cycle.stages as Record<string, StepDescriptor>)[step];
-      if (!found) {
-        throw new MockConfigMissingEntryError(phase, step, cycleNumber, featureId);
-      }
-      descriptor = found;
-    } else {
-      const phaseEntry = (this.config as unknown as Record<string, Record<string, StepDescriptor>>)[
-        phase
-      ];
-      const found = phaseEntry[step];
-      if (!found) {
-        throw new MockConfigMissingEntryError(phase, step, null, null);
-      }
-      descriptor = found;
     }
-
-    rlog.agentRun(
-      "INFO",
-      `mock.runStep: phase=${phase} step=${step} cycle=${cycleNumber} feature=${featureId ?? "(none)"}`,
-    );
-
-    // Emit the initial prompt + one synthetic agent_step per step. Unlike the
-    // real runner, the mock does NOT persist steps via runs.appendAgentStep —
-    // per-step persistence is intentionally out of scope (the mock's trace is
-    // sparse by design; spec 009 assumption). The orchestrator's runStep
-    // wrapper still records agent-run-level summaries via runs.startAgentRun /
-    // completeAgentRun.
-    let stepIndex = 0;
-    const emitOnly = (agentStep: AgentStep) => {
-      const enriched: AgentStep = {
-        ...agentStep,
-        metadata: { ...agentStep.metadata, costUsd: null, inputTokens: null, outputTokens: null },
-      };
-      emit({ type: "agent_step", agentStep: enriched });
-    };
-    emitOnly(mkStep("user_message", stepIndex++, prompt));
-
-    // One synthetic mock_step agent_step so the trace view shows progress. The
-    // step is identified as synthetic by its metadata (mockPhase/mockStep) and
-    // by the `mock.runStep` line in the run log, not by a marker in the content
-    // — the loop dashboard renders this content inline as the running stage's
-    // reply preview, where a marker is redundant with the metadata.
-    emitOnly(
-      mkStep("text", stepIndex++, `${phase}/${step}${featureId ? ` (${featureId})` : ""}`, {
-        mockStep: step,
-        mockPhase: phase,
+    // A stopped agent leaves nothing behind, like a real session aborted mid-stream.
+    const stopped = aborted();
+    let verdict: VerifyVerdict | null = null;
+    if (!stopped) {
+      // spec-kit writes where SPECIFY_FEATURE_DIRECTORY points (research R5).
+      const tctx = {
         cycleNumber,
-        featureId,
-      }),
-    );
-
-    // Sleep for the declared delay.
-    if (descriptor.delay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, descriptor.delay));
+        featureId: entryId,
+        specDir: ctx.env?.SPECIFY_FEATURE_DIRECTORY ?? specDir,
+        runId,
+      };
+      if (step === "specify" && ctx.env?.GIT_BRANCH_NAME)
+        this.switchToFeatureBranch(ctx.env.GIT_BRANCH_NAME);
+      if (step === "brief") this.writeBrief(entryId);
+      this.applySideEffects(descriptor, tctx);
+      if (step === "verify") verdict = this.verify(descriptor as VerifyDescriptor, tctx, prompt);
+      this.commitAsAgent(step, entryId);
     }
 
-    // Execute side effects.
-    this.applySideEffects(descriptor, { cycleNumber, featureId, specDir, runId });
-
-    const durationMs = Date.now() - start;
-
-    // Emit completed step (mirrors real runner).
-    emitOnly(mkStep("completed", stepIndex++, `Step ${step} completed (mock)`));
-
+    emitStep("completed", `Step ${step} ${stopped ? "stopped" : "completed"} (mock)`);
     return {
       result: "",
-      structuredOutput: descriptor.structured_output ?? null,
+      structuredOutput: stopped ? null : (verdict ?? descriptor.structured_output ?? null),
       cost: 0,
-      durationMs,
+      durationMs: Date.now() - start,
       inputTokens: 0,
       outputTokens: 0,
       sessionId: null,
@@ -215,237 +181,227 @@ export class MockAgentRunner implements AgentRunner {
   async runTaskPhase(ctx: TaskPhaseContext): Promise<TaskPhaseResult> {
     const { taskPhase, prompt, emit, rlog, config: runConfig, runId } = ctx;
     const start = Date.now();
-
-    // The orchestrator invokes runPhase in two places:
-    //   (a) build mode (src/core/orchestrator.ts:625) — standalone spec-kit
-    //       skill expansion; not the mock's primary target.
-    //   (b) loop mode during `implement` (src/core/orchestrator.ts:2002) —
-    //       once per phase parsed from fixtures/tasks.md.
-    //
-    // The loop's `implement` stage bypasses runStage entirely — the orchestrator
-    // only emits stage_started/stage_completed itself and delegates per-phase
-    // work to runPhase. If the mock no-op'd here, checkpoint commits for the
-    // implement stage would be empty (failing spec SC-004). So we apply the
-    // cycle's `cycles[i].stages.implement` side effects on the FIRST runPhase
-    // call for a given specDir, then no-op on subsequent calls within the same
-    // cycle.
-    const specDir = runConfig.specDir;
-    let descriptor: StepDescriptor | null = null;
-    let assignedCycleNumber = 0;
-    let assignedFeatureId: string | null = null;
-    let isFirstPhaseForSpecDir = false;
-
-    if (specDir && this.nextImplementCycleIndex < this.config.dex_loop.cycles.length) {
-      let idx = this.implementAppliedForSpecDir.get(specDir);
-      if (idx === undefined) {
-        idx = this.nextImplementCycleIndex++;
-        this.implementAppliedForSpecDir.set(specDir, idx);
-        isFirstPhaseForSpecDir = true;
-      }
-      if (idx < this.config.dex_loop.cycles.length) {
-        const cycle = this.config.dex_loop.cycles[idx];
-        descriptor = cycle.stages.implement;
-        assignedCycleNumber = idx + 1;
-        // Same renderTemplate pass as runStep — see comment there.
-        assignedFeatureId = this.renderTemplate(cycle.feature.id, {
-          cycleNumber: assignedCycleNumber,
-          featureId: null,
-          specDir,
-          runId,
-        });
-      }
-    }
-    // Fall back to prerequisites descriptor for build mode or out-of-range.
-    if (!descriptor) {
-      descriptor = this.config.prerequisites.prerequisites;
-      if (!descriptor) {
-        throw new MockConfigMissingEntryError("prerequisites", "prerequisites", null, null);
-      }
-    }
+    const entryId = ctx.entryId ?? null;
+    const specDir = runConfig.specDir ?? null;
+    const descriptor = this.lookup("entries", "implement", entryId);
 
     rlog.agentRun(
       "INFO",
-      `mock.runTaskPhase: TaskPhase ${taskPhase.number} (specDir=${specDir}, cycle=${assignedCycleNumber || "?"}, feature=${assignedFeatureId ?? "?"}, firstForSpecDir=${isFirstPhaseForSpecDir})`,
+      `mock.runTaskPhase: TaskPhase ${taskPhase.number} (specDir=${specDir}, entry=${entryId ?? "(none)"})`,
     );
+    const emitStep = this.stepEmitter(emit);
+    emitStep("user_message", prompt);
+    emitStep("text", `runTaskPhase ${taskPhase.number}: ${taskPhase.name}`, {
+      mockPhase: "implement",
+      featureId: entryId,
+    });
 
-    let stepIndex = 0;
-    const emitOnly = (agentStep: AgentStep) => {
-      const enriched: AgentStep = {
-        ...agentStep,
-        metadata: { ...agentStep.metadata, costUsd: null, inputTokens: null, outputTokens: null },
-      };
-      emit({ type: "agent_step", agentStep: enriched });
-    };
-    emitOnly(mkStep("user_message", stepIndex++, prompt));
-    emitOnly(
-      mkStep(
-        "text",
-        stepIndex++,
-        `runTaskPhase ${taskPhase.number}: ${taskPhase.name} (cycle=${assignedCycleNumber || "?"})`,
-        {
-          mockPhase: "implement",
-          cycleNumber: assignedCycleNumber || null,
-          featureId: assignedFeatureId,
-        },
-      ),
-    );
-
-    if (descriptor.delay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, descriptor.delay));
-    }
-
-    // Apply side effects on the FIRST runTaskPhase for a new specDir.
-    if (isFirstPhaseForSpecDir && assignedCycleNumber > 0) {
-      this.applySideEffects(descriptor, {
-        cycleNumber: assignedCycleNumber,
-        featureId: assignedFeatureId,
-        specDir,
-        runId,
+    await sleep(descriptor.delay);
+    const aborted = () => ctx.abortController?.signal.aborted ?? false;
+    if (descriptor.asks && !aborted()) {
+      await this.ask(descriptor.asks, {
+        ...ctx,
+        entryId,
+        step: "implement",
+        autoClarification: false,
       });
     }
+    const stopped = aborted();
+    if (!stopped) {
+      this.applySideEffects(descriptor, { cycleNumber: 0, featureId: entryId, specDir, runId });
+      if (specDir && descriptor.tick !== false) {
+        this.tickPhase(
+          specDir,
+          taskPhase.tasks.map((t) => t.id),
+          scopeFromPrompt(prompt),
+        );
+      }
+      this.commitAsAgent("implement", entryId);
+    }
 
-    emitOnly(
-      mkStep(
-        "completed",
-        stepIndex++,
-        `TaskPhase ${taskPhase.number}: ${taskPhase.name} completed (mock)`,
-      ),
-    );
-
-    return {
-      cost: 0,
-      durationMs: Date.now() - start,
-      inputTokens: 0,
-      outputTokens: 0,
-    };
+    const outcome = stopped ? "stopped" : "completed";
+    emitStep("completed", `TaskPhase ${taskPhase.number}: ${taskPhase.name} ${outcome} (mock)`);
+    return { cost: 0, durationMs: Date.now() - start, inputTokens: 0, outputTokens: 0 };
   }
 
-  /**
-   * 014 — scripted runOneShot. Looks up `ctx.prompt` against
-   * `MockConfig.oneShotResponses`; honours the optional `editFile` side
-   * effect (write content into the resolved cwd before returning); falls
-   * back to a permissive default record when no entry matches so tests
-   * aren't required to script every prompt the harness might send.
-   */
-  async runOneShot(ctx: OneShotContext): Promise<OneShotResult> {
-    const start = Date.now();
-    const cwd = ctx.cwd ?? this.projectDir;
-    const responses: MockOneShotResponse[] = this.config.oneShotResponses ?? [];
+  /** Asks the scripted questions the way canUseTool answers AskUserQuestion: the stage's mode decides. */
+  private async ask(
+    asks: MockQuestion[],
+    c: {
+      runId: string;
+      emit: EmitFn;
+      entryId: string | null;
+      step: StepType;
+      autoClarification: boolean;
+      policy: Policy;
+    },
+  ): Promise<void> {
+    const questions: UserInputQuestion[] = asks.map((q) => ({
+      question: q.question,
+      header: q.header ?? "",
+      multiSelect: q.multiSelect ?? false,
+      options: q.options.map((o) => ({ label: o.label, description: o.description ?? "" })),
+    }));
+    await askQuestions(
+      { projectDir: this.projectDir, runId: c.runId, emit: c.emit },
+      c.entryId,
+      questions,
+      {
+        mode: questionModeFor(c.step, c.autoClarification, c.policy),
+        step: c.step,
+      },
+    );
+  }
 
-    let matched: MockOneShotResponse | undefined;
-    for (const r of responses) {
-      if (r.isRegex) {
-        try {
-          if (new RegExp(r.matchPrompt).test(ctx.prompt)) {
-            matched = r;
-            break;
-          }
-        } catch {}
-      } else if (r.matchPrompt === ctx.prompt) {
-        matched = r;
-        break;
-      }
-    }
+  // ── Lookup ──
 
-    if (matched?.delayMs && matched.delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, matched!.delayMs));
-    }
+  private lookup(phase: string, step: string, entryId: string | null): StepDescriptor {
+    const found =
+      phase === "entries"
+        ? stageScript(this.config, entryId, step as StageName)
+        : (this.config as unknown as Record<string, Record<string, StepDescriptor>>)[phase]?.[step];
+    if (!found) throw new MockConfigMissingEntryError(phase, step, entryId);
+    return found;
+  }
 
-    if (matched?.editFile) {
-      const dest = path.isAbsolute(matched.editFile.path)
-        ? matched.editFile.path
-        : path.resolve(cwd, matched.editFile.path);
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, matched.editFile.content, "utf8");
-    }
-
-    if (ctx.abortController?.signal.aborted) {
-      return {
-        cost: 0,
-        durationMs: Date.now() - start,
-        inputTokens: 0,
-        outputTokens: 0,
-        finalText: "",
-        finishedNormally: false,
-      };
-    }
-
-    if (!matched) {
-      return {
-        cost: 0,
-        durationMs: Date.now() - start,
-        inputTokens: 0,
-        outputTokens: 0,
-        finalText: "(mock default — no oneShotResponses entry matched)",
-        finishedNormally: true,
-      };
-    }
-
-    return {
-      cost: matched.cost ?? 0,
-      durationMs: Date.now() - start,
-      inputTokens: matched.inputTokens ?? 0,
-      outputTokens: matched.outputTokens ?? 0,
-      finalText: matched.finalText,
-      finishedNormally: matched.finishedNormally ?? true,
+  /** Emits synthetic agent_steps; the mock persists none (spec 009). */
+  private stepEmitter(emit: TaskPhaseContext["emit"]) {
+    let index = 0;
+    return (
+      type: AgentStep["type"],
+      content: string,
+      metadata: Record<string, unknown> | null = null,
+    ) => {
+      const s = mkStep(type, index++, content, metadata);
+      emit({
+        type: "agent_step",
+        agentStep: {
+          ...s,
+          metadata: { ...s.metadata, costUsd: null, inputTokens: null, outputTokens: null },
+        },
+      });
     };
   }
 
   // ── Side-effect helpers ──
 
-  private applySideEffects(
-    descriptor: StepDescriptor,
-    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
-  ): void {
-    if (descriptor.writes) {
-      for (const w of descriptor.writes) {
-        const dest = this.resolveProjectPath(w.path, ctx);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        const rendered = this.renderTemplate(w.content, ctx);
-        fs.writeFileSync(dest, rendered, "utf8");
-      }
+  private applySideEffects(descriptor: StepDescriptor, ctx: TemplateCtx): void {
+    for (const w of descriptor.writes ?? []) {
+      const dest = this.resolveProjectPath(w.path, ctx);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, this.renderTemplate(w.content, ctx), "utf8");
     }
-    if (descriptor.appends) {
-      for (const a of descriptor.appends) {
-        const dest = this.resolveProjectPath(a.path, ctx);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        let line = this.renderTemplate(a.line, ctx);
-        if (!line.endsWith("\n")) line += "\n";
-        fs.appendFileSync(dest, line, "utf8");
-      }
-    }
-
-    // Mirror what a real agent does at the end of its work — stage everything
-    // so the orchestrator's next commitCheckpoint captures the files the mock
-    // just wrote. commitCheckpoint git-adds .dex/state.json,
-    // .dex/feature-manifest.json, .dex/learnings.md, and .dex/runs/, so
-    // without this `git add -A` the spec files (spec.md/plan.md/tasks.md)
-    // and implement outputs (src/mock/*.ts) would sit uncommitted in the
-    // working tree and every checkpoint commit after specify would be empty.
-    // Per-developer files (.dex/state.lock, .dex/ui.json) stay gitignored.
-    if (descriptor.writes?.length || descriptor.appends?.length) {
-      try {
-        execSync("git add -A", { cwd: this.projectDir, stdio: "pipe" });
-      } catch {
-        // Working tree may not be a git repo (standalone MockAgentRunner tests),
-        // or git may have nothing to stage. Either way, not fatal.
-      }
+    for (const a of descriptor.appends ?? []) {
+      const dest = this.resolveProjectPath(a.path, ctx);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      let line = this.renderTemplate(a.line, ctx);
+      if (!line.endsWith("\n")) line += "\n";
+      fs.appendFileSync(dest, line, "utf8");
     }
   }
 
-  private resolveProjectPath(
-    template: string,
-    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
-  ): string {
+  /** Checks every unchecked task of the phase that is in scope, as the prompt asks. */
+  private tickPhase(specDir: string, phaseTaskIds: string[], scope: Set<string> | null): void {
+    const file = path.join(this.projectDir, specDir, "tasks.md");
+    if (!fs.existsSync(file)) return;
+    const ids = new Set(phaseTaskIds.filter((id) => !scope || scope.has(id)));
+    const lines = fs.readFileSync(file, "utf8").split("\n");
+    const ticked = lines.map((line) => {
+      const m = /^- \[[ ~]\] (T\d+)\b/.exec(line);
+      return m && ids.has(m[1]) ? line.replace(/^- \[[ ~]\]/, "- [X]") : line;
+    });
+    fs.writeFileSync(file, ticked.join("\n"), "utf8");
+  }
+
+  /**
+   * The scripted verdict for this round, as the agent's structured output. On
+   * failure, also appends the fix phase the prompt names to tasks.md.
+   */
+  private verify(descriptor: VerifyDescriptor, ctx: TemplateCtx, prompt: string): VerifyVerdict {
+    if (!ctx.specDir) throw new Error("mock verify: no specDir");
+    const facts = parseVerifyPrompt(prompt);
+    const rounds = descriptor.rounds ?? [];
+    const round: VerifyRound = rounds[facts.round - 1] ?? rounds.at(-1) ?? { verdict: "passed" };
+    const command = `mock verify round ${facts.round}`;
+    const verdict: VerifyVerdict = {
+      verdict: round.verdict,
+      summary: `mock verify round ${facts.round}: ${round.verdict}`,
+      commands: [{ command, exitCode: round.verdict === "passed" ? 0 : 1 }],
+      criteria: [],
+    };
+    if (round.verdict === "passed") return verdict;
+    const dir = path.join(this.projectDir, ctx.specDir);
+
+    const fixes = round.fixTasks?.length
+      ? round.fixTasks.map((f) => this.renderTemplate(f, ctx))
+      : [`Fix what verify round ${facts.round} found`];
+    const tasksFile = path.join(dir, "tasks.md");
+    const current = fs.readFileSync(tasksFile, "utf8");
+    const phase = [
+      `## Phase ${facts.phaseNumber}: Verify fixes V${facts.round}`,
+      "",
+      `**Purpose**: Fix what verification round ${facts.round} found.`,
+      "",
+      ...fixes.map((f, i) => `- [ ] ${nthTaskId(facts.firstTaskId, i)} ${f}`),
+      "",
+    ];
+    fs.writeFileSync(tasksFile, `${current.replace(/\n*$/, "\n\n")}${phase.join("\n")}`, "utf8");
+    return verdict;
+  }
+
+  /**
+   * What spec-kit's git extension does for `specify` when `GIT_BRANCH_NAME` is
+   * set: create the feature branch from the current one and switch to it, or
+   * switch to it when it already exists.
+   */
+  /** The brief stage: a short brief with an acceptance section at the entry's `brief` path (queue.json). */
+  private writeBrief(entryId: string | null): void {
+    const entry = loadQueue(this.projectDir)?.entries.find((e) => e.id === entryId);
+    if (!entry?.brief)
+      throw new Error(`mock brief: queue entry ${entryId ?? "(none)"} has no "brief" path`);
+    const sources = (entry.generate?.sources ?? []).map((s) => `- ${s}`).join("\n");
+    const body = `# Brief: ${entry.title}\n\nWritten by the mock brief stage from:\n\n${sources}\n\n## Goal\n\n${entry.description ?? entry.title}\n\n## Acceptance\n\n- ${entry.title} works as the sources describe.\n`;
+    const dest = path.join(this.projectDir, entry.brief);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, body, "utf8");
+  }
+
+  private switchToFeatureBranch(name: string): void {
+    const git = (args: string[]) =>
+      execFileSync("git", args, { cwd: this.projectDir, stdio: "pipe" });
+    try {
+      git(["show-ref", "--verify", "--quiet", `refs/heads/${name}`]);
+      git(["switch", "--quiet", name]);
+    } catch {
+      git(["switch", "--quiet", "-c", name]);
+    }
+  }
+
+  /**
+   * Commit like an agent following the project's rules would: everything the
+   * stage changed, as `mock(<step>): <entry>`. Dex itself never commits, so
+   * tests tell agent commits from Dex commits by this prefix. No-op outside a
+   * repository or when the stage changed nothing.
+   */
+  private commitAsAgent(step: string, entryId: string | null): void {
+    const run = (args: string[]) =>
+      execFileSync("git", args, { cwd: this.projectDir, stdio: "pipe", encoding: "utf8" });
+    try {
+      run(["rev-parse", "--is-inside-work-tree"]);
+    } catch {
+      return;
+    }
+    run(["add", "-A"]);
+    if (run(["diff", "--cached", "--name-only"]).trim() === "") return;
+    run(["commit", "-q", "-m", `mock(${step}): ${entryId ?? "project"}`]);
+  }
+
+  private resolveProjectPath(template: string, ctx: TemplateCtx): string {
     const rendered = this.renderTemplate(template, ctx);
-    if (path.isAbsolute(rendered)) return rendered;
-    return path.resolve(this.projectDir, rendered);
+    return path.isAbsolute(rendered) ? rendered : path.resolve(this.projectDir, rendered);
   }
 
-  private renderTemplate(
-    template: string,
-    ctx: { cycleNumber: number; featureId: string | null; specDir: string | null; runId: string },
-  ): string {
+  private renderTemplate(template: string, ctx: TemplateCtx): string {
     return template.replace(/\{([a-zA-Z_]+)\}/g, (_match, token: string) => {
       switch (token) {
         case "specDir":
@@ -457,10 +413,6 @@ export class MockAgentRunner implements AgentRunner {
         case "runId":
           return ctx.runId;
         case "shortRunId":
-          // 6 chars — short enough to use as a path-component postfix, long
-          // enough that two back-to-back runs won't collide in practice
-          // (orchestrator runIds are random UUIDs so the first 6 hex chars
-          // give ~16M possibilities).
           return ctx.runId.slice(0, 6);
         case "goalFile":
           return this.goalPaths.goal;
@@ -475,4 +427,8 @@ export class MockAgentRunner implements AgentRunner {
       }
     });
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }

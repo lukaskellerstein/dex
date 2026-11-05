@@ -1,12 +1,16 @@
 /**
- * What: Build-mode phase runner — `runPhase` drives one TaskPhase via the resolved agent runner, with `RunTaskState` tracking task statuses (TodoWrite + on-disk reconciliation) and `buildPrompt` producing the slash-command prompt for either Build (`speckit-implement`) or Plan (`speckit-plan`) modes.
+ * What: Build-mode phase runner — `runPhase` drives one TaskPhase via the resolved agent runner, with `RunTaskState` tracking task statuses (on-disk reconciliation; the runner re-emits tasks.md writes itself) and `buildPrompt` producing the prompt: Build mode uses the loop's implement prompt (prompts.buildImplementPrompt) for the spec folder's queue entry — so build mode keeps that entry's `tasks` scope (`buildEntry`) — or for a one-off entry when the folder is in no queue; Plan mode `speckit-plan`.
  * Not: Does not own per-cycle stage execution (that's stages/run-stage.ts). Does not run the build-mode dispatcher itself (stages/build.ts iterates specs and calls runPhase). Does not parse tasks.md from disk — RunTaskState only reconciles a fresh parse handed in by callers.
- * Deps: getActiveContext (for runner/abort), parser.{deriveTaskPhaseStatus, extractTaskIds}, types.{RunConfig, TaskPhase, Task, EmitFn}, log.RunLogger.
+ * Deps: getActiveContext (for runner/abort), parser.deriveTaskPhaseStatus, prompts.buildImplementPrompt, queue.entryForSpecDir, git.getCurrentBranch, types.{RunConfig, TaskPhase, Task, EmitFn}, log.RunLogger.
  */
 
+import path from "node:path";
+import { getCurrentBranch } from "../git.js";
 import type { RunLogger } from "../log.js";
 import { getActiveContext } from "../orchestrator.js";
-import { deriveTaskPhaseStatus, extractTaskIds } from "../parser.js";
+import { deriveTaskPhaseStatus } from "../parser.js";
+import { buildImplementPrompt } from "../prompts.js";
+import { entryForSpecDir, loadQueue, type ResolvedEntry, resolveEntries } from "../queue.js";
 import type { EmitFn, RunConfig, Task, TaskPhase } from "../types.js";
 
 const STATUS_RANK: Record<string, number> = {
@@ -16,7 +20,7 @@ const STATUS_RANK: Record<string, number> = {
   done: 3,
 };
 
-// 011-A4: in-memory task state — TodoWrite + on-disk reconciliation. Kept
+// 011-A4: in-memory task state — on-disk reconciliation. Kept
 // alongside runPhase since RunTaskState only matters during phase execution.
 export class RunTaskState {
   private phases: TaskPhase[];
@@ -33,43 +37,10 @@ export class RunTaskState {
     }
   }
 
-  /** Apply TodoWrite statuses. Promotes only (never demotes). Returns current phases. */
-  updateFromTodoWrite(todos: Array<{ content?: string; status?: string }>): TaskPhase[] {
-    const updates = new Map<string, "in_progress" | "done">();
-
-    for (const todo of todos) {
-      if (!todo.content) continue;
-      const ids = extractTaskIds(todo.content);
-      const mapped =
-        todo.status === "completed" ? "done" : todo.status === "in_progress" ? "in_progress" : null;
-      if (!mapped) continue;
-      for (const id of ids) {
-        updates.set(id, mapped);
-      }
-    }
-
-    if (updates.size === 0) return this.phases;
-
-    for (const [id, newStatus] of updates) {
-      const task = this.taskMap.get(id);
-      if (task && STATUS_RANK[newStatus] > STATUS_RANK[task.status]) {
-        task.status = newStatus;
-      }
-    }
-
-    // Re-derive phase statuses
-    for (const p of this.phases) {
-      p.status = deriveTaskPhaseStatus(p.tasks);
-    }
-
-    return this.phases;
-  }
-
   /**
    * Re-read tasks.md from disk and reconcile with in-memory state.
    * Promote-only: a task that is "done" on disk but "not_done" in memory
-   * gets promoted. A task that is "done" in memory stays "done" even if
-   * disk says otherwise (agent may have used TodoWrite earlier).
+   * gets promoted; nothing is ever demoted.
    */
   reconcileFromDisk(freshPhases: TaskPhase[]): TaskPhase[] {
     for (const freshPhase of freshPhases) {
@@ -102,36 +73,39 @@ export class RunTaskState {
 
 // ── Prompt Builder ──────────────────────────────────────────────────────────
 
-export function buildPrompt(config: RunConfig, phase: TaskPhase): string {
-  // Resolve the spec directory to an absolute path so the agent knows exactly
-  // which spec to work on (specDir may be relative like "specs/001-product-catalog").
-  const specPath = config.specDir.startsWith("/")
+/**
+ * The queue entry the spec folder belongs to, so build mode keeps its task
+ * scope; a one-off entry (no scope) when the folder is in no queue.
+ */
+export function buildEntry(config: RunConfig): ResolvedEntry {
+  const branch = getCurrentBranch(config.projectDir);
+  const queue = loadQueue(config.projectDir);
+  const target = path.resolve(config.projectDir, config.specDir);
+  const found = queue
+    ? resolveEntries(queue, branch, null).find(
+        (e) => path.resolve(config.projectDir, e.specDir) === target,
+      )
+    : undefined;
+  return found ?? entryForSpecDir(config.specDir, branch);
+}
+
+export function buildPrompt(
+  config: RunConfig,
+  phase: TaskPhase,
+  entry: ResolvedEntry = buildEntry(config),
+): string {
+  if (config.mode !== "plan") {
+    return buildImplementPrompt(entry, config.projectDir, { phase, goalPath: null });
+  }
+  const specPath = path.isAbsolute(config.specDir)
     ? config.specDir
-    : `${config.projectDir}/${config.specDir}`;
+    : path.join(config.projectDir, config.specDir);
+  return `/speckit-plan ${specPath} --phase ${phase.number}
 
-  const skillName = config.mode === "plan" ? "speckit-plan" : "speckit-implement";
-
-  // The prompt starts with the slash command — the SDK harness expands it as
-  // a user invocation (disable-model-invocation only blocks the model from
-  // calling the Skill tool on its own, not user-invoked slash commands).
-  const afterSteps =
-    config.mode === "plan"
-      ? `After analyzing:
+After analyzing:
 - Update ${specPath}/tasks.md with accurate task statuses
 - If you learned operational patterns, update CLAUDE.md
-- Commit: git add -A -- ':!.dex/' && git commit -m "plan: TaskPhase ${phase.number} gap analysis"`
-      : `IMPORTANT — update tasks.md incrementally:
-- After completing EACH task, immediately mark it [x] in ${specPath}/tasks.md before moving to the next task. This drives a real-time progress UI.
-
-After implementing all tasks:
-- Run build/typecheck to verify changes compile
-- Run tests if they exist
-- Commit: git add -A -- ':!.dex/' && git commit -m "Phase ${phase.number}: ${phase.name}"
-- If you learned operational patterns, update CLAUDE.md`;
-
-  return `/${skillName} ${specPath} --phase ${phase.number}
-
-${afterSteps}`;
+- Commit your changes as this project's rules say (CLAUDE.md, AGENTS.md, CONTRIBUTING). If the rules say nothing about commits, make one commit with a short message that names ${entry.id}.`;
 }
 
 // ── Phase Runner ────────────────────────────────────────────────────────────
@@ -143,28 +117,24 @@ export async function runPhase(
   runId: string,
   emit: EmitFn,
   rlog: RunLogger,
-  runTaskState: RunTaskState,
 ): Promise<{ cost: number; durationMs: number; inputTokens: number; outputTokens: number }> {
   const ctx = getActiveContext();
   if (!ctx) {
     throw new Error("runPhase called before currentContext was resolved — run() must set it");
   }
-  const prompt = buildPrompt(config, phase);
+  const entry = buildEntry(config);
+  const prompt = buildPrompt(config, phase, entry);
 
-  // Delegate SDK invocation to the resolved agent runner. TodoWrite detection
-  // stays here (not in the runner) because runTaskState is orchestrator-owned.
   return ctx.runner.runTaskPhase({
     config,
     prompt,
+    entryId: entry.id,
     runId,
     taskPhase: phase,
     agentRunId,
     abortController: ctx.abort,
     emit,
     rlog,
-    onTodoWrite: (todos) => {
-      const updatedPhases = runTaskState.updateFromTodoWrite(todos);
-      emit({ type: "tasks_updated", taskPhases: updatedPhases });
-    },
+    policy: ctx.policy,
   });
 }

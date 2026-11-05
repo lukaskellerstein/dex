@@ -1,5 +1,8 @@
 # Branch Management
 
+> [!warning] Removed in 015-lean-core
+> 015-lean-core removed everything this page describes: branch delete, promote to main, the AI conflict resolver and the timeline. The page is kept as a record of the 014 design; the files and IPC channels it names no longer exist. For what replaced it, see [Lean Core](../001_lean-core/README.md).
+
 How users delete and promote saved versions on the timeline, with merge conflicts resolved by an AI agent. The user never sees git terminology, never types a git command, and never sees a conflict marker.
 
 > **Audience:** AI agents and engineers extending or fixing this feature. Read this before touching any file under `src/core/checkpoints/branchOps.ts`, `src/core/conflict-resolver.ts`, or `src/renderer/components/checkpoints/branchOps/`.

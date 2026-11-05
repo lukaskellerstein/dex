@@ -177,11 +177,8 @@ function StageRow({
             fontSize: "0.8rem",
             fontWeight: isRunning || isPaused ? 600 : 400,
             // "skipped" renders identically to "pending" — plain unstyled grey.
-            // Strikethrough was misleading during paused runs (it implied the
-            // step was crossed out by user action when in fact gap_analysis
-            // simply chose RESUME_FEATURE / REPLAN_FEATURE) and the DoD for
-            // 014/test-003 explicitly forbids strikethrough for not-yet-started
-            // steps.
+            // The DoD for 014/test-003 forbids strikethrough for
+            // not-yet-started steps.
             color:
               hovered && hasTrace
                 ? "var(--status-info)"
@@ -293,12 +290,10 @@ export interface StageListProps {
   isActiveCycle: boolean;
   isRunning: boolean;
   isPausedCycle: boolean;
-  decision: string | null;
   specSummary: SpecSummary | undefined;
   onStageClick: (step: UiLoopStage) => void;
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
-  pathStages?: ReadonlySet<StepType>;
   latestAction?: LatestAction | null;
 }
 
@@ -309,26 +304,18 @@ export function StageList({
   isActiveCycle,
   isRunning,
   isPausedCycle,
-  decision,
   specSummary,
   onStageClick,
   onSelectSpec,
-  pathStages,
   latestAction,
 }: StageListProps) {
-  const hasVerifyOrLater = stages.some(
-    (s) => (s.type === "verify" || s.type === "learnings") && s.status === "completed",
-  );
-
   const visibleStages = CYCLE_STAGES.filter(
-    (st) => getStageVisibility(st, decision) === "show" || stages.some((s) => s.type === st),
+    (st) => getStageVisibility(st) === "show" || stages.some((s) => s.type === st),
   );
 
-  const path = pathStages ?? new Set<StepType>();
   const pausePendingStage = resolvePausePendingStage(
     visibleStages,
     stages,
-    path,
     isPausedCycle,
     isActiveCycle,
     isRunning,
@@ -344,12 +331,9 @@ export function StageList({
           actual,
           currentStage,
           isActiveCycle,
-          decision,
-          hasVerifyOrLater,
           implementPhases,
           isRunning,
           isPausedCycle,
-          path,
           pausePendingStage,
         );
 

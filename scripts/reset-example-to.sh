@@ -11,7 +11,7 @@
 #       state — the loop will push fresh dex/* branches into a clean remote.
 #   reset-example-to.sh pristine                 (strongest local-only reset)
 #     → git fetch origin → git reset --hard origin/main → -fdx clean → delete
-#       all dex/* / selected-* / attempt-* local branches → checkout main.
+#       all dex/* / attempt-* / feature/* local branches → checkout main.
 #       Discards every local commit ahead of origin/main and every test
 #       branch left over from previous runs, then re-syncs local main to
 #       the current GitHub state. Does NOT rewrite origin.
@@ -27,11 +27,11 @@
 #       with the working tree restored to exactly that checkpoint's state.
 #
 # Repo target (hardcoded):
-#   filesystem: /home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
+#   filesystem: ~/Projects/Github/lukaskellerstein/dex-ecommerce
 #   github:     https://github.com/lukaskellerstein/dex-ecommerce
 set -euo pipefail
 
-TARGET=/home/lukas/Projects/Github/lukaskellerstein/dex-ecommerce
+TARGET="$HOME/Projects/Github/lukaskellerstein/dex-ecommerce"
 ARG="${1:-clean}"
 
 cd "$TARGET"
@@ -91,7 +91,7 @@ case "$ARG" in
     git reset --hard origin/main
     git clean -fdx
     # Prune every test-fixture branch left over from prior runs.
-    for b in $(git branch --format='%(refname:short)' | grep -E '^(dex/|selected-|attempt-|feature/)' || true); do
+    for b in $(git branch --format='%(refname:short)' | grep -E '^(dex/|attempt-|feature/)' || true); do
       git branch -D "$b" 2>/dev/null || true
     done
     echo "pristine: main reset to $(git rev-parse --short origin/main); local test branches pruned"

@@ -1,17 +1,18 @@
 /**
- * What: Five-step pre-cycle prerequisites check (claude_cli, specify_cli, git_init, speckit_init, github_repo) plus interactive fix paths and run-record bookkeeping. Driver emits prerequisites_started → prerequisites_check (×N) → prerequisites_completed.
- * Not: Does not decide whether to skip prereqs — that's runLoop's call. Does not extract gap-analysis decisions or any clarification logic. Inter-check ordering is explicit because speckit_init depends on specify_cli's outcome and github_repo expects git_init.
- * Deps: OrchestrationContext, runs.startAgentRun/completeAgentRun, waitForUserInput (clarification IPC), node:child_process (execSync for CLI probes).
+ * What: The prerequisites step before the loop, in two forms (research R12). A new project: five checks (claude_cli, specify_cli, git_init, speckit_init, github_repo) with interactive fix paths. An existing project: `checkExistingProject`, check-only — the same CLIs, a git repository, `.specify/` whose `common.sh` knows `SPECIFY_FEATURE_DIRECTORY`, and Claude Code's trust state for the folder as information; it returns the failures and fixes nothing. Both emit prerequisites_started → prerequisites_check (×N) → prerequisites_completed and keep the run record.
+ * Not: Does not decide whether to skip prereqs — that's runLoop's call. Does not pause the run — the loop turns check-only failures into a pause. Never runs `git init`, `specify init` or `gh repo create` for an existing project. Inter-check ordering is explicit because speckit_init depends on specify_cli's outcome and github_repo expects git_init.
+ * Deps: OrchestrationContext, runs.startAgentRun/completeAgentRun, humanInput.askQuestions, node:child_process (execSync for CLI probes).
  */
 
 import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
+import { askQuestions } from "../humanInput.js";
 import * as runs from "../runs.js";
 import type { PrerequisiteCheck, PrerequisiteCheckName } from "../types.js";
-import { waitForUserInput } from "../userInput.js";
 
 // ── Local helpers (unique to prereqs; private) ──────────────
 
@@ -66,35 +67,8 @@ type CheckFinalStatus = "pass" | "fail" | "fixed";
  */
 export async function runPrerequisites(ctx: OrchestrationContext, runId: string): Promise<void> {
   const { projectDir, emit, rlog } = ctx;
-
-  rlog.run("INFO", "runPrerequisites: starting prerequisites checks");
-  emit({ type: "prerequisites_started", runId });
-
-  const agentRunId = crypto.randomUUID();
-  runs.startAgentRun(projectDir, runId, {
-    agentRunId,
-    runId,
-    specDir: null,
-    taskPhaseNumber: 0,
-    taskPhaseName: "loop:prerequisites",
-    step: "prerequisites",
-    cycleNumber: 0,
-    featureSlug: null,
-    startedAt: new Date().toISOString(),
-    status: "running",
-  });
-
-  emit({
-    type: "step_started",
-    runId,
-    cycleNumber: 0,
-    step: "prerequisites",
-    agentRunId,
-  });
-
-  const startTime = Date.now();
-  const emitCheck = (check: PrerequisiteCheck) =>
-    emit({ type: "prerequisites_check", runId, check });
+  const step = beginPrerequisites(ctx, runId);
+  const { emitCheck } = step;
   const results = new Map<PrerequisiteCheckName, CheckFinalStatus>();
 
   // Check ordering matters: specify_cli → speckit_init (auto-init needs the CLI),
@@ -118,7 +92,7 @@ export async function runPrerequisites(ctx: OrchestrationContext, runId: string)
   if (failed.length > 0) {
     const failedNames = failed.map(([name]) => name).join(", ");
     rlog.run("WARN", `runPrerequisites: ${failed.length} check(s) failed: ${failedNames}`);
-    await waitForUserInput(projectDir, emit, runId, [
+    await askQuestions({ projectDir: projectDir, emit: emit, runId }, null, [
       {
         question: `${failed.length} prerequisite check(s) failed: ${failedNames}. You can continue, but the loop may not work correctly.`,
         header: "Prerequisites incomplete",
@@ -133,27 +107,140 @@ export async function runPrerequisites(ctx: OrchestrationContext, runId: string)
     ]);
   }
 
-  const allPassed = failed.length === 0;
-  const durationMs = Date.now() - startTime;
-  runs.completeAgentRun(projectDir, runId, agentRunId, {
+  endPrerequisites(ctx, runId, step, failed.length === 0);
+}
+
+interface PrerequisitesStep {
+  agentRunId: string;
+  startTime: number;
+  emitCheck: (c: PrerequisiteCheck) => void;
+}
+
+/** prerequisites_started, the run record's agent run, and step_started. */
+function beginPrerequisites(ctx: OrchestrationContext, runId: string): PrerequisitesStep {
+  const { projectDir, emit, rlog } = ctx;
+  rlog.run("INFO", "runPrerequisites: starting prerequisites checks");
+  emit({ type: "prerequisites_started", runId });
+  const agentRunId = crypto.randomUUID();
+  runs.startAgentRun(projectDir, runId, {
+    agentRunId,
+    runId,
+    specDir: null,
+    taskPhaseNumber: 0,
+    taskPhaseName: "loop:prerequisites",
+    step: "prerequisites",
+    cycleNumber: 0,
+    featureSlug: null,
+    startedAt: new Date().toISOString(),
+    status: "running",
+  });
+  emit({ type: "step_started", runId, cycleNumber: 0, step: "prerequisites", agentRunId });
+  const emitCheck = (check: PrerequisiteCheck) =>
+    emit({ type: "prerequisites_check", runId, check });
+  return { agentRunId, startTime: Date.now(), emitCheck };
+}
+
+/** The run record's agent run, step_completed and prerequisites_completed. */
+function endPrerequisites(
+  ctx: OrchestrationContext,
+  runId: string,
+  step: PrerequisitesStep,
+  allPassed: boolean,
+): void {
+  const { projectDir, emit, rlog } = ctx;
+  const durationMs = Date.now() - step.startTime;
+  runs.completeAgentRun(projectDir, runId, step.agentRunId, {
     status: "completed",
     costUsd: 0,
     durationMs,
     inputTokens: 0,
     outputTokens: 0,
   });
-
   emit({
     type: "step_completed",
     runId,
     cycleNumber: 0,
     step: "prerequisites",
-    agentRunId,
+    agentRunId: step.agentRunId,
     costUsd: 0,
     durationMs,
   });
   emit({ type: "prerequisites_completed", runId });
   rlog.run("INFO", "runPrerequisites: completed", { durationMs, allPassed });
+}
+
+// ── Existing project: check only ────────────────────────────
+
+function isGitRepo(projectDir: string): boolean {
+  try {
+    execSync("git rev-parse --is-inside-work-tree", { cwd: projectDir, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Why `.specify/` cannot take SPECIFY_FEATURE_DIRECTORY (research R5), or null when it can. */
+function speckitProblem(projectDir: string): string | null {
+  if (!fs.existsSync(path.join(projectDir, ".specify")))
+    return ".specify/ is missing — run `specify init` in the project";
+  const common = path.join(projectDir, ".specify", "scripts", "bash", "common.sh");
+  if (!fs.existsSync(common)) return ".specify/scripts/bash/common.sh is missing";
+  if (!fs.readFileSync(common, "utf-8").includes("SPECIFY_FEATURE_DIRECTORY")) {
+    return ".specify/scripts/bash/common.sh does not know SPECIFY_FEATURE_DIRECTORY — upgrade spec-kit";
+  }
+  return null;
+}
+
+/**
+ * Whether Claude Code's folder trust dialog was accepted for this project.
+ * Reads one field of `~/.claude.json`; nothing else in that file is used or logged.
+ */
+function trustState(projectDir: string): string {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude.json"), "utf-8"));
+    const accepted = raw?.projects?.[projectDir]?.hasTrustDialogAccepted;
+    if (accepted === true) return "the folder trust dialog is accepted";
+    return "the folder trust dialog was not accepted yet (open the folder once in Claude Code)";
+  } catch {
+    return "folder trust unknown (no readable ~/.claude.json)";
+  }
+}
+
+/**
+ * Check-only prerequisites for an existing project (research R12). Returns one
+ * line per failed check; empty when all pass. Fixes nothing and asks nothing.
+ */
+export async function checkExistingProject(
+  ctx: OrchestrationContext,
+  runId: string,
+): Promise<string[]> {
+  const { projectDir } = ctx;
+  const step = beginPrerequisites(ctx, runId);
+  const failures: string[] = [];
+  const check = (name: PrerequisiteCheckName, problem: string | null, okMessage?: string) => {
+    if (problem) failures.push(problem);
+    step.emitCheck(
+      problem
+        ? { name, status: "fail", message: problem }
+        : { name, status: "pass", message: okMessage },
+    );
+  };
+  check(
+    "claude_cli",
+    isCommandOnPath("claude") ? null : "Claude Code CLI (`claude`) is not on PATH",
+    trustState(projectDir),
+  );
+  check(
+    "specify_cli",
+    isCommandOnPath("specify") ? null : "spec-kit CLI (`specify`) is not on PATH",
+  );
+  check("git_init", isGitRepo(projectDir) ? null : `${projectDir} is not a git repository`);
+  check("speckit_init", speckitProblem(projectDir));
+  if (failures.length > 0)
+    ctx.rlog.run("WARN", `checkExistingProject: ${failures.length} check(s) failed`, { failures });
+  endPrerequisites(ctx, runId, step, failures.length === 0);
+  return failures;
 }
 
 // ── Individual checks ───────────────────────────────────────
@@ -177,21 +264,28 @@ async function checkClaudeCli(
 
   while (true) {
     if (ctx.abort.signal.aborted) return false;
-    const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
-      {
-        question:
-          "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
-        header: "Missing: Claude CLI",
-        options: [
-          {
-            label: "I've installed it — check again",
-            description: "Re-run the check after you've installed Claude Code",
-          },
-          { label: "Skip this check", description: "Proceed without verifying (not recommended)" },
-        ],
-        multiSelect: false,
-      },
-    ]);
+    const answers = await askQuestions(
+      { projectDir: ctx.projectDir, emit: ctx.emit, runId },
+      null,
+      [
+        {
+          question:
+            "Claude Code CLI is not installed or not on your PATH. Please install it and try again.",
+          header: "Missing: Claude CLI",
+          options: [
+            {
+              label: "I've installed it — check again",
+              description: "Re-run the check after you've installed Claude Code",
+            },
+            {
+              label: "Skip this check",
+              description: "Proceed without verifying (not recommended)",
+            },
+          ],
+          multiSelect: false,
+        },
+      ],
+    );
     const answer = Object.values(answers)[0];
     if (answer === "Skip this check") {
       emitCheck({ name: "claude_cli", status: "fixed", message: "Skipped by user" });
@@ -231,24 +325,28 @@ async function checkSpecifyCli(
 
   while (true) {
     if (ctx.abort.signal.aborted) return false;
-    const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
-      {
-        question:
-          "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
-        header: "Missing: Spec-Kit CLI",
-        options: [
-          {
-            label: "I've installed it — check again",
-            description: "Re-run the check after you've installed spec-kit",
-          },
-          {
-            label: "Skip this check",
-            description: "Proceed without spec-kit (the loop will likely fail)",
-          },
-        ],
-        multiSelect: false,
-      },
-    ]);
+    const answers = await askQuestions(
+      { projectDir: ctx.projectDir, emit: ctx.emit, runId },
+      null,
+      [
+        {
+          question:
+            "Spec-Kit CLI (specify) is not installed. Install it with:\n\nuv tool install specify-cli --from git+https://github.com/github/spec-kit.git\n\nThen try again.",
+          header: "Missing: Spec-Kit CLI",
+          options: [
+            {
+              label: "I've installed it — check again",
+              description: "Re-run the check after you've installed spec-kit",
+            },
+            {
+              label: "Skip this check",
+              description: "Proceed without spec-kit (the loop will likely fail)",
+            },
+          ],
+          multiSelect: false,
+        },
+      ],
+    );
     const answer = Object.values(answers)[0];
     if (answer === "Skip this check") {
       emitCheck({ name: "specify_cli", status: "fixed", message: "Skipped by user" });
@@ -415,7 +513,7 @@ async function checkGithubRepo(
   }
 
   if (ctx.abort.signal.aborted) return;
-  const answers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
+  const answers = await askQuestions({ projectDir: ctx.projectDir, emit: ctx.emit, runId }, null, [
     {
       question: "Would you like to create a GitHub repository for this project?",
       header: "GitHub Repository (optional)",
@@ -437,14 +535,18 @@ async function checkGithubRepo(
   }
 
   if (ctx.abort.signal.aborted) return;
-  const repoAnswers = await waitForUserInput(ctx.projectDir, ctx.emit, runId, [
-    {
-      question: "Enter the name for your new GitHub repository:",
-      header: "Repository Name",
-      options: [{ label: path.basename(ctx.projectDir), description: "Use project folder name" }],
-      multiSelect: false,
-    },
-  ]);
+  const repoAnswers = await askQuestions(
+    { projectDir: ctx.projectDir, emit: ctx.emit, runId },
+    null,
+    [
+      {
+        question: "Enter the name for your new GitHub repository:",
+        header: "Repository Name",
+        options: [{ label: path.basename(ctx.projectDir), description: "Use project folder name" }],
+        multiSelect: false,
+      },
+    ],
+  );
   const repoName = Object.values(repoAnswers)[0];
 
   ctx.rlog.run("INFO", `runPrerequisites: creating GitHub repo '${repoName}'`);

@@ -1,16 +1,13 @@
 /**
- * What: Phase A clarification — runs the 4-step interactive clarification flow (product → technical → synthesis → constitution) producing the clarified plan and a filled constitution. Caller supplies the four artefact paths (goal + 3 derivatives) so the basename `GOAL` is not hardcoded. Skips entirely when prior specs already exist alongside a clarified plan.
+ * What: Phase A clarification — runs the 4-step interactive clarification flow (product → technical → synthesis → constitution) producing the clarified plan and a filled constitution. Caller supplies the four artefact paths (goal + 3 derivatives) so the basename `GOAL` is not hardcoded. Skips entirely when the queue already exists.
  * Not: Does not run gap-analysis or the per-feature implement loop. Does not own runStage — that lives in orchestrator.ts and is imported. Does not extract clarification questions; auto-clarification is signaled via `config.autoClarification` and consumed by the prompt builders, not here.
- * Deps: OrchestrationContext, RunConfig (for descriptionFile / autoClarification / model), runStage (from ../orchestrator.js — circular but call-time-safe), prompts.ts builders, phase-lifecycle.emitSkippedStep for synthetic skipped-step audit records.
+ * Deps: OrchestrationContext, RunConfig (for descriptionFile / autoClarification / model), runStage (./run-stage.js), prompts.ts builders, phase-lifecycle.emitSkippedStep for synthetic skipped-step audit records.
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { OrchestrationContext } from "../context.js";
-// Circular: runStage lives in orchestrator.ts and will move into a coordinator
-// surface during A8. Both sides export functions only; ESM resolves call-time refs.
-import { runStage } from "../orchestrator.js";
 import { emitSkippedStep as phaseEmitSkippedStep } from "../phase-lifecycle.js";
 import {
   buildClarificationSynthesisPrompt,
@@ -20,6 +17,7 @@ import {
   SYNTHESIS_SCHEMA,
 } from "../prompts.js";
 import type { RunConfig, StepType } from "../types.js";
+import { runStage } from "./run-stage.js";
 
 class AbortError extends Error {
   constructor() {
@@ -42,7 +40,8 @@ export async function runClarificationPhase(
     clarifiedPath: string;
     productDomainPath: string;
     technicalDomainPath: string;
-    existingSpecsAtStart: string[];
+    /** The queue exists, so the project was planned already: emit the skipped steps only. */
+    queueExists: boolean;
     seedCumulativeCost: number;
   },
 ): Promise<{ fullPlanPath: string; cumulativeCost: number }> {
@@ -53,7 +52,7 @@ export async function runClarificationPhase(
     clarifiedPath,
     productDomainPath,
     technicalDomainPath,
-    existingSpecsAtStart,
+    queueExists,
     seedCumulativeCost,
   } = deps;
   const { projectDir, emit, rlog } = ctx;
@@ -74,13 +73,10 @@ export async function runClarificationPhase(
     });
   };
 
-  // ── Skip path: prior specs + clarified plan exist ────────
-  if (existingSpecsAtStart.length > 0 && fs.existsSync(clarifiedPath)) {
+  // ── Skip path: the queue exists, so clarification already ran ────────
+  if (queueExists) {
     fullPlanPath = clarifiedPath;
-    rlog.run(
-      "INFO",
-      `runLoop: specs exist (${existingSpecsAtStart.length}), skipping clarification, using ${clarifiedPath}`,
-    );
+    rlog.run("INFO", `runLoop: queue exists, skipping clarification, using ${clarifiedPath}`);
     emit({ type: "clarification_started", runId });
     emitSkippedStep("clarification_product");
     emitSkippedStep("clarification_technical");
@@ -100,7 +96,13 @@ export async function runClarificationPhase(
   if (!fs.existsSync(productDomainPath)) {
     rlog.run("INFO", "runLoop: starting product domain clarification");
     const prompt = buildProductClarificationPrompt(goalPath, productDomainPath);
-    const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_product");
+    const result = await runStage({
+      config,
+      prompt,
+      runId,
+      cycleNumber: 0,
+      step: "clarification_product",
+    });
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
     if (!fs.existsSync(productDomainPath)) {
@@ -120,7 +122,13 @@ export async function runClarificationPhase(
       productDomainPath,
       technicalDomainPath,
     );
-    const result = await runStage(config, prompt, emit, rlog, runId, 0, "clarification_technical");
+    const result = await runStage({
+      config,
+      prompt,
+      runId,
+      cycleNumber: 0,
+      step: "clarification_technical",
+    });
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
     if (!fs.existsSync(technicalDomainPath)) {
@@ -141,17 +149,17 @@ export async function runClarificationPhase(
       technicalDomainPath,
       clarifiedPath,
     );
-    const result = await runStage(
+    const result = await runStage({
       config,
       prompt,
-      emit,
-      rlog,
       runId,
-      0,
-      "clarification_synthesis",
-      undefined,
-      { type: "json_schema", schema: SYNTHESIS_SCHEMA as unknown as Record<string, unknown> },
-    );
+      cycleNumber: 0,
+      step: "clarification_synthesis",
+      outputFormat: {
+        type: "json_schema",
+        schema: SYNTHESIS_SCHEMA as unknown as Record<string, unknown>,
+      },
+    });
     cumulativeCost += result.cost;
     if (ctx.abort.signal.aborted) throw new AbortError();
 
@@ -192,7 +200,7 @@ export async function runClarificationPhase(
   if (constitutionNeedsGeneration) {
     rlog.run("INFO", "runLoop: generating constitution");
     const prompt = buildConstitutionPrompt(config, fullPlanPath);
-    const result = await runStage(config, prompt, emit, rlog, runId, 0, "constitution");
+    const result = await runStage({ config, prompt, runId, cycleNumber: 0, step: "constitution" });
     cumulativeCost += result.cost;
   } else {
     rlog.run("INFO", "runLoop: constitution already filled, skipping");

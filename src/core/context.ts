@@ -1,12 +1,13 @@
 /**
- * What: OrchestrationContext interface + createContext factory — the single per-run value that future extracted phase functions (A2-A7) accept as `ctx` instead of reaching into module-level state.
- * Not: Does not own run lifecycle (acquire/release locks, build runner, instantiate logger) — the caller assembles dependencies and passes them in. Does not include user-input pendingQuestion plumbing today; A1 stubs the field, A3 wires it.
- * Deps: ./agent/AgentRunner.js (AgentRunner type), ./events.js (EmitFn), ./log.js (RunLogger), ./types.js (StepType).
+ * What: OrchestrationContext interface + createContext factory — the single per-run value every stage function accepts as `ctx`: abort, runner, live run state, the project, the queue kind and the project's policy.
+ * Not: Does not own run lifecycle (acquire/release locks, build runner, instantiate logger, load the policy) — the caller assembles dependencies and passes them in. Held human requests live in humanInput.ts, not here.
+ * Deps: ./agent/AgentRunner.js (AgentRunner type), ./events.js (EmitFn), ./log.js (RunLogger), ./policy.js (Policy, QueueKind), ./types.js (StepType).
  */
 
 import type { AgentRunner } from "./agent/AgentRunner.js";
 import type { EmitFn } from "./events.js";
 import type { RunLogger } from "./log.js";
+import type { Policy, QueueKind } from "./policy.js";
 import type { StepType } from "./types.js";
 
 /**
@@ -38,10 +39,6 @@ export type { EmitFn };
  * `currentRunState`) with one passed-down value. Future extracted phase
  * functions (A2-A7) accept `ctx: OrchestrationContext` and operate purely
  * over its fields instead of reaching into orchestrator.ts globals.
- *
- * `pendingQuestion` is reserved for the clarification interactive flow (A3).
- * Today the live `userInput.ts` map handles concurrent questions; A3 will
- * migrate the single-active-question slot to ctx.
  */
 export interface OrchestrationContext {
   readonly abort: AbortController;
@@ -51,11 +48,10 @@ export interface OrchestrationContext {
   readonly releaseLock: () => Promise<void>;
   readonly emit: EmitFn;
   readonly rlog: RunLogger;
-  pendingQuestion: {
-    promise: Promise<unknown> | null;
-    resolve: ((answer: string) => void) | null;
-    requestId: string | null;
-  };
+  /** `new` (Dex plans and owns the run branch) or `existing` (the project's own rules). */
+  readonly kind: QueueKind;
+  /** `.dex/policy.json`, validated at start, or the defaults. */
+  readonly policy: Policy;
 }
 
 /**
@@ -75,6 +71,8 @@ export function createContext(deps: {
   releaseLock: () => Promise<void>;
   emit: EmitFn;
   rlog: RunLogger;
+  kind: QueueKind;
+  policy: Policy;
 }): OrchestrationContext {
   return {
     abort: deps.abort,
@@ -84,6 +82,7 @@ export function createContext(deps: {
     releaseLock: deps.releaseLock,
     emit: deps.emit,
     rlog: deps.rlog,
-    pendingQuestion: { promise: null, resolve: null, requestId: null },
+    kind: deps.kind,
+    policy: deps.policy,
   };
 }

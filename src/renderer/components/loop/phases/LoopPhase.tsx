@@ -2,6 +2,7 @@ import { Clock, DollarSign } from "lucide-react";
 import type { StepType } from "../../../../core/types.js";
 import type { LatestAction, UiLoopCycle, UiLoopStage } from "../../../hooks/useOrchestrator.js";
 import type { SpecSummary } from "../../../hooks/useProject.js";
+import type { QueueProgress } from "../../../hooks/useRunSnapshot.js";
 import { CycleTimeline } from "../CycleTimeline.js";
 
 interface LoopPhaseProps {
@@ -15,8 +16,9 @@ interface LoopPhaseProps {
   onImplPhaseClick: (phaseTraceId: string) => void;
   onSelectSpec: (specName: string) => void;
   debugBadge?: React.ReactNode;
-  pathStagesByCycle?: ReadonlyMap<number, ReadonlySet<StepType>>;
   latestAction?: LatestAction | null;
+  /** The queue's entry counts; null without a queue (the counts then come from the cycles seen). */
+  progress?: QueueProgress | null;
 }
 
 export function LoopPhase({
@@ -30,9 +32,11 @@ export function LoopPhase({
   onImplPhaseClick,
   onSelectSpec,
   debugBadge,
-  pathStagesByCycle,
   latestAction,
+  progress = null,
 }: LoopPhaseProps) {
+  const done = progress?.done ?? cycles.filter((c) => c.status === "completed").length;
+  const total = progress?.total ?? cycles.length;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Stats bar */}
@@ -47,10 +51,13 @@ export function LoopPhase({
           color: "var(--foreground-dim)",
         }}
       >
-        {cycles.length > 0 && (
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+        {total > 0 && (
+          <span
+            data-testid="loop-cycle-count"
+            style={{ display: "flex", alignItems: "center", gap: 3 }}
+          >
             <Clock size={10} />
-            {cycles.filter((c) => c.status === "completed").length}/{cycles.length} cycles
+            {done}/{total} cycles
           </span>
         )}
         {totalCost > 0 && (
@@ -80,8 +87,8 @@ export function LoopPhase({
           onStageClick={onStageClick}
           onImplPhaseClick={onImplPhaseClick}
           onSelectSpec={onSelectSpec}
-          pathStagesByCycle={pathStagesByCycle}
           latestAction={latestAction}
+          upcoming={progress?.pending}
         />
       </div>
     </div>

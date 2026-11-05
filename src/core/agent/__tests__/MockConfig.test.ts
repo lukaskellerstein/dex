@@ -9,6 +9,7 @@ import {
   MockConfigParseError,
   mockConfigPath,
   PHASE_OF_STEP,
+  stageScript,
 } from "../MockConfig.ts";
 
 function mkProject(): string {
@@ -30,23 +31,22 @@ const VALID_CONFIG = {
     constitution: { delay: 0 },
     manifest_extraction: { delay: 0 },
   },
-  dex_loop: {
-    cycles: [
-      {
-        feature: { id: "f-001", title: "F1" },
-        stages: {
-          gap_analysis: { delay: 0, structured_output: { decision: "GAPS_COMPLETE" } },
-          specify: { delay: 0 },
-          plan: { delay: 0 },
-          tasks: { delay: 0 },
-          implement: { delay: 0 },
-          verify: { delay: 0, structured_output: { ok: true, issues: [] } },
-          learnings: { delay: 0 },
-        },
+  entries: {
+    "*": {
+      specify: { delay: 0 },
+      clarify: { delay: 0 },
+      plan: { delay: 0 },
+      tasks: { delay: 0 },
+      implement: { delay: 0 },
+      verify: { delay: 0 },
+    } as Record<string, Record<string, unknown>>,
+    "002-b": {
+      verify: {
+        delay: 5,
+        rounds: [{ verdict: "failed", fixTasks: ["fix it"] }, { verdict: "passed" }],
       },
-    ],
+    } as Record<string, Record<string, unknown>>,
   },
-  completion: {},
 };
 
 test("MockConfig: loads a valid minimal config", () => {
@@ -54,8 +54,8 @@ test("MockConfig: loads a valid minimal config", () => {
   try {
     writeConfig(dir, JSON.stringify(VALID_CONFIG));
     const cfg = loadMockConfig(dir);
-    assert.equal(cfg.dex_loop.cycles.length, 1);
-    assert.equal(cfg.dex_loop.cycles[0].feature.id, "f-001");
+    assert.deepEqual(Object.keys(cfg.entries), ["*", "002-b"]);
+    assert.deepEqual(cfg.completion, {});
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -80,23 +80,61 @@ test("MockConfig: invalid JSON throws MockConfigParseError", () => {
   }
 });
 
-test("MockConfig: empty cycles array throws", () => {
+test("MockConfig: empty entries throws", () => {
   const dir = mkProject();
   try {
-    writeConfig(dir, JSON.stringify({ ...VALID_CONFIG, dex_loop: { cycles: [] } }));
-    assert.throws(() => loadMockConfig(dir), /non-empty array/);
+    writeConfig(dir, JSON.stringify({ ...VALID_CONFIG, entries: {} }));
+    assert.throws(() => loadMockConfig(dir), /non-empty object keyed by entry id/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("MockConfig: cycle missing required stage throws", () => {
+test("MockConfig: a pre-015 dex_loop config throws with the migration hint", () => {
+  const dir = mkProject();
+  try {
+    const { entries: _entries, ...rest } = VALID_CONFIG;
+    writeConfig(dir, JSON.stringify({ ...rest, dex_loop: { cycles: [] } }));
+    assert.throws(() => loadMockConfig(dir), /'dex_loop\.cycles' was replaced by 'entries'/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("MockConfig: an unknown stage name throws", () => {
   const dir = mkProject();
   try {
     const bad = structuredClone(VALID_CONFIG);
-    delete (bad.dex_loop.cycles[0].stages as Record<string, unknown>).verify;
+    bad.entries["*"].gap_analysis = { delay: 0 };
     writeConfig(dir, JSON.stringify(bad));
-    assert.throws(() => loadMockConfig(dir), /stages\.verify is required/);
+    assert.throws(() => loadMockConfig(dir), /gap_analysis is not a stage/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("MockConfig: a verify round needs a passed/failed verdict", () => {
+  const dir = mkProject();
+  try {
+    const bad = structuredClone(VALID_CONFIG);
+    bad.entries["002-b"].verify = { delay: 0, rounds: [{ verdict: "maybe" }] };
+    writeConfig(dir, JSON.stringify(bad));
+    assert.throws(() => loadMockConfig(dir), /rounds\[0\]\.verdict must be "passed" or "failed"/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stageScript: the entry\'s own stage wins, else the "*" one, else null', () => {
+  const dir = mkProject();
+  try {
+    writeConfig(dir, JSON.stringify(VALID_CONFIG));
+    const cfg = loadMockConfig(dir);
+    assert.equal(stageScript(cfg, "002-b", "verify")?.delay, 5);
+    assert.equal(stageScript(cfg, "002-b", "plan")?.delay, 0);
+    assert.equal(stageScript(cfg, "001-a", "verify")?.delay, 0);
+    assert.equal(stageScript(cfg, null, "implement")?.delay, 0);
+    assert.equal(stageScript(cfg, "001-a", "brief"), null);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -106,7 +144,7 @@ test("MockConfig: writes entry without 'content' throws", () => {
   const dir = mkProject();
   try {
     const bad = structuredClone(VALID_CONFIG);
-    (bad.dex_loop.cycles[0].stages.specify as Record<string, unknown>).writes = [{ path: "x.md" }];
+    bad.entries["*"].specify.writes = [{ path: "x.md" }];
     writeConfig(dir, JSON.stringify(bad));
     assert.throws(() => loadMockConfig(dir), /\.content must be a string/);
   } finally {
@@ -126,22 +164,10 @@ test("MockConfig: non-finite delay throws", () => {
   }
 });
 
-test("MockConfig: feature.id must be a non-empty string", () => {
-  const dir = mkProject();
-  try {
-    const bad = structuredClone(VALID_CONFIG);
-    (bad.dex_loop.cycles[0].feature as Record<string, unknown>).id = "";
-    writeConfig(dir, JSON.stringify(bad));
-    assert.throws(() => loadMockConfig(dir), /feature\.id must be a non-empty string/);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("PHASE_OF_STEP: every StepType maps to exactly one phase", () => {
   assert.equal(PHASE_OF_STEP.prerequisites, "prerequisites");
   assert.equal(PHASE_OF_STEP.manifest_extraction, "clarification");
-  assert.equal(PHASE_OF_STEP.gap_analysis, "dex_loop");
-  assert.equal(PHASE_OF_STEP.implement, "dex_loop");
-  assert.equal(PHASE_OF_STEP.learnings, "dex_loop");
+  assert.equal(PHASE_OF_STEP.brief, "entries");
+  assert.equal(PHASE_OF_STEP.implement, "entries");
+  assert.equal(PHASE_OF_STEP.verify, "entries");
 });

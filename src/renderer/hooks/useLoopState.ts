@@ -1,39 +1,18 @@
 /**
  * What: Owns loop-cycle progression state — preCycleStages, loopCycles, currentCycle, currentStage, totalCost, loopTermination.
- * Not: Does not own live-step data (useLiveTrace), user-question state (useUserQuestion), or run-session metadata (useRunSession). Does not call IPC; subscribes to events only.
+ * Not: Does not own live-step data (useLiveTrace), user-question state (useUserQuestion), or run-session metadata (useRunSession). Does not call IPC; subscribes to events only. Never guesses the next stage: what runs next is the picker's, and the queue panel shows it from the run snapshot (research R17).
  * Deps: orchestratorService.subscribeEvents, OrchestratorEvent / StepType / LoopTermination types.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LoopTermination, OrchestratorEvent, StepType } from "../../core/types.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 
-/**
- * Optimistic next-stage map used to close the ~200ms gap between
- * `step_completed` for stage X and `step_started` for the next stage —
- * during that window the orchestrator is committing the post-stage
- * checkpoint and no event has updated `currentStage` yet, so the UI
- * would otherwise briefly show NO stage as running. Mirrors the actual
- * sequence the orchestrator emits, NOT the raw STEP_ORDER (e.g.
- * `implement` is followed by `verify`, not `implement_fix`, because
- * `implement_fix` only fires inside a verify-failure retry loop).
- */
-const NEXT_STAGE_AFTER: Partial<Record<StepType, StepType>> = {
-  prerequisites: "clarification_product",
-  clarification_product: "clarification_technical",
-  clarification_technical: "clarification_synthesis",
-  clarification_synthesis: "constitution",
-  constitution: "manifest_extraction",
-  manifest_extraction: "gap_analysis",
-  gap_analysis: "specify",
-  specify: "plan",
-  plan: "tasks",
-  tasks: "implement",
-  implement: "verify",
-  implement_fix: "verify",
-  verify: "learnings",
-  // After learnings the next event is the next cycle's gap_analysis,
-  // which arrives via its own step_started — no optimistic advance.
-};
+/** The cycle status for a `loop_cycle_completed` decision from the queue loop. */
+function cycleStatusAfter(decision: string): UiLoopCycle["status"] {
+  if (decision === "done") return "completed";
+  if (decision === "failed") return "failed";
+  return "running";
+}
 
 // Re-export the cycle/stage shapes consumed by the renderer.
 export interface UiLoopStage {
@@ -125,19 +104,6 @@ export function useLoopState(): UseLoopStateResult {
           setTotalCost(0);
           break;
 
-        case "loop_reset":
-          // Fired after a successful squash-merge to main — the just-shipped
-          // run's state is no longer relevant; the Steps tab should fall back
-          // to the "no run yet" view so the user can pick another spec.
-          modeRef.current = null;
-          setCurrentCycle(null);
-          setCurrentStage(null);
-          setLoopTermination(null);
-          setLoopCycles([]);
-          setPreCycleStages([]);
-          setTotalCost(0);
-          break;
-
         case "task_phase_started":
           // Track implement sub-phases inside the active loop cycle.
           if (
@@ -205,45 +171,38 @@ export function useLoopState(): UseLoopStateResult {
 
         case "loop_cycle_started":
           setCurrentCycle(event.cycleNumber);
-          setLoopCycles((prev) => [
-            ...prev,
-            {
-              cycleNumber: event.cycleNumber,
-              featureName: null,
-              specDir: null,
-              decision: null,
-              status: "running",
-              costUsd: 0,
-              stages: [],
-              implementPhases: [],
-              startedAt: new Date().toISOString(),
-            },
-          ]);
+          // A Resume re-opens the entry's cycle: same number, keep its stages.
+          setLoopCycles((prev) =>
+            prev.some((c) => c.cycleNumber === event.cycleNumber)
+              ? prev.map((c) =>
+                  c.cycleNumber === event.cycleNumber ? { ...c, status: "running" as const } : c,
+                )
+              : [
+                  ...prev,
+                  {
+                    cycleNumber: event.cycleNumber,
+                    featureName: null,
+                    specDir: null,
+                    decision: null,
+                    status: "running",
+                    costUsd: 0,
+                    stages: [],
+                    implementPhases: [],
+                    startedAt: new Date().toISOString(),
+                  },
+                ],
+          );
           break;
 
         case "loop_cycle_completed":
-          // GAPS_COMPLETE means the orchestrator opened a cycle (incremented
-          // cycleNumber + emitted `loop_cycle_started`) only to discover via
-          // gap_analysis that no features remain. There's no real work in
-          // this cycle — drop it from the UI instead of rendering an empty
-          // ghost row labelled "gaps complete". The "all 3 features done"
-          // story is told by the surrounding `loop_terminated` event.
-          if (event.decision === "GAPS_COMPLETE") {
-            setLoopCycles((prev) => prev.filter((c) => c.cycleNumber !== event.cycleNumber));
-            break;
-          }
           setLoopCycles((prev) =>
             prev.map((c) =>
               c.cycleNumber === event.cycleNumber
                 ? {
                     ...c,
-                    // "stopped" → render as paused via "running" status (legacy contract)
-                    status:
-                      event.decision === "skipped"
-                        ? ("skipped" as const)
-                        : event.decision === "stopped"
-                          ? ("running" as const)
-                          : ("completed" as const),
+                    // A resumable end (Stop, a pause, the budget) renders as
+                    // paused via the "running" status (legacy contract).
+                    status: cycleStatusAfter(event.decision),
                     featureName: event.featureName,
                     specDir: event.specDir,
                     decision: event.decision,
@@ -306,15 +265,6 @@ export function useLoopState(): UseLoopStateResult {
                   : c,
               ),
             );
-          }
-          // Optimistically advance currentStage so the about-to-start
-          // stage flips to "running" without waiting for `step_started`
-          // — closes the post-checkpoint gap window. Skipped on stop so
-          // a paused cycle doesn't briefly highlight a phantom "next"
-          // stage. Overwritten the moment the real `step_started` fires.
-          if (!event.stopped) {
-            const next = NEXT_STAGE_AFTER[event.step];
-            if (next) setCurrentStage(next);
           }
           break;
         }

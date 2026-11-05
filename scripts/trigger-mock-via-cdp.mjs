@@ -3,8 +3,11 @@
  * Drive Dex end-to-end via raw CDP — no MCP dependency.
  * Navigates welcome → project → click "Start Autonomous Loop".
  */
+import os from "node:os";
+import path from "node:path";
+
 const CDP_PORT = 9333;
-const PROJECT_PARENT = "/home/lukas/Projects/Github/lukaskellerstein";
+const PROJECT_PARENT = path.join(os.homedir(), "Projects", "Github", "lukaskellerstein");
 const PROJECT_NAME = "dex-ecommerce";
 
 const resp = await fetch(`http://localhost:${CDP_PORT}/json`);

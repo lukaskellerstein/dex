@@ -58,7 +58,7 @@ export interface RunRecord {
   /** Absolute path to the goal/description file used for this run. Recoverable for resume after state.json is gone. */
   descriptionFile: string | null;
   fullPlanPath: string | null;
-  maxLoopCycles: number | null;
+  /** The policy's `limits.maxBudgetUsdPerRun` when the run started. */
   maxBudgetUsd: number | null;
   cyclesCompleted: number;
   agentRuns: AgentRunRecord[];
@@ -201,7 +201,6 @@ interface StartRunInput {
   description?: string | null;
   descriptionFile?: string | null;
   fullPlanPath?: string | null;
-  maxLoopCycles?: number | null;
   maxBudgetUsd?: number | null;
 }
 
@@ -221,7 +220,6 @@ export function startRun(projectDir: string, input: StartRunInput): RunRecord {
     description: input.description ?? null,
     descriptionFile: input.descriptionFile ?? null,
     fullPlanPath: input.fullPlanPath ?? null,
-    maxLoopCycles: input.maxLoopCycles ?? null,
     maxBudgetUsd: input.maxBudgetUsd ?? null,
     cyclesCompleted: 0,
     agentRuns: [],
@@ -245,16 +243,6 @@ export function completeRun(
     r.totalDurationMs = totalDurationMs;
     r.taskPhasesCompleted = taskPhasesCompleted;
     r.endedAt = new Date().toISOString();
-  });
-}
-
-export function updateRunCyclesCompleted(
-  projectDir: string,
-  runId: string,
-  cyclesCompleted: number,
-): void {
-  updateRun(projectDir, runId, (r) => {
-    r.cyclesCompleted = cyclesCompleted;
   });
 }
 
@@ -361,18 +349,6 @@ export function completeSubagent(
 }
 
 // ── Failure-counter helpers ──
-
-export function upsertFailureCount(
-  projectDir: string,
-  runId: string,
-  specDir: string,
-  impl: number,
-  replan: number,
-): void {
-  updateRun(projectDir, runId, (r) => {
-    r.failureCounters[specDir] = { impl, replan };
-  });
-}
 
 // ── Crash-recovery sweep ──
 

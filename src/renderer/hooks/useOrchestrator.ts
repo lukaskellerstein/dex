@@ -1,7 +1,7 @@
 /**
  * What: Composer that wires 5 domain hooks (useRunSession, usePrerequisites, useUserQuestion, useLoopState, useLiveTrace) into the union shape App.tsx consumes; owns cross-hook imperative methods (loadRunHistory, loadPhaseTrace, loadStageTrace, switchToLive).
  * Not: Does not subscribe to events directly; each domain hook owns its event subscriptions. Does not own any useState — every state lives in a domain hook.
- * Deps: 5 domain hooks; historyService, projectService for the cross-hook loaders; buildLoopStateFromRun for run-history hydration; AgentStep / SubagentInfo / TaskPhase / StepType types.
+ * Deps: 5 domain hooks; historyService, projectService for the cross-hook loaders; buildLoopStateFromRun (the one rebuild of a run's stage history, on mount and in loadRunHistory); AgentStep / SubagentInfo / TaskPhase / StepType types.
  */
 import { useCallback, useEffect, useRef } from "react";
 import type {
@@ -16,21 +16,16 @@ import type {
 import { historyService } from "../services/historyService.js";
 import { orchestratorService } from "../services/orchestratorService.js";
 import { projectService } from "../services/projectService.js";
+import { buildLoopStateFromRun, lastCycleOf } from "./buildLoopStateFromRun.js";
 import { type LatestAction, useLiveTrace } from "./useLiveTrace.js";
-import {
-  type ImplementSubPhase,
-  type UiLoopCycle,
-  type UiLoopStage,
-  useLoopState,
-} from "./useLoopState.js";
+import { type UiLoopCycle, type UiLoopStage, useLoopState } from "./useLoopState.js";
 import { usePrerequisites } from "./usePrerequisites.js";
 import { useRunSession } from "./useRunSession.js";
-import { type PendingQuestion, useUserQuestion } from "./useUserQuestion.js";
+import { useUserQuestion } from "./useUserQuestion.js";
 
 export type { LatestAction } from "./useLiveTrace.js";
 // Re-export shape consumers depend on
 export type { ImplementSubPhase, UiLoopCycle, UiLoopStage } from "./useLoopState.js";
-export type { PendingQuestion } from "./useUserQuestion.js";
 
 interface OrchestratorHook {
   liveSteps: AgentStep[];
@@ -56,8 +51,6 @@ interface OrchestratorHook {
   preCycleStages: UiLoopStage[];
   prerequisitesChecks: PrerequisiteCheck[];
   isCheckingPrerequisites: boolean;
-  pendingQuestion: PendingQuestion | null;
-  answerQuestion: (requestId: string, answers: Record<string, string>) => void;
   loadRunHistory: (projectDir: string) => Promise<boolean>;
   loadPhaseTrace: (projectDir: string, specDir: string, taskPhase: TaskPhase) => Promise<boolean>;
   loadStageTrace: (
@@ -126,7 +119,6 @@ export function useOrchestrator(): OrchestratorHook {
 
       // Rebuild loop dashboard state from JSON store.
       if (state.mode === "loop") {
-        const { buildLoopStateFromRun } = await import("./buildLoopStateFromRun.js");
         const runData = await historyService.getRun(state.projectDir, state.runId);
         if (runData) {
           const rebuilt = buildLoopStateFromRun(runData, state.currentCycle ?? null);
@@ -184,12 +176,8 @@ export function useOrchestrator(): OrchestratorHook {
 
   const loadRunHistory = useCallback(
     async (projectDir: string): Promise<boolean> => {
-      // Gate rehydration on state.json's presence. After a successful
-      // squash-merge, the IPC handler deletes state.json (the run is
-      // shipped — Steps tab should show the "no run yet" view, not the
-      // historical celebration). Without this gate, loadRunHistory would
-      // pull the latest runs/<runId>.json off disk and re-set
-      // loopTermination, undoing the loop_reset event.
+      // No state.json, no run to show: the latest run record alone can be
+      // from a project whose run state was removed.
       const liveState = await orchestratorService.getProjectState(projectDir);
       if (!liveState) return false;
 
@@ -202,128 +190,26 @@ export function useOrchestrator(): OrchestratorHook {
       );
       if (!specKitMarker) return false;
 
-      const phaseTraces = run.agentRuns;
-
       session.setCurrentRunId(run.runId);
       session.setMode("loop");
-      loop.setTotalCost(run.totalCostUsd ?? 0);
       session.setTotalDuration(run.totalDurationMs ?? 0);
 
-      const loopTraces = phaseTraces.filter((pt) => pt.taskPhaseName.startsWith("loop:"));
-      const implTraces = phaseTraces.filter((pt) => !pt.taskPhaseName.startsWith("loop:"));
-
-      const preCycle: UiLoopStage[] = [];
-      const cycleStageMap = new Map<number, UiLoopStage[]>();
-
-      const isCrashed = run.status === "crashed" || run.status === "stopped";
-
-      for (const pt of loopTraces) {
-        const stageType = pt.taskPhaseName.replace("loop:", "") as StepType;
-        const runningStatus: UiLoopStage["status"] = isCrashed ? "failed" : "running";
-        const step: UiLoopStage = {
-          type: stageType,
-          status:
-            pt.status === "completed"
-              ? "completed"
-              : pt.status === "stopped"
-                ? "stopped"
-                : pt.status === "crashed"
-                  ? "failed"
-                  : pt.status === "running"
-                    ? runningStatus
-                    : "failed",
-          agentRunId: pt.agentRunId,
-          specDir: pt.specDir || undefined,
-          costUsd: pt.costUsd ?? 0,
-          durationMs: pt.durationMs ?? 0,
-          startedAt: pt.startedAt,
-          completedAt: pt.endedAt ?? undefined,
-        };
-        if (pt.taskPhaseNumber === 0) {
-          preCycle.push(step);
-        } else {
-          const existing = cycleStageMap.get(pt.taskPhaseNumber) ?? [];
-          existing.push(step);
-          cycleStageMap.set(pt.taskPhaseNumber, existing);
-        }
-      }
-
-      loop.setPreCycleStages(preCycle);
-
-      // Group implement sub-phases by specDir.
-      const implBySpecDir = new Map<string, ImplementSubPhase[]>();
-      for (const pt of implTraces) {
-        const sd = pt.specDir || "";
-        if (!sd) continue;
-        const existing = implBySpecDir.get(sd) ?? [];
-        existing.push({
-          taskPhaseNumber: pt.taskPhaseNumber,
-          taskPhaseName: pt.taskPhaseName,
-          agentRunId: pt.agentRunId,
-          status:
-            pt.status === "completed"
-              ? ("completed" as const)
-              : pt.status === "stopped"
-                ? ("stopped" as const)
-                : ("completed" as const),
-          costUsd: pt.costUsd ?? 0,
-          durationMs: pt.durationMs ?? 0,
-        });
-        implBySpecDir.set(sd, existing);
-      }
-
-      // Build cycle entries — derive cycle status from grouped phases.
-      const cycles: UiLoopCycle[] = [];
-      const sortedEntries = Array.from(cycleStageMap.entries()).sort((a, b) => a[0] - b[0]);
-      const maxCycleNumber =
-        sortedEntries.length > 0 ? sortedEntries[sortedEntries.length - 1][0] : 0;
-
-      for (const [cycleNumber, stages] of sortedEntries) {
-        const specDir = stages.find((s) => s.specDir)?.specDir ?? null;
-        const implPhases = specDir ? (implBySpecDir.get(specDir) ?? []) : [];
-        const allStagesCompleted = stages.every((s) => s.status === "completed");
-        const isLastCycleOfCrashedRun = isCrashed && cycleNumber === maxCycleNumber;
-        const anyStageRunning = stages.some((s) => s.status === "running");
-        const anyStageFailed = stages.some((s) => s.status === "failed");
-
-        const cycleStatus: UiLoopCycle["status"] = isLastCycleOfCrashedRun
-          ? "running"
-          : anyStageRunning
-            ? "running"
-            : isCrashed
-              ? "running"
-              : allStagesCompleted && implPhases.length === 0
-                ? "completed"
-                : anyStageFailed
-                  ? "failed"
-                  : "completed";
-
-        cycles.push({
-          cycleNumber,
-          featureName: specDir,
-          specDir,
-          decision: null,
-          status: cycleStatus,
-          costUsd:
-            stages.reduce((sum, s) => sum + s.costUsd, 0) +
-            implPhases.reduce((sum, p) => sum + p.costUsd, 0),
-          stages,
-          implementPhases: implPhases,
-          startedAt: stages[0]?.startedAt ?? new Date().toISOString(),
-        });
-      }
-
-      loop.setLoopCycles(cycles);
+      // A run that did not finish shows its last entry as the one to resume.
+      const finished = run.status === "completed";
+      const rebuilt = buildLoopStateFromRun(run, finished ? null : lastCycleOf(run));
+      loop.setPreCycleStages(rebuilt.preCycleStages);
+      loop.setLoopCycles(rebuilt.loopCycles);
+      loop.setTotalCost(run.totalCostUsd ?? rebuilt.totalCost);
 
       // Only set termination for genuinely completed runs.
-      if (run.status === "completed") {
-        const completedFeatures = cycles
-          .filter((c) => c.status === "completed")
-          .map((c) => c.featureName ?? c.specDir ?? `Cycle ${c.cycleNumber}`);
+      if (finished) {
+        const completed = rebuilt.loopCycles.filter((c) => c.status === "completed");
         loop.setLoopTermination({
-          reason: "gaps_complete",
-          cyclesCompleted: cycles.filter((c) => c.status === "completed").length,
-          featuresCompleted: completedFeatures,
+          reason: "queue_complete",
+          cyclesCompleted: completed.length,
+          featuresCompleted: completed.map(
+            (c) => c.featureName ?? c.specDir ?? `Cycle ${c.cycleNumber}`,
+          ),
           featuresSkipped: [],
           totalCostUsd: run.totalCostUsd ?? 0,
           totalDurationMs: run.totalDurationMs ?? 0,
@@ -502,8 +388,6 @@ export function useOrchestrator(): OrchestratorHook {
     preCycleStages: loop.preCycleStages,
     prerequisitesChecks: prereq.prerequisitesChecks,
     isCheckingPrerequisites: prereq.isCheckingPrerequisites,
-    pendingQuestion: question.pendingQuestion,
-    answerQuestion: question.answerQuestion,
     loadRunHistory,
     loadPhaseTrace,
     loadStageTrace,

@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "kind": "existing",
+  "entries": [
+    {
+      "id": "900-fixture-a",
+      "title": "Fixture A — finish the greeter",
+      "skip": ["brief", "specify", "clarify", "plan", "tasks"],
+      "tasks": ["T002", "T004-T005"]
+    },
+    {
+      "id": "901-fixture-b",
+      "title": "Fixture B — a farewell, built on A",
+      "description": "Add `farewell(name)` next to the greeter from 900-fixture-a.",
+      "baseBranch": "900-fixture-a"
+    }
+  ]
+}

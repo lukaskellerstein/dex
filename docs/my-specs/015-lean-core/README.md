@@ -4,7 +4,21 @@
 >
 > **Supersedes** `01X-state-reconciliation` (never numbered). Once the next stage is derived from files, there is no second state machine left to reconcile.
 >
-> **First real user:** `onion-demo-01` ([Appendix A](#appendix-a--first-real-user-onion-demo-01)). This spec is done when Dex runs that project's queue.
+> **Real-project check:** a scratch clone of `dex-ecommerce`, never another project. This spec ends with a dry run on that clone's queue.
+>
+> **Followed by** [`016-grounded-loop`](../016-grounded-loop/README.md): a tests stage, plus checks that Dex runs itself as gates. The verify verdict (D-015-5) and the failure counter (D-015-7) here are deliberately minimal, because 016 replaces them. A real run that may commit and deploy waits for 016: the loop doesn't get those rights before it can tell real progress from claimed progress.
+>
+> **Changes after the build started (2026-11-05) — build these on this branch.** The branch was specified from the brief as committed on 2026-11-04. Three later edits to this brief aren't built yet. Add them to `spec.md` and `tasks.md` as a new phase, then implement them. Everything else in this brief is built, in places as `spec.md` records it (for example, the queue's human-owned `status` override replaces `skipped`).
+>
+> 1. **Verify records live in `.dex/evidence/<id>/` (untracked), keyed by the entry branch's HEAD and the `tasks.md` hash** (D-015-1, D-015-5). They replace `specs/<id>/verify.md`.
+>    - The verify agent returns its verdict as structured output, and Dex writes the record. The agent no longer writes a verdict file.
+>    - The picker counts an entry as done only when a passing record matches the current HEAD, so any later commit on the branch sends it back to `verify`.
+>    - `.dex/.gitignore` gains `evidence/`, and the mock writes records the same way.
+>    - DoD: "A commit on an entry's branch after the entry is done makes the picker verify it again."
+> 2. **Every spec-kit stage also gets `SPECIFY_FEATURE=<branch>` and `SPECIFY_FEATURE_NO_PERSIST=1`**, next to the `SPECIFY_FEATURE_DIRECTORY` (and `GIT_BRANCH_NAME` for `specify`) the build already sets. This keeps spec-kit from persisting `.specify/feature.json` in a real run, not only under the mock.
+> 3. **The policy's default `env` is `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}`** (D-015-3), so loop agents neither read nor write the machine owner's personal auto memory. A project's own `env` is merged over it.
+>
+> Not for this branch: judging tool calls in a common vocabulary instead of Claude's tool names is 018's job (D-018-4).
 >
 > **How to start:** commit this brief on `main`, start `claude -w 015-lean-core` in this repo, run `/speckit-specify` with this file as the feature description, then the usual clarify → plan → tasks → implement.
 
@@ -26,7 +40,7 @@ Three problems follow from that.
 
 1. **Every feature pays for time travel.** `state.json` rides git checkouts, so every stage must commit, every jump must re-sync, and every new feature must keep three views agreeing: `state.json`, git, and the renderer's own event log. 01X records all three disagreeing after a single Stop.
 2. **Dex can only start new projects.** The entry is a goal file → clarification → constitution → manifest. A project that already has specs, briefs, branch conventions and its own Claude Code setup has no way in. `build` mode implements existing specs, but it has no loop, no verify and no queue.
-3. **It runs with no brakes.** `ClaudeAgentRunner` sets `permissionMode: "bypassPermissions"` and `settingSources: ["project"]`. The user's hooks and every `ask`/`deny` rule are skipped, `canUseTool` allows everything, and the PreToolUse hook returns `allow`. That's acceptable on `dex-ecommerce`. It isn't on a project where the agent can deploy to a shared cluster.
+3. **It runs with no brakes.** `ClaudeAgentRunner` sets `permissionMode: "bypassPermissions"` and `settingSources: ["project"]`. The user's hooks and every `ask`/`deny` rule are skipped, `canUseTool` allows everything, and the PreToolUse hook returns `allow`. That's acceptable on `dex-ecommerce`. It isn't on a project where the agent can push, publish or reach production.
 
 ## What Dex is after this spec
 
@@ -66,10 +80,10 @@ The picker takes the first queue entry that isn't `done` or `skipped` and checks
 | `plan.md` is missing | `plan` |
 | `tasks.md` is missing | `tasks` |
 | An in-scope task is unchecked | `implement`, on the first task phase that has one |
-| `verify.md` is missing, or records a different `tasks.md` hash | `verify` |
-| `verify.md` says passed for the current `tasks.md` hash | mark the entry `done` in the queue and move on |
+| No passing verify record for the entry branch's current HEAD | `verify` |
+| A passing verify record for the entry branch's current HEAD | the entry is done; move on |
 
-Stages listed in the entry's `skip` are treated as done.
+Stages listed in the entry's `skip` are treated as done. A verify record lives in `.dex/evidence/<id>/` and is keyed by HEAD and the `tasks.md` hash, so any later commit makes the picker verify again. 016 adds a `tests` row and replaces the verify record with the gates Dex runs itself.
 
 What this buys:
 
@@ -88,7 +102,7 @@ Dex does only two things with branches:
 - before `specify`, it makes sure the project is on the entry's `baseBranch`, switching to it if the tree is clean;
 - before any later stage, it switches to the entry's `branch` (spec-kit created it) if the tree is clean.
 
-If a switch is needed and the tree is dirty, the run pauses with a question. After each stage Dex reports a dirty tree in the trace; it doesn't commit it.
+If a switch is needed and the tree is dirty, the run pauses with a question. After each stage Dex reports a dirty tree in the trace; it doesn't commit it. Nothing Dex writes is tracked in git (the queue and policy files are the human's), so Dex itself never dirties the tree.
 
 A new project keeps its one `dex/<date>-<id>` run branch. Opening a PR becomes opt-in (`openPullRequest`) for both kinds of project.
 
@@ -100,7 +114,7 @@ The policy lives in `.dex/policy.json`, tracked in the project's git.
 |---|---|---|
 | `settingSources` | Which Claude Code settings load | `["user", "project", "local"]` |
 | `permissionMode` | SDK permission mode | `"default"`; `bypassPermissions` is refused for an existing project |
-| `env` | Extra environment for every agent | `{}` |
+| `env` | Extra environment for every agent | `{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}`: loop agents neither read nor write the machine owner's personal auto memory. The project's lasting memory is its docs (017) |
 | `deny` | `{tool, pattern, reason}` regexes, checked in the PreToolUse hook | `[]` |
 | `ask` | Same shape; a match holds the tool call for the human | `[]` |
 | `writeRoots` | The only paths Edit, Write and NotebookEdit may target | `["."]` plus the OS temp dir |
@@ -122,18 +136,20 @@ Enforcement:
 
 ### D-015-4 — One queue for both kinds of project
 
-The feature manifest becomes the queue: `.dex/feature-manifest.json` v2 becomes `.dex/queue.json` v3. Dex reads v2 and migrates it. A new project still fills the queue through `manifest_extraction`. An existing project writes it by hand, or with `dex queue init`, which lists `specs/*` and `docs/my-specs/*` and proposes entries for the human to edit.
+The feature manifest becomes the queue: `.dex/feature-manifest.json` v2 becomes `.dex/queue.json` v3. Dex reads a v2 file as a queue, and `dex queue migrate` writes the v3 file. A new project still fills the queue through `manifest_extraction`, whose agent writes and commits it. An existing project writes it by hand, or with `dex queue init`, which lists `specs/*` and `docs/my-specs/*` and proposes entries for the human to edit.
+
+The queue file belongs to the human, and Dex never writes it. Whether an entry is done is derived from files (D-015-1), not stored.
 
 | Entry field | Meaning |
 |---|---|
-| `id` | Also the spec folder name and branch name unless overridden, e.g. `021-agent-entry` |
+| `id` | Also the spec folder name and branch name unless overridden, e.g. `004-product-recommendations` |
 | `title`, `description` | Shown in the queue panel; `description` goes into `specify` |
-| `status` | `pending`, `active`, `done` or `skipped` (written by Dex) |
+| `status` | Optional human-owned override, `done` or `skipped`. Without it, whether an entry is done is derived from files |
 | `brief` | Path to the brief, the source of truth for every stage |
 | `generate` | Optional `{sources: [paths], instructions}`: write the brief first |
 | `specDir`, `branch` | Optional; default `specs/<id>` and `<id>` |
 | `baseBranch` | Optional; default is the previous entry's `branch`, else the current branch |
-| `tasks` | Optional scope filter for `implement`, e.g. `["T110", "T122-T134"]` |
+| `tasks` | Optional scope filter for `implement`, e.g. `["T005", "T007-T009"]` |
 | `skip` | Optional stages that are already done or not wanted |
 | `gates` | Stages after which the run pauses for approval, e.g. `["brief"]` |
 
@@ -142,9 +158,10 @@ The feature manifest becomes the queue: `.dex/feature-manifest.json` v2 becomes 
 - **`brief`** writes the entry's brief from `generate.sources`, using the previous entry's brief as the format example. It is gated by default.
 - **`specify`** runs `/speckit-specify` with `GIT_BRANCH_NAME=<branch>` and `SPECIFY_FEATURE_DIRECTORY=<specDir>`, so spec-kit's git extension uses the exact names. The prompt says the brief is the source of truth.
 - **`clarify`** runs `/speckit-clarify` in autonomous mode. It answers each question from the brief, the repo and its docs, and records the question and answer in the spec. It asks the human only when nothing in the repo answers the question *and* a wrong guess would cost more than a day.
-- **`plan`** and **`tasks`** run the spec-kit commands as today. The picker writes `.specify/feature.json` for the entry before these stages.
+- **`plan`** and **`tasks`** run the spec-kit commands as today.
+- **Every spec-kit stage** gets `SPECIFY_FEATURE=<branch>`, `SPECIFY_FEATURE_DIRECTORY=<specDir>` and `SPECIFY_FEATURE_NO_PERSIST=1` in the agent's environment. spec-kit's scripts read these before `.specify/feature.json` and then don't rewrite that tracked file.
 - **`implement`** works as `run-phase.ts` does today (`/speckit-implement <spec> --phase N`). It adds the in-scope task ids when `tasks` is set, and replaces Dex's own commit line with "commit as this project's rules say".
-- **`verify`** runs a fresh agent that didn't do the implementing. It reads the brief's Acceptance/DoD and the spec's success criteria, runs the acceptance commands, and never edits code. It writes `specs/<id>/verify.md`: the verdict, the `tasks.md` hash it checked, and each command with its exit code. On failure it appends `## Phase Vn: verify fixes` to `tasks.md` with concrete tasks.
+- **`verify`** runs a fresh agent that didn't do the implementing. It reads the brief's Acceptance/DoD and the spec's success criteria, runs the acceptance commands, and never edits code. It returns its verdict as structured output (today's `VERIFY_SCHEMA`), and Dex records it in `.dex/evidence/<id>/`. On failure the agent appends `## Phase Vn: verify fixes` to `tasks.md` with concrete tasks and commits. This is the interim verdict; 016 replaces it.
 - **`learnings`** is dropped (open decision 2). The implement prompt already asks the agent to update `CLAUDE.md` with what it learned.
 
 ### D-015-6 — Questions have defaults
@@ -153,7 +170,7 @@ Agents ask through `AskUserQuestion`, which Dex already intercepts. In `recommen
 
 ### D-015-7 — Failure policy without an LLM
 
-Dex keeps two counters per entry in `state.json`: implement runs that checked no new task, and verify rounds. When either reaches its limit (`maxImplementRunsWithoutProgress`, `maxVerifyRounds`), the run pauses with a question. This replaces the REPLAN decisions and the LLM feature evaluation (`buildFeatureEvaluationPrompt`).
+Dex keeps two counters per entry in `state.json`: implement runs that checked no new task, and verify rounds. When either reaches its limit (`maxImplementRunsWithoutProgress`, `maxVerifyRounds`), the run pauses with a question. This replaces the REPLAN decisions and the LLM feature evaluation (`buildFeatureEvaluationPrompt`). It's interim: 016 replaces the counter with evidence fingerprints (D-016-7).
 
 ### D-015-8 — A headless runner
 
@@ -185,7 +202,7 @@ Dex pins `@anthropic-ai/claude-agent-sdk` `^0.1.45` (0.1.77 installed); npm's cu
 
 ### Add
 
-- **core:** `queue.ts` (load, migrate v2 → v3, save), `picker.ts` (D-015-1), `policy.ts` (D-015-3, pure), `stages/brief.ts`, `cli.ts` with a `dex` bin entry in `package.json`.
+- **core:** `queue.ts` (load, read v2, `dex queue migrate`), `picker.ts` (D-015-1), `policy.ts` (D-015-3, pure), `evidence.ts` (verify records keyed by HEAD; 016 extends it), `stages/brief.ts`, `cli.ts` with a `dex` bin entry in `package.json`.
 - **renderer:** `components/queue/QueuePanel.tsx`, and tool approvals in the existing questions panel.
 
 ### Change
@@ -197,7 +214,7 @@ Dex pins `@anthropic-ai/claude-agent-sdk` `^0.1.45` (0.1.77 installed); npm's cu
 - `stages/prerequisites.ts`: in an existing project, check only. Never `git init`, `specify init --force` or repo creation.
 - `run-lifecycle.ts`: no run branch or PR in an existing project.
 - `prompts.ts`, `state.ts`, `agent/MockAgentRunner.ts` and `agent/MockConfig.ts`: the new stages, so a whole queue runs under the mock at zero cost.
-- The `.gitignore` block Dex writes (today `checkpoints/gitignore.ts`): `state.json`, `runs/` and `questions.md` are ignored; `queue.json` and `policy.json` are tracked.
+- The `.gitignore` block Dex writes (today `checkpoints/gitignore.ts`): `state.json`, `runs/`, `evidence/` and `questions.md` are ignored; `queue.json` and `policy.json` are tracked.
 
 ## Implementation order
 
@@ -218,26 +235,28 @@ After every phase, `npm test` and `npm run typecheck` pass and a mock loop on `d
    - check-only prerequisites.
 5. **Headless CLI** (D-015-8).
 6. **UI** (D-015-9): the queue panel, approvals, deleting dead components, and the renderer re-reading state. This can run in parallel with Phase 7.
-7. **Dogfood on `onion-demo-01`** (Appendix A). First `dex run --dry-run` over the whole queue, and the owner reviews the printed prompts. Then the first real stage, 021 `specify`, with the owner watching.
+7. **Real-project check on a scratch clone of `dex-ecommerce`:** `dex queue init`, then `dex run --dry-run` over the whole queue, and the owner reviews the printed prompts. Then one real `specify`.
 
 ## Verification (DoD)
 
 - [ ] `npm test`, `npm run typecheck` and `npm run check:size` pass.
 - [ ] A mock loop on `dex-ecommerce` (new-project entry) runs every feature to `done`. Stop and Resume during `implement` continues on the same task phase.
 - [ ] After `reset-example-to.sh <checkpoint>`, Resume continues from the files with no repair step.
+- [ ] A commit on an entry's branch after the entry is done makes the picker verify it again.
+- [ ] A whole mock run leaves `git status` clean apart from the agents' own work: Dex writes no tracked file, including `.specify/feature.json`.
 - [ ] Picker tests pass, one per D-015-1 row, plus the task filter, `skip`, gates and migration.
 - [ ] Policy tests pass for `deny`, `ask`, `writeRoots`, `frozen` and the no-opinion `{}`. One live check shows that a project `settings.json` `ask` rule reaches the approval panel instead of running.
 - [ ] Existing-project fixture: a copy of `dex-ecommerce` with a hand-written queue runs to `done` under the mock. The queue has one entry starting at `implement` with a task filter, and one at `specify` with a `baseBranch`. The run creates no `dex/*` branch, no Dex commit and no push.
 - [ ] `grep -rn bypassPermissions src` finds nothing outside the refusal check.
 - [ ] Lines of source after this spec versus the Phase 0 baseline, by area, go in the PR description. Target: 21k or less (−25%), with the rest of the weight left in the renderer.
-- [ ] `dex run --dry-run` on `onion-demo-01` prints one decision and one prompt per queue entry, and the owner signs off before any real stage.
+- [ ] `dex run --dry-run` on a scratch clone of `dex-ecommerce` prints one decision and one prompt per open queue entry, and the owner signs off before any real stage.
 
 ## Out of scope
 
 - An Ink TUI. A status board can come later on top of the CLI.
 - Parallel features or parallel task phases.
-- Codex and Copilot runners.
-- Mirroring a feature branch into sibling repos. Projects that need it, like `onion-demo-01`'s rule 05, keep it in their own rules; Dex only checks that `repos` are clean.
+- Codex and Copilot runners. [018](../018-many-projects-any-agent/README.md) adds Codex and OpenCode, and runs several projects at once.
+- Mirroring a feature branch into sibling repos. Projects that need it keep it in their own rules; Dex only checks that `repos` are clean.
 - Merging a finished entry into the default branch.
 
 ## Open decisions
@@ -251,62 +270,4 @@ The proposed default is in bold.
 5. **What's tracked in the project's git:** **only `queue.json` and `policy.json`** | everything, as today.
 6. **Codex/Copilot kinds and variant profiles:** **delete** | keep the type for later.
 7. **The 01X brief:** **delete its folder in Phase 1** | keep it with a superseded banner.
-8. **If 21k lines still feels heavy:** **decide after the dogfood run**; the next cut would be the loop UI (3.4k).
-
-## Appendix A — first real user: onion-demo-01
-
-`~/Projects/Github/onion-ai-eu/onion-demo-01`. These are the facts that shaped this brief:
-
-- **Seven repos.** A workspace meta-repo plus seven sibling repos under `workload/`, each with its own `.git` and gitignored by the workspace. A feature's branch name is mirrored into each sibling it touches.
-- **spec-kit with the git extension.** One branch per feature, overridable with `GIT_BRANCH_NAME`. Briefs live in `docs/my-specs/<id>/README.md`, specs in `specs/<id>/`.
-- **Its own Claude setup.** `.claude/` holds rules and hooks. A worktree guard makes the main checkout read-only for agents unless `CLAUDE_NO_WORKTREE` is set. `settings.json` has `ask` rules for `kubectl delete`, `helm uninstall`, `terraform apply` and `git push --force`, among others.
-- **The checkout.** Dex runs in the main checkout, because the sibling clones don't exist in a worktree. Nobody else edits that checkout while Dex runs.
-- **Owner authorization.** On 2026-11-04 the owner authorized the loop to commit and deploy. Releases are cut by pushing a `platform-v*` tag, which CI turns into an image, so "deploy" includes a non-force push of the feature branch and of release tags.
-
-### Queue: `onion-demo-01/.dex/queue.json`
-
-| id | Starts at | Scope | baseBranch | Gates |
-|---|---|---|---|---|
-| `020-onion-thin-layer` | `implement` (`skip`: brief to tasks) | `tasks`: T110, T122–T134 (US7 labels on an unmapped warehouse table, plus Trino access rules first cut). US5 except T110, US6 and US8 stay parked; US8 moves to 022 | — (already on it) | — |
-| `021-agent-entry` | `specify` | the brief `docs/my-specs/021-agent-entry/README.md` | `020-onion-thin-layer` | — |
-| `022-…` Month 2, installable pilot | `brief` (`generate`) | see sources below | `021-agent-entry` | `brief` |
-| `023-…` Month 3, production | `brief` (`generate`) | see sources below | `022-…` | `brief` |
-| `024-…` Month 4, Chat | `brief` (`generate`) | see sources below; waits on the G4 model decision | `023-…` | `brief` |
-
-The brief sources for 022–024, relative to `onion-demo-01`:
-
-- `../executive-management/product/first-paying-customer/index.html`: the plan, section 3 for the month's features;
-- `../executive-management/product/first-paying-customer/demo-coverage.html`: §3 for features by month, §6 for the build order;
-- `docs/my-specs/021-agent-entry/README.md`: the format example, and its table "Where the v2.0 phases went";
-- `demo/gap-report.md`;
-- for 022, also `specs/020-onion-thin-layer/tasks.md` T135–T144 (US8).
-
-### Policy: `onion-demo-01/.dex/policy.json`
-
-- **`settingSources`** `["user", "project", "local"]`; **`permissionMode`** `"default"`; **`env`** `{"CLAUDE_NO_WORKTREE": "1"}`.
-- **`deny`**, each with its reason:
-  - git: `git push` with `--force`, `-f`, `--force-with-lease`, `--delete`, `--mirror` or `--tags`, or a `+`/`:` refspec; any push to `main`/`master`; `git branch -d/-D/--delete`; `git tag -d`; `git reset --hard`; `git clean -f`; `git merge`; `git rebase`; `git worktree`; `--no-verify`;
-  - kubectl: `kubectl delete`; `kubectl apply|create|replace|patch|edit|scale|drain|cordon|taint`, because helm is the only deploy path (exception: `kubectl create job --from=`); `kubectl config use-context|set-context|delete-context`;
-  - contexts and namespaces: any `--context`/`--kube-context` not starting with `onion-demo-01`; `helm install|upgrade` with a namespace outside `listovna`, `postara`, `severobanka`, `auth`, `audit`, `redpanda`;
-  - helm: `helm uninstall|delete|rollback`;
-  - terraform: any subcommand other than `validate|plan|show|output|fmt`;
-  - the management cluster: anything naming `mgmt-01` or `rancher.cellarwood.org`;
-  - secrets: `sops -d|decrypt|edit|exec-env`; `scripts/secrets.py` (any subcommand); reading `.agent-token` anywhere except inside `$(cat .agent-token)`; `scripts/agent-token.sh` without its stdout redirected;
-  - other: `ssh`; `docker system prune`; `gh pr merge|close`; `gh repo delete|edit`; `gh release delete`; `gh secret`; `gh variable`; `rm -r` outside the workspace.
-- **Allowed without a rule:**
-  - commits on feature branches;
-  - a non-force push of the current feature branch and of `platform-v*` and other release tags;
-  - `gh workflow run`;
-  - `helm upgrade --install` into the namespaces above.
-- **`writeRoots`**: `["."]` plus the temp dir. `../executive-management` stays read-only.
-- **`frozen`**: `workload/onion-poc-report/thresholds.md`, `workload/onion-poc-report/claim*.md`, and `workload/onion-poc-report/*-thresholds.md` once committed.
-- **`preflight`**:
-  - `kubectl config current-context` starts with `onion-demo-01`, and `kubectl get ns` answers within 15 s on the LAN or the `-remote` context (rule 01);
-  - the workspace and every repo in `repos` are clean.
-- **`repos`**: `workload/*`, `workload/sectors/*`, `workload/tenants/*`.
-- **`systemPromptAppend`** points to `.dex/loop-rules.md`, which carries:
-  - the owner's standing authorization (commit and deploy, 2026-11-04);
-  - "the owner is not watching: ask only when the brief, the repo and its docs can't answer, and a wrong guess costs more than a day";
-  - a sibling's feature branch starts from the previous entry's branch when that exists, because nothing is merged between entries; this deviates from rule 05 and is logged in `onion-platform/IMPLEMENTATION-LOG.md`;
-  - never fill in a login form; a Cloudflare Access login is a human step, so ask.
-- **`openPullRequest`**: `false`.
+8. **If 21k lines still feels heavy:** **decide after the real-project check**; the next cut would be the loop UI (3.4k).

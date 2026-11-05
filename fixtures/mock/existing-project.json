@@ -1,0 +1,78 @@
+{
+  "entries": {
+    "900-fixture-a": {
+      "implement": {
+        "delay": 200,
+        "writes": [
+          {
+            "path": "src/fixture-a/greet.ts",
+            "content": "// fixture A, written by the mock implement stage.\nexport const greet = (name: string): string => \"Hello, \" + name;\n"
+          }
+        ]
+      },
+      "verify": {
+        "delay": 200,
+        "rounds": [
+          {
+            "verdict": "passed"
+          }
+        ]
+      }
+    },
+    "*": {
+      "specify": {
+        "delay": 200,
+        "writes": [
+          {
+            "path": "{specDir}/spec.md",
+            "content": "# Feature Specification: {feature}\n\n## User Scenarios\n\n### User Story 1 — say goodbye (P1)\n\nA user runs the farewell and sees their name.\n\n## Requirements\n\n- **FR-001**: The farewell MUST print `Goodbye, <name>`.\n"
+          }
+        ]
+      },
+      "clarify": {
+        "delay": 200,
+        "appends": [
+          {
+            "path": "{specDir}/spec.md",
+            "line": "\n## Clarifications\n\n### Session mock\n\nNo critical ambiguities.\n"
+          }
+        ]
+      },
+      "plan": {
+        "delay": 200,
+        "writes": [
+          {
+            "path": "{specDir}/plan.md",
+            "content": "# Implementation Plan: {feature}\n\nTypeScript in strict mode, next to `src/fixture-a/`.\n"
+          }
+        ]
+      },
+      "tasks": {
+        "delay": 200,
+        "writes": [
+          {
+            "path": "{specDir}/tasks.md",
+            "content": "# Tasks: {feature}\n\n## Phase 1: Core\n\n- [ ] T001 Implement `farewell(name)` in src/{feature}/farewell.ts\n- [ ] T002 Test it in src/{feature}/farewell.test.ts\n"
+          }
+        ]
+      },
+      "implement": {
+        "delay": 200,
+        "writes": [
+          {
+            "path": "src/{feature}/farewell.ts",
+            "content": "// {feature}, written by the mock implement stage.\nexport const farewell = (name: string): string => \"Goodbye, \" + name;\n"
+          }
+        ]
+      },
+      "verify": {
+        "delay": 200,
+        "rounds": [
+          {
+            "verdict": "passed"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -97,7 +97,7 @@ Each command produces structured artifacts:
 - **Phased execution** — each phase has focused scope, testable output
 - **Acceptance-driven testing** — tests derived from acceptance criteria, not invented ad-hoc
 
-**What Spec-Kit lacks:** No autonomous loop, no gap analysis, no failure recovery, no self-improvement. It's a sequential workflow that requires human orchestration.
+**What Spec-Kit lacks:** No autonomous loop, no decision about what runs next, no failure recovery, no self-improvement. It's a sequential workflow that requires human orchestration.
 
 ### Pillar 3: Claude Agent SDK — Programmatic Control
 
@@ -118,7 +118,7 @@ const result = await query({
 **Key insights we inherit:**
 - **Typed hooks** — intercept every tool call, subagent spawn, and completion event
 - **Session management** — resume, fork, and abort running agents
-- **`settingSources`** — automatically loads `.claude/rules/` including learnings from prior iterations
+- **`settingSources`** — automatically loads the project's `CLAUDE.md` and `.claude/` settings, including what earlier agents recorded there
 - **MCP integration** — browser automation, playwright, custom tools
 - **AbortController** — graceful mid-phase cancellation
 
@@ -139,40 +139,42 @@ flowchart TB
 
     subgraph "Phase B — Autonomous Ralph Loop"
         FULLPLAN --> CONST["Step 0: Constitution\n/speckit.constitution"]
-        CONST --> GAP["Step 1: Gap Analysis\nStudy full_plan.md vs existing specs/code"]
+        CONST --> QUEUE["Manifest extraction\nwrites .dex/queue.json"]
+        QUEUE --> PICK["Picker\nreads the entry's files"]
 
-        GAP -->|NEXT_FEATURE| SPECIFY["Step 2: Specify\n/speckit.specify"]
-        GAP -->|RESUME_FEATURE| IMPL
-        GAP -->|REPLAN_FEATURE| PLAN
-        GAP -->|GAPS_COMPLETE| DONE[Loop Terminates]
+        PICK -->|no spec| SPECIFY["Specify\n/speckit.specify"]
+        PICK -->|no Clarifications| CLAR["Clarify\nautonomous"]
+        PICK -->|no plan / tasks| PLAN
+        PICK -->|unchecked task| IMPL
+        PICK -->|no current verify record| VERIFY
+        PICK -->|every entry done| DONE[Loop Terminates]
 
-        SPECIFY --> PLAN["Step 3: Plan\n/speckit.plan"]
-        PLAN --> TASKS["Step 4: Tasks\n/speckit.tasks"]
-        TASKS --> IMPL["Step 5: Implement\n/speckit.implement per phase"]
-        IMPL --> VERIFY["Step 6: Verify\nBuild + Tests + Browser E2E"]
-        VERIFY --> LEARN["Step 7: Learnings\nUpdate .claude/rules/learnings.md"]
-        LEARN --> GAP
+        SPECIFY --> PICK
+        CLAR --> PICK
+        PLAN["Plan / Tasks\n/speckit.plan, /speckit.tasks"] --> PICK
+        IMPL["Implement\n/speckit.implement per task phase"] --> PICK
+        VERIFY["Verify\nfresh agent: build + tests + browser E2E\nreturns a verdict"] --> PICK
     end
 
     subgraph "Safeguards"
-        FAIL_TRACK["3 failures → auto REPLAN\n3 replans → skip + log"]
+        STUCK["2 implement runs with no new task checked\nor 3 failed verify rounds → pause for the human"]
         BUDGET["Budget exhausted → stop"]
-        ABORT["User abort → graceful stop"]
+        ABORT["User abort → pause; Resume runs the picker again"]
     end
 
-    IMPL -.->|failure| FAIL_TRACK
-    FAIL_TRACK -.-> GAP
+    IMPL -.->|no progress| STUCK
+    VERIFY -.->|failed| STUCK
     BUDGET -.-> DONE
     ABORT -.-> DONE
 
     style FULLPLAN fill:#3b82f6,stroke:#2563eb,color:#fff
-    style GAP fill:#a855f7,stroke:#7c3aed,color:#fff
+    style PICK fill:#a855f7,stroke:#7c3aed,color:#fff
     style DONE fill:#10b981,stroke:#059669,color:#fff
 ```
 
 ### How Context Isolation Works
 
-Every box in the loop above is a **separate `query()` call** — a fresh Claude Code instance with a clean 200K context window. This is the core Ralph Wiggum insight, implemented programmatically:
+Every stage box in the loop above is a **separate `query()` call** — a fresh Claude Code instance with a clean 200K context window. The picker is not: it is plain code that reads files. This is the core Ralph Wiggum insight, implemented programmatically:
 
 ```mermaid
 sequenceDiagram
@@ -180,73 +182,75 @@ sequenceDiagram
     participant Q1 as query() #1
     participant Q2 as query() #2
     participant Q3 as query() #3
-    participant Q4 as query() #4
     participant FS as Filesystem
 
-    Note over O: Cycle N starts
-    O->>Q1: Gap Analysis prompt + full_plan.md
-    Q1->>FS: Read specs, code, tasks.md
-    Q1-->>O: NEXT_FEATURE: auth-module
+    Note over O: Entry 001-auth-module
+    O->>FS: Picker: specs/001-auth-module/ missing
+    O->>Q1: /speckit.specify "auth-module"
+    Q1->>FS: Write specs/001-auth-module/spec.md
+    Q1-->>O: Done
 
-    O->>Q2: /speckit.specify "auth-module"
-    Q2->>FS: Write specs/001-auth-module/spec.md
+    O->>FS: Picker: spec.md has Clarifications, plan.md missing
+    O->>Q2: /speckit.plan specs/001-auth-module
+    Q2->>FS: Read spec.md, write plan.md
     Q2-->>O: Done
 
-    O->>Q3: /speckit.plan specs/001-auth-module
-    Q3->>FS: Read spec.md, write plan.md + tasks.md
-    Q3-->>O: Done
-
-    O->>Q4: /speckit.implement Phase 1
-    Q4->>FS: Read tasks.md, implement, run tests
-    Q4-->>O: Done (3 tasks completed)
+    O->>FS: Picker: task phase 1 has unchecked tasks
+    O->>Q3: /speckit.implement Phase 1
+    Q3->>FS: Read tasks.md, implement, run tests
+    Q3-->>O: Done (3 tasks completed)
 
     Note over O: Each query() = fresh 200K context
-    Note over O: Learnings persist via filesystem
+    Note over O: Position lives in the files, not in Dex
 ```
 
-State doesn't pass through the context window — it passes through the **filesystem**. Specs, tasks, code, and learnings are written to disk. Each new `query()` reads what it needs from disk, operates in the "smart zone" of its context window, and writes results back. This is how Ralph Wiggum achieves eventual consistency: not by remembering everything, but by reading the current state each time.
+State doesn't pass through the context window — it passes through the **filesystem**. Specs, tasks, code, and what agents learned are written to disk. Each new `query()` reads what it needs from disk, operates in the "smart zone" of its context window, and writes results back. This is how Ralph Wiggum achieves eventual consistency: not by remembering everything, but by reading the current state each time.
 
-### The Four-Way Gap Analysis
+### The Next-Stage Picker
 
-The gap analysis stage is the loop's brain. It reads `full_plan.md` (the user's original intent) and compares it against the current state of specs and code, then outputs exactly one decision:
+The picker decides what runs next, and it decides from the project's files alone — no AI call, no remembered position. Features live in a queue, `.dex/queue.json`. The picker takes the first entry that is not `done` or `skipped` and checks, in order:
 
 ```mermaid
 flowchart LR
-    GAP[Gap Analysis] --> CHECK{Feature has\nspec dir?}
-    CHECK -->|No| NF["NEXT_FEATURE\nCreate new spec"]
-    CHECK -->|Yes| TASKS{All tasks\ncomplete?}
-    TASKS -->|"Yes, all done"| NEXT{More features\nin full_plan.md?}
-    TASKS -->|No| VALID{Tasks still\nvalid?}
-    VALID -->|Yes| RF["RESUME_FEATURE\nContinue where left off"]
-    VALID -->|No| RP["REPLAN_FEATURE\nRegenerate plan + tasks"]
-    NEXT -->|Yes| CHECK
-    NEXT -->|No| GC["GAPS_COMPLETE\nTerminate loop"]
+    PICK[Picker] --> SPEC{spec.md\nexists?}
+    SPEC -->|No| SP["specify"]
+    SPEC -->|Yes| CL{Clarifications\nsection?}
+    CL -->|No| C["clarify"]
+    CL -->|Yes| PL{plan.md and\ntasks.md exist?}
+    PL -->|No| P["plan / tasks"]
+    PL -->|Yes| T{In-scope task\nunchecked?}
+    T -->|Yes| I["implement\nfirst open task phase"]
+    T -->|No| V{verify passed for\nthis HEAD and tasks.md?}
+    V -->|No| VE["verify"]
+    V -->|Yes| D["entry done\nnext entry"]
 
-    style NF fill:#3b82f6,color:#fff
-    style RF fill:#f59e0b,color:#000
-    style RP fill:#ef4444,color:#fff
-    style GC fill:#10b981,color:#fff
+    style SP fill:#3b82f6,color:#fff
+    style I fill:#f59e0b,color:#000
+    style VE fill:#ef4444,color:#fff
+    style D fill:#10b981,color:#fff
 ```
 
-This handles the full feature lifecycle: creation, resumption after crash, recovery from bad plans, and graceful termination. Ralph Wiggum's bash loop can only create and continue — it can't detect when a plan is wrong and needs regeneration.
+An entry whose brief is missing but which lists sources to write it from starts with a `brief` stage. Stages listed in an entry's `skip` count as done, and a task filter limits which tasks count as in scope.
+
+This handles the full feature lifecycle: creation, resumption after a crash or a reset to any commit, and graceful termination. Resume is "run the picker again", so nothing has to be repaired first. Re-planning is a human act: delete `plan.md` and `tasks.md`, and the picker sends the entry back to `plan`.
 
 ### Self-Improvement Loop
 
-Learnings accumulate in `.claude/rules/learnings.md` and are automatically loaded by every subsequent `query()` call via the SDK's `settingSources: ["project"]` mechanism:
+The implement prompt asks each agent to add what the next agent needs — a build quirk, a gotcha — to the project's agent instructions (`CLAUDE.md` or `AGENTS.md`). Claude Code loads the project's `CLAUDE.md` into every subsequent `query()` call through the SDK's `settingSources` mechanism:
 
 ```mermaid
 flowchart LR
-    Q1["query() Cycle 1"] -->|discovers| L1["Learning: 'npm test requires\n--experimental-vm-modules flag'"]
-    L1 -->|writes| FILE[".claude/rules/learnings.md"]
-    FILE -->|auto-loaded via\nsettingSources| Q2["query() Cycle 2"]
+    Q1["query() implement"] -->|discovers| L1["Learning: 'npm test requires\n--experimental-vm-modules flag'"]
+    L1 -->|writes| FILE["CLAUDE.md"]
+    FILE -->|auto-loaded via\nsettingSources| Q2["query() next stage"]
     Q2 -->|discovers| L2["Learning: 'auth module uses\nargon2 not bcrypt'"]
     L2 -->|appends| FILE
-    FILE -->|auto-loaded| Q3["query() Cycle 3"]
+    FILE -->|auto-loaded| Q3["query() later stage"]
 
     style FILE fill:#a855f7,stroke:#7c3aed,color:#fff
 ```
 
-This is functionally identical to Ralph Wiggum's `AGENTS.md` updates, but uses the SDK's native config loading instead of explicit file reads in the prompt.
+This is functionally identical to Ralph Wiggum's `AGENTS.md` updates, but uses the SDK's native config loading instead of explicit file reads in the prompt. There is no separate learnings stage: the agent that made the discovery writes it down.
 
 ### Backpressure Architecture
 
@@ -264,22 +268,23 @@ flowchart TB
         TEST1 -->|pass| MARK["Mark task [x]"]
     end
 
-    subgraph "Per-Feature Verification (after all tasks)"
+    subgraph "Per-Feature Verification (after all tasks, fresh agent)"
         MARK --> VBUILD[Build entire project]
         VBUILD --> VTEST[Run full test suite]
         VTEST --> E2E["Browser E2E\n(Playwright/CDP)"]
         E2E --> SCREENSHOT[Take screenshots\nVerify UI flows]
+        SCREENSHOT --> RECORD["Dex records the verdict\nkeyed by HEAD + tasks.md"]
     end
 
     subgraph "Loop-Level Safeguards"
-        SCREENSHOT -->|pass| LEARNINGS[Update learnings]
-        SCREENSHOT -->|fail 3x| REPLAN[Force REPLAN_FEATURE]
-        REPLAN -->|fail 3x| SKIP[Skip feature\nLog to learnings]
+        RECORD -->|pass| DONE[Entry done]
+        RECORD -->|fail| FIXES["Append a Verify fixes phase\nto tasks.md → implement"]
+        FIXES -->|3 failed rounds| PAUSE[Pause for the human]
     end
 
     style E2E fill:#3b82f6,color:#fff
-    style REPLAN fill:#ef4444,color:#fff
-    style SKIP fill:#6b7280,color:#fff
+    style FIXES fill:#ef4444,color:#fff
+    style PAUSE fill:#6b7280,color:#fff
 ```
 
 Key innovation over Ralph: **browser-based E2E verification**. Ralph only runs build + typecheck. Dex opens the app in a browser (via MCP tools), walks user flows, takes screenshots, and verifies the UI actually works. This catches an entire class of bugs — rendering issues, broken interactions, missing styles — that compile-and-test backpressure misses.
@@ -405,7 +410,7 @@ flowchart LR
     end
 
     subgraph "Cross-Cycle Persistence"
-        LEARN[".claude/rules/learnings.md"]
+        LEARN["CLAUDE.md / AGENTS.md\n(the project's agent instructions)"]
         DBFILE["~/.dex/data.db"]
         LOGS["~/.dex/logs/"]
     end
@@ -436,7 +441,7 @@ Key design decision: **`full_plan.md` is immutable**. The loop never modifies it
 | **Context** | Single session, degrades over time | Fresh context per stage, always in "smart zone" |
 | **Planning** | Ad-hoc or none | Structured specs with acceptance criteria |
 | **Verification** | Manual | Automated build + test + browser E2E |
-| **Recovery** | Human restarts | Auto-replan after 3 failures |
+| **Recovery** | Human restarts | Verify appends fix tasks; a stuck feature pauses for the human |
 | **Cost visibility** | None | Per-phase cost/duration tracking |
 | **Time to complete** | Hours of human attention | Runs overnight, report in the morning |
 
@@ -448,8 +453,8 @@ Key design decision: **`full_plan.md` is immutable**. The loop never modifies it
 | **Planning** | Free-form TODO list | Spec-kit: spec → plan → tasks pipeline |
 | **Specs** | `specs/*.md` (unstructured) | Templated: spec.md + plan.md + tasks.md + data-model.md + contracts/ |
 | **Scope** | One task per iteration | One feature per cycle (all phases) |
-| **Gap analysis** | Linear: "pick next task" | Four-way: NEXT / RESUME / REPLAN / COMPLETE |
-| **Recovery** | Manual: delete plan, re-run | Automatic: 3 failures → replan → 3 replans → skip |
+| **Next step** | Linear: "pick next task" | A picker that reads the files: specify / clarify / plan / tasks / implement / verify / done |
+| **Recovery** | Manual: delete plan, re-run | Verify writes fix tasks for implement; 3 failed rounds → pause for the human; re-plan by deleting plan + tasks |
 | **Verification** | Build + typecheck | Build + tests + browser E2E |
 | **Clarification** | Assumes correct specs upfront | Interactive Phase A with completeness checklist |
 | **Constitution** | None | Project-wide principles shape all specs |
@@ -463,9 +468,9 @@ Key design decision: **`full_plan.md` is immutable**. The loop never modifies it
 |-----------|-----------------|--------------|
 | **Context strategy** | Single long session | Fresh context per stage (Ralph philosophy) |
 | **Planning depth** | Varies, usually shallow | Spec-kit's full specify → plan → tasks pipeline |
-| **Self-improvement** | None across sessions | learnings.md persists across all future stages |
+| **Self-improvement** | None across sessions | Agents record learnings in the project's `CLAUDE.md`, loaded by every later stage |
 | **Verification** | Usually just tests | Tests + browser-based E2E + screenshots |
-| **Failure recovery** | Retry or give up | Structured replan with failure tracking |
+| **Failure recovery** | Retry or give up | Verify fix phases, plus progress counters that pause a stuck feature |
 | **Transparency** | Opaque or log-only | Real-time UI with step-by-step trace |
 | **Local-first** | Cloud-hosted (Devin) or CLI | Desktop app, your machine, your data |
 | **Spec integration** | None | Native spec-kit with constitution |

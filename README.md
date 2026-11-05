@@ -42,70 +42,50 @@ The result: describe a project, clarify it into a complete plan, then walk away.
 ## Features
 
 - **Stage-level orchestration** — one fresh agent per stage, so no session ever runs long enough to degrade
-- **Structured handoffs** — agent boundaries that matter (feature selection, gap analysis) use JSON-schema-constrained output, not regex-parsed prose
+- **Structured handoffs** — agent boundaries that matter (manifest extraction) use JSON-schema-constrained output, not regex-parsed prose
 - **Real-time agent trace** — streams tool calls, thinking blocks, subagent activity, and results as they happen
 - **Spec-kit integration** — discovers specs in `specs/` or `.specify/specs/`, drives the `/speckit-*` skills
-- **Interactive timeline** — a branching DAG of every stage commit; click any node to jump there
-- **Branch management** — remove a saved version, or promote one to main with merge conflicts resolved by an agent
+- **Queue and picker** — features live in `.dex/queue.json`; the next stage is chosen from the project's files alone, so new and existing projects run the same loop
+- **Project-owned policy** — `.dex/policy.json` adds `deny` / `ask` rules, write roots and frozen files on top of the project's own Claude Code settings; an `ask` waits for a human
 - **Pause that means pause** — Stop mid-cycle and Resume picks up at the next uncompleted stage, not the start of the cycle
+- **Headless runner** — `dex run <projectDir>` runs the same loop from a terminal, with `--once`, `--dry-run` and `--status`
 - **Pluggable agent backend** — the real Claude runner or a scripted mock, selected per project
 - **Execution history** — every run persists to per-project JSON, readable with `cat` and `jq`
 - **Frameless desktop UI** — custom title bar, 3-column layout (sidebar → task board → agent trace), Catppuccin-inspired dark theme
 
 ## The Loop
 
-Loop mode runs a project as a sequence of discrete stages. Every completed stage produces a step commit on the run branch, so the whole run is replayable from git alone.
+Dex works through a queue of features, `.dex/queue.json`. A new project fills it once, through clarification and manifest extraction; an existing project writes it by hand, or starts from the draft `dex queue init` proposes. Every entry then runs as a sequence of stages, one fresh agent each:
 
 ```text
-prerequisites → create_branch → clarification → constitution → manifest_extraction
-   ↓
-   ├─ gap_analysis → specify → plan → tasks → implement → verify → learnings   (per cycle)
-   ↓
-completion
+new project only:  prerequisites → clarification → constitution → manifest_extraction
+per queue entry:   brief → specify → clarify → plan → tasks → implement → verify
 ```
 
-`gap_analysis` is the loop's brain. It emits exactly one decision per cycle:
+The **picker** chooses the next stage from the project's files alone — no AI decision and no remembered position. It takes the first entry that is not `done` or `skipped` and checks, in this order:
 
-| Decision         | Meaning                                                  |
-| ---------------- | -------------------------------------------------------- |
-| `NEXT_FEATURE`   | Start the next feature from the manifest                 |
-| `RESUME_FEATURE` | Continue an in-flight feature from its spec dir          |
-| `RESUME_AT_STEP` | Re-enter a partially-completed cycle at a specific stage |
-| `REPLAN_FEATURE` | The plan is wrong — regenerate plan + tasks              |
-| `GAPS_COMPLETE`  | Nothing left in the manifest; terminate                  |
+| Check                                                                 | Next stage                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------- |
+| The brief file is missing and the entry has `generate`                | `brief`                                           |
+| The spec folder (or its `spec.md`) is missing                         | `specify`                                         |
+| `spec.md` has no `## Clarifications` section                          | `clarify`                                         |
+| `plan.md` is missing                                                  | `plan`                                            |
+| `tasks.md` is missing                                                 | `tasks`                                           |
+| An in-scope task is unchecked                                         | `implement`, on the first task phase that has one |
+| No verify record for the entry as it is now (`.dex/evidence/`)       | `verify`                                          |
+| A passing verify record for the entry as it is now                   | the entry is `done`; go to the next entry         |
 
-Feature selection itself does **not** call an LLM. `manifest_extraction` runs once and writes `.dex/feature-manifest.json`; every later cycle picks the first pending entry deterministically.
+Stages listed in an entry's `skip` count as done. `verify` runs in a fresh agent that did not implement the work; when it fails, it appends a `## Phase N: Verify fixes V<k>` section to `tasks.md`, which sends the loop back to `implement`. A stuck entry — two `implement` runs that check no new task, or three failed verify rounds — pauses for the human. Re-planning is a human act: delete `plan.md` and `tasks.md`.
 
-## Timeline
+## Git
 
-Every completed stage auto-commits with a two-line message — a human subject plus a machine-parseable `[checkpoint:<step>:<cycle>]` body:
+Dex makes no stage commits. Agents commit as the project's rules say, and Dex reports a stage that leaves the tree dirty instead of committing it.
 
-```text
-dex: plan completed [cycle:2] [feature:product-catalogue]
-[checkpoint:plan:2]
-```
+- **New project** — Dex creates one `dex/<date>-<id>` branch for the run and never switches after that. Its only commit is the initial one, when prerequisites create a GitHub repository at the human's request.
+- **Existing project** — Dex creates no branch, makes no commit and does not push on its own. It only switches to the branch an entry needs, right before a stage, and only when the tree is clean; a dirty tree pauses the run with a question.
+- **Pull requests** — opt-in for both kinds of project (`openPullRequest` in `.dex/policy.json`), off by default.
 
-The Timeline tab renders those commits as a branching DAG — one column per git ref, one node per stage — and a single left-click performs the right git operation: switch branch if the node is a branch tip, fork a `selected-<ts>` branch if it is mid-branch.
-
-Three gestures, no git knowledge required:
-
-- **Jump** — left-click any node to move the working tree there. If the tree is dirty, a confirm dialog offers Save (a normal `dex: pre-jump autosave` commit on the current branch) or Discard.
-- **Remove this version** — delete a Dex-owned branch. If it carries steps that exist nowhere else, a confirmation lists them by plain-English label first. `main` and user-created branches have no remove control.
-- **Make this the new main** — promote any saved version into the primary line. Content conflicts are handed to a one-shot agent per file, under a Read+Edit-only tool surface with an iteration cap, a cost cap, and the project's verify command as backpressure.
-
-The branch namespace is deliberately small — two families and nothing else:
-
-| Ref               | Purpose                                                                        |
-| ----------------- | ------------------------------------------------------------------------------ |
-| `dex/<date>-<id>` | One per autonomous loop run                                                    |
-| `selected-<ts>`   | Transient navigation fork from a mid-branch jump (auto-pruned when left empty) |
-
-Named `checkpoint/<name>` tags still exist as a git-level convention, but the running app no longer creates them. They are minted out-of-band by `scripts/promote-checkpoint.sh` for CI fixtures and shared baselines, and travel via `git push --tags` like any other tag.
-
-```sh
-git log --oneline --grep='\[checkpoint:'   # every stage commit
-git branch --list 'dex/*'                  # every run
-```
+`checkpoint/<name>` tags are a fixture convention for the example project, not something the app creates: `scripts/promote-checkpoint.sh` tags any commit, and `scripts/reset-example-to.sh <name>` restores it.
 
 ## Architecture
 
@@ -123,16 +103,18 @@ graph TD
     end
 
     subgraph Core["Core Engine (Pure Node.js)"]
-        Loop["main-loop"]
+        Loop["stages/loop"]
+        Picker["picker.ts"]
         Stages["stages/*"]
-        Ckpt["checkpoints/*"]
         State["state.ts"]
         Runner{{"AgentRunner"}}
     end
 
+    CLI["dex CLI (cli.ts)"]
+
     subgraph FS["Filesystem"]
-        Proj[".dex/ — state, manifest, runs, learnings"]
-        Git[("git — step commits, branches")]
+        Proj[".dex/ — queue, policy, state, runs"]
+        Specs["specs/{id}/ — spec, plan, tasks"]
     end
 
     Claude["ClaudeAgentRunner → Claude Agent SDK"]
@@ -142,14 +124,15 @@ graph TD
     Svc <-->|"window.dexAPI"| Preload
     Preload <-->|"ipcMain.handle / webContents.send"| IPC
     IPC --> Loop
+    CLI --> Loop
+    Loop --> Picker
+    Picker --> Specs
     Loop --> Stages
     Stages --> Runner
-    Stages --> Ckpt
     Stages --> State
     Runner -.-> Claude
     Runner -.-> Mock
     State --> Proj
-    Ckpt --> Git
 
     style Renderer fill:#1E1E2E,stroke:#7C3AED,color:#CDD6F4
     style Main fill:#1E1E2E,stroke:#45475A,color:#CDD6F4
@@ -160,7 +143,7 @@ graph TD
 
 **Data flow:** user action → React UI → typed service → IPC → core orchestrator → `AgentRunner` → hooks capture steps → IPC events → React hooks → UI updates (real-time streaming).
 
-**State never travels through a context window.** Each stage is a separate agent invocation that reads what it needs from disk and writes its results back. `state.json` is a cache of what git already knows; git refs are the authoritative layer.
+**State never travels through a context window.** Each stage is a separate agent invocation that reads what it needs from disk and writes its results back. The project's files are the authoritative layer: the picker derives the position from them, and `state.json` keeps only what the files cannot say — run id and status, cost, attempt counters, pending questions and the configuration snapshot. Resume runs the picker again; there is no reconcile step.
 
 ## On-Disk Layout
 
@@ -176,15 +159,19 @@ Per-project (inside each opened project):
 
 ```text
 <projectDir>/.dex/
-├── state.json             tracked — run state, rides git checkout on a jump
-├── feature-manifest.json  tracked — extracted once, drives feature selection
-├── learnings.md           tracked — accumulates across cycles
-├── runs/<runId>.json      tracked — one audit record per run
-├── state.lock             gitignored (PID)
-├── ui.json                gitignored (per-machine UI prefs)
-├── dex-config.json        gitignored (agent backend, conflict-resolver knobs)
-└── mock-config.json       gitignored (mock-runner script)
+├── queue.json             tracked — the features to build, one entry each
+├── policy.json            tracked — settings sources, deny/ask rules, write roots, frozen files, limits
+├── .gitignore             tracked — keeps the runtime files below out of git
+├── state.json             runtime — run id, status, cost, counters, pending questions
+├── questions.md           runtime — pending questions and approvals as plain text
+├── runs/<runId>.json      runtime — one audit record per run
+├── state.lock             runtime (PID)
+├── ui.json                runtime (per-machine UI prefs)
+├── dex-config.json        agent backend (`claude` or `mock`)
+└── mock-config.json       mock-runner script
 ```
+
+A project that still has the old `.dex/feature-manifest.json` is migrated to `queue.json` the first time Dex loads it.
 
 There is no database. `007-sqlite-removal` retired `~/.dex/db/`; any pre-existing directory is removed on first launch.
 
@@ -228,9 +215,17 @@ npm run build:start
 2. **Describe it** — loop mode opens an interactive clarification session and writes the clarified goal
 3. **Walk away** — the loop specs, plans, implements and verifies feature by feature
 4. **Watch the trace** — tool calls, thinking blocks, and subagent activity stream in real-time
-5. **Navigate the timeline** — jump back to any stage, remove versions you don't want, promote the one you do
+5. **Answer when asked** — a question with no recommended option, or a tool call the project marks `ask`, waits in the questions panel; a question with a recommended option is answered with it and kept for review
 
-Stop is a pause, not a kill. Resume re-enters at the next uncompleted stage of the same cycle.
+Stop is a pause, not a kill. Resume runs the picker again, so the run continues at the stage the files say is next.
+
+Without the app, the same loop runs from a terminal (build with `npx tsc` first):
+
+```bash
+node dist/core/cli.js run <projectDir> --dry-run   # each remaining entry's next stage and full prompt; starts no agent
+node dist/core/cli.js run <projectDir>             # run until the queue is complete or the run pauses
+node dist/core/cli.js queue init <projectDir>      # propose a queue for an existing project
+```
 
 ## Configuration
 
@@ -239,16 +234,13 @@ Stop is a pause, not a kill. Resume re-enters at the next uncompleted stage of t
 | Setting         | Description                                                                 | Default     |
 | --------------- | --------------------------------------------------------------------------- | ----------- |
 | `mode`          | `loop` (autonomous), `build` (implement existing specs), `plan` (plan only) | —           |
-| `model`         | Claude model to use                                                         | SDK default |
-| `maxTurns`      | Max agent turns per stage                                                   | `200`       |
-| `maxIterations` | Max iterations within a stage                                               | —           |
+| `model`         | Claude model to use                                                         | `claude-opus-4-6` |
+| `maxTurns`      | Max agent turns per stage                                                   | `75`        |
+| `maxIterations` | Max iterations within a stage                                               | `50` (loop), `20` (build) |
 | `taskPhases`    | `"all"` or specific phase numbers `[1, 3]`                                  | `"all"`     |
-| `maxLoopCycles` | Cycle ceiling for loop mode                                                 | —           |
-| `maxBudgetUsd`  | Spend ceiling — loop stops when exhausted                                   | —           |
-| `stepMode`      | Pause after every stage, resume from the dashboard                          | `false`     |
 | `agent`         | Backend name — `claude` or `mock`                                           | `claude`    |
 
-`.dex/dex-config.json` (per project, gitignored) selects the default agent backend and configures the conflict resolver.
+Budgets, turn limits and retry counts belong to the project: the `limits` field of `.dex/policy.json`. `.dex/dex-config.json` (per project) selects the default agent backend.
 
 ## Project Structure
 
@@ -261,13 +253,13 @@ dex/
 │   │   ├── preload-modules/     # One API surface per domain
 │   │   └── ipc/                 # Handler modules
 │   ├── core/                    # Orchestration engine (pure Node.js, no Electron imports)
-│   │   ├── stages/              # main-loop, run-stage, clarification, prerequisites, build, finalize
-│   │   ├── checkpoints/         # tags, commit, timeline, jumpTo, branchOps, syncState
-│   │   ├── agent/               # AgentRunner interface, ClaudeAgentRunner, MockAgentRunner
-│   │   ├── state.ts             # .dex/state.json + reconciliation
-│   │   ├── gap-analysis.ts      # Loop decision parsing
-│   │   ├── manifest.ts          # Feature manifest
-│   │   ├── conflict-resolver.ts # AI merge-conflict resolution (014)
+│   │   ├── stages/              # loop, run-stage, cycle-stages, post-stage, clarification, prerequisites, manifest-extraction, build
+│   │   ├── agent/               # AgentRunner interface, ClaudeAgentRunner, MockAgentRunner, permissions
+│   │   ├── cli.ts, cli/         # The headless `dex` CLI
+│   │   ├── picker.ts            # Next stage from the project's files
+│   │   ├── queue.ts             # .dex/queue.json + the feature-manifest migration
+│   │   ├── policy.ts            # .dex/policy.json + the tool-call decisions
+│   │   ├── state.ts             # .dex/state.json (runtime run state)
 │   │   ├── parser.ts            # tasks.md → Phase[] with Task[]
 │   │   ├── prompts.ts           # Prompt builders per stage
 │   │   ├── runs.ts              # Per-run JSON audit records
@@ -278,13 +270,14 @@ dex/
 │       ├── components/
 │       │   ├── layout/          # AppShell, Topbar, WindowControls
 │       │   ├── welcome/         # Project picker
-│       │   ├── loop/            # Loop dashboard, stage list
-│       │   ├── checkpoints/     # Timeline canvas, branch ops
+│       │   ├── loop/            # Loop dashboard, stage list, question and approval cards
+│       │   ├── queue/           # Queue panel
 │       │   ├── task-board/      # Phase/task views
 │       │   └── agent-trace/     # Step timeline, tool cards, subagent pills
 │       └── styles/              # Catppuccin-inspired CSS custom properties
 ├── specs/                       # Spec-kit specs for Dex itself
 ├── docs/my-specs/               # Design briefs behind each spec
+├── fixtures/                    # Mock-run scripts and the existing-project fixture
 ├── scripts/                     # check-size, fixture reset, checkpoint promotion, mock harness
 ├── dev-setup.sh
 └── package.json
@@ -297,8 +290,8 @@ No file in `src/` exceeds 600 LOC. That limit is enforced in CI — see [Testing
 | Layer   | Technology                                                                             |
 | ------- | -------------------------------------------------------------------------------------- |
 | Desktop | Electron 41 (frameless BrowserWindow)                                                  |
-| UI      | React 18, CSS Custom Properties, GSAP, Lucide React, d3-shape / d3-zoom / d3-selection |
-| Engine  | Pure Node.js orchestrator, Claude Agent SDK `^0.1.45`                                  |
+| UI      | React 18, CSS Custom Properties, GSAP, Lucide React                                    |
+| Engine  | Pure Node.js orchestrator, Claude Agent SDK `^0.3.318`                                 |
 | Data    | Filesystem only — per-project JSON + git refs. No database.                            |
 | Build   | Vite 6, TypeScript 5.6 (strict mode)                                                   |
 | Test    | `node --test` (core), Vitest + Testing Library + jsdom (renderer)                      |
@@ -315,8 +308,8 @@ npm run check:size    # fails above 600 LOC per file
 
 Two mechanisms make it affordable to test an autonomous, nondeterministic, LLM-billed system:
 
-- **Mock agent backend** — set `agent: "mock"` in `.dex/dex-config.json` and script the run in `.dex/mock-config.json`. A full multi-cycle loop finishes in under a minute at zero API cost, producing the same commits, branches and artifacts a real run would.
-- **Checkpoint replay** — `scripts/reset-example-to.sh <name>` restores the example project to any `checkpoint/*` tag, so a run boots straight into the stage you are actually changing instead of paying for everything upstream of it. `reset-example-to.sh list` prints the available save points; `scripts/promote-checkpoint.sh` mints new ones.
+- **Mock agent backend** — set `agent: "mock"` in `.dex/dex-config.json` and script the run in `.dex/mock-config.json` (`fixtures/mock/` holds ready-made scripts). A full multi-entry loop finishes in under a minute at zero API cost, producing the same artifacts a real run would; the mock commits each stage as `mock(<stage>): <entry>`, like an agent following the project's rules. `node dist/core/cli.js run <projectDir>` runs it headless.
+- **Checkpoint replay** — `scripts/reset-example-to.sh <name>` restores the example project to any `checkpoint/*` tag, so a run boots straight into the stage you are actually changing instead of paying for everything upstream of it. `reset-example-to.sh list` prints the available save points; `scripts/promote-checkpoint.sh` tags any commit as a new one.
 
 ## Contributing
 

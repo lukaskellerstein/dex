@@ -1,5 +1,14 @@
 # Dex: Final Plan
 
+> [!note]
+> Feature 015 (Lean Core) changed the loop this plan describes. The AI gap
+> analysis is gone: a picker chooses the next stage from the project's files.
+> The learnings stage is gone: the implement prompt asks agents to record what
+> they learned in the project's own agent instructions. Replan-after-failures is
+> gone: counters pause a stuck feature for the human. The sections below are
+> updated where they describe the loop as it runs today; § 4 "Implementation
+> Steps" is the historical build order and keeps its original wording.
+
 ## 1. Architecture Comparison
 
 | Aspect | Original Ralph Wiggum | Our Implementation (Dex) |
@@ -7,10 +16,10 @@
 | **Runtime** | Bash loop: `while :; do cat PROMPT.md \| claude-code ; done` | Electron app + Claude Agent SDK `query()` |
 | **Context isolation** | Fresh CLI process each loop iteration | Fresh `query()` call per stage (same effect) |
 | **Execution unit** | 1 task per loop (Ralph picks the most important) | 1 feature per loop cycle (specify → plan → tasks → implement → verify) |
-| **Planning** | Separate PLANNING mode prompt (generates/updates `IMPLEMENTATION_PLAN.md`) | Gap analysis stage decides: new feature, resume, or re-plan |
+| **Planning** | Separate PLANNING mode prompt (generates/updates `IMPLEMENTATION_PLAN.md`) | A picker reads the project's files and chooses the next stage; re-planning is a human act (delete `plan.md` + `tasks.md`) |
 | **Task tracking** | `IMPLEMENTATION_PLAN.md` / `fix_plan.md` (bullet list, Ralph updates it) | `tasks.md` (spec-kit format, tracked via TodoWrite + disk reconciliation) |
 | **Spec structure** | Free-form `specs/*.md` | Spec-kit templated: `spec.md` + `plan.md` + `tasks.md` + `research.md` + `data-model.md` + `contracts/` |
-| **Self-improvement** | Ralph updates `AGENTS.md` with operational learnings each loop | `.claude/rules/learnings.md` — updated by learnings stage, auto-loaded by SDK via `settingSources: ["project"]` |
+| **Self-improvement** | Ralph updates `AGENTS.md` with operational learnings each loop | The implement prompt asks agents to add learnings to the project's `CLAUDE.md` or `AGENTS.md`; `CLAUDE.md` is auto-loaded by the SDK via `settingSources` |
 | **Backpressure** | Tests + typecheck after each task; 1 subagent for validation | Verify stage: build + tests + browser-based e2e. Per-task backpressure via prompt guardrails |
 | **Subagent control** | Explicit parallelism caps ("up to 500 for search, 1 for build") | Explicit in prompts: 500 for search/reads, 1 for build/test, Opus for complex reasoning |
 | **Loop-back** | Automatic — bash loop restarts with fresh context | Automatic — loop cycles with fresh `query()` per stage |
@@ -27,7 +36,7 @@ All gaps from the original Ralph Wiggum comparison. Each is marked as resolved (
 ### G1 — Resolved: Planning Mode
 
 **Ralph:** Separate PLANNING mode prompt for gap analysis and plan generation.
-**Our solution:** Planning is integrated into every loop cycle — gap analysis (step 1) decides what to build, then `/speckit.specify` → `/speckit.plan` → `/speckit.tasks` generate structured plans per feature. No separate mode needed.
+**Our solution:** Planning is integrated into every loop cycle — the queue says which feature comes next, the picker reads its files to choose the stage, then `/speckit.specify` → `/speckit.plan` → `/speckit.tasks` generate structured plans per feature. No separate mode needed.
 
 ### G2 — Resolved: Continuous Loop / Self-Correction
 
@@ -37,7 +46,7 @@ All gaps from the original Ralph Wiggum comparison. Each is marked as resolved (
 ### G3 — Resolved: Self-Improvement
 
 **Ralph:** Updates `AGENTS.md` with operational learnings each iteration. Knowledge persists across loops.
-**Our solution:** Learnings stage (step 7 of each cycle) writes to `.claude/rules/learnings.md`. Because the SDK loads `settingSources: ["project"]`, every subsequent `query()` call automatically receives the learnings. Same effect as AGENTS.md, using spec-kit's `.claude/rules/` convention.
+**Our solution:** The implement prompt tells the agent to add anything the next agent needs (a build quirk, a gotcha) to the project's agent instructions, `CLAUDE.md` or `AGENTS.md`. Because the SDK loads the project's settings through `settingSources`, every subsequent `query()` call receives `CLAUDE.md`. Same effect as Ralph's `AGENTS.md`, with no separate stage.
 
 ### G4 — Resolved: "Don't Assume Not Implemented" Guard
 
@@ -57,13 +66,9 @@ All gaps from the original Ralph Wiggum comparison. Each is marked as resolved (
 ### G7 — Resolved: Failed Feature Recovery
 
 **Ralph:** Operator throws out plan and regenerates via PLANNING mode.
-**Our solution:** Gap analysis outputs one of four decisions:
-- `NEXT_FEATURE` — no spec exists, create via full specify → plan → tasks cycle
-- `RESUME_FEATURE` — spec exists with incomplete tasks, skip to `/speckit.implement`
-- `REPLAN_FEATURE` — spec exists but tasks are wrong, re-run `/speckit.plan` + `/speckit.tasks` (overwrite operations), then implement
-- `GAPS_COMPLETE` — all features done
+**Our solution:** The operator does the same, and the loop makes it cheap. Deleting `plan.md` and `tasks.md` sends the entry back to `plan`, because the picker reads only the files: no spec → `specify`; no `## Clarifications` → `clarify`; no plan or tasks → `plan` / `tasks`; an unchecked in-scope task → `implement`; no passing verify record for the entry as it is now → `verify`; a passing one → the entry is done.
 
-Auto-trigger: 3 consecutive failures on same spec → force `REPLAN_FEATURE`. 3 re-plan failures → skip feature, log to `learnings.md`.
+When verification fails, the verify agent appends a phase of concrete fix tasks to `tasks.md` and the loop implements it. Two `implement` runs that check no new task, or three failed verify rounds, pause the run for the human instead of spending more.
 
 ### G8 — Resolved: "Signs" Prompt Architecture
 
@@ -114,7 +119,7 @@ HMR-safe state via `getRunState()`, orphaned run cleanup, two-path task tracking
 
 ### A6: Git Automation with Metrics
 
-Automated branch creation (`dex/{plan|build}/{date}-{id}`), PR generation with cost/duration/phase metrics. Ralph commits but doesn't automate PRs with analytics.
+Automated branch creation for a new project (one `dex/<date>-<id>` branch per run), and opt-in PR generation with cost/duration/phase metrics. Dex makes no stage commits: agents commit as the project's rules say. Ralph commits but doesn't automate PRs with analytics.
 
 ### A7: Abort / Graceful Stop
 
@@ -163,45 +168,46 @@ Output: a comprehensive `.specify/full_plan.md` — the single source of truth f
 
 **Step 0 (once):** Constitution — run `/speckit.constitution` to create `.specify/constitution.md` from `full_plan.md`. Skip if constitution already exists.
 
-Each cycle is one feature, fully isolated:
-1. **Gap Analysis** (separate `query()`) — study `full_plan.md` + existing specs/code → output one of four decisions:
-   - `NEXT_FEATURE: {name} | {description}` — no spec exists yet, create one → proceed to step 2
-   - `RESUME_FEATURE: {specDir}` — spec exists, tasks remain → skip to step 5
-   - `REPLAN_FEATURE: {specDir}` — spec exists, plan/tasks are wrong → skip to step 3
-   - `GAPS_COMPLETE` — everything in `full_plan.md` is done → terminate loop
-2. **Specify** (separate `query()`) — run `/speckit.specify` to create a new spec dir
-3. **Plan** (separate `query()`) — run `/speckit.plan` to generate plan.md (overwrites if re-planning)
-4. **Tasks** (separate `query()`) — run `/speckit.tasks` to generate tasks.md (overwrites if re-planning)
-5. **Implement** (separate `query()` per phase) — run `/speckit.implement` per phase (existing behavior)
-6. **Verify** (separate `query()`) — run build, tests, and functional validation (browser-based e2e via MCP tools for web projects)
-7. **Learnings** (separate `query()`) — update `.claude/rules/learnings.md`
+Manifest extraction turns the plan into a queue of features, `.dex/queue.json`. Each cycle is one queue entry, fully isolated:
+1. **Pick** (no `query()`) — the picker reads the entry's files and chooses the next stage; when every entry is done, the loop terminates
+2. **Specify** (separate `query()`) — run `/speckit.specify` to create the entry's spec dir
+3. **Clarify** (separate `query()`) — answer the spec's open questions from the brief, the repo and its docs; always write the `## Clarifications` section
+4. **Plan** (separate `query()`) — run `/speckit.plan` to generate plan.md
+5. **Tasks** (separate `query()`) — run `/speckit.tasks` to generate tasks.md
+6. **Implement** (separate `query()` per phase) — run `/speckit.implement` per task phase
+7. **Verify** (separate `query()`, a fresh agent) — run build, tests, and functional validation (browser-based e2e via MCP tools for web projects); return a structured verdict, which Dex records in `.dex/evidence/` keyed by the entry branch's HEAD; on failure, append a phase of fix tasks to `tasks.md`
 8. Loop back to step 1
 
 **Termination conditions:**
-- `GAPS_COMPLETE` from gap analysis — all features in `full_plan.md` are implemented
-- Budget exhausted (`maxBudgetUsd` reached)
-- Max loop cycles reached (`maxLoopCycles`)
-- User abort (`AbortController`)
+- Every queue entry is `done` or `skipped`
+- Budget exhausted (the run budget in `.dex/policy.json` `limits`)
+- User abort (`AbortController`) — a pause; Resume runs the picker again
 
 **Degenerate case safeguards:**
-- Track consecutive failures per spec directory. After 3 failed implementation attempts on the same spec, auto-trigger `REPLAN_FEATURE`. After 3 re-plan failures, skip the feature and log to `learnings.md`.
-- Gap analysis prompt MUST include the list of existing spec directories: "The following specs already exist: {list}. Do NOT create new specs for features that already have a spec directory. Use `RESUME_FEATURE` or `REPLAN_FEATURE` instead."
-- Gap analysis prompt MUST be scoped: "Only identify gaps for features described in `full_plan.md`. Do not invent new features."
+- Count, per entry, the `implement` runs that checked no new task and the failed verify rounds. At 2 and 3 respectively (the `.dex/policy.json` defaults), pause the run with a question instead of spending more.
+- A stage that hits its budget or turn limit stops, and the run pauses with a question that names the limit.
 
 ### Key Design Decisions
 
 - **Separate `query()` per stage**: Each spec-kit command and each stage gets its own fresh context window. Matches Ralph's philosophy: clean context per unit of work. Prevents context bloat.
-- **LLM decides autonomously** what to build next (gap analysis). Full trust in the model's prioritization.
-- **`/speckit.clarify` is skipped** during the autonomous loop — all clarification happens upfront in Phase A.
-- **Spec-kit idempotency constraints respected**: `/speckit.specify` is create-only (never re-run on existing spec). `/speckit.plan` and `/speckit.tasks` overwrite existing files — safe for re-planning.
+- **The files decide** what runs next (the picker), and the queue order decides which feature. No model call chooses the next stage, so a resume is predictable.
+- **`/speckit.clarify` runs autonomously** per feature — it answers from the brief, the repo and its docs, and asks the human only when nothing answers the question and a wrong guess would cost more than a day. Project-level clarification still happens upfront in Phase A.
+- **Spec-kit idempotency constraints respected**: `/speckit.specify` is create-only (never re-run on existing spec). `/speckit.plan` and `/speckit.tasks` overwrite existing files — safe for re-planning, which a human starts by deleting `plan.md` and `tasks.md`.
 - **Backpressure is project-agnostic**: Works with any tech stack. The testing strategy (build commands, test runners, e2e approach) is declared in `full_plan.md` during clarification.
 - **Verification includes browser testing**: For web projects, the verify stage uses chrome-devtools-mcp or playwright MCP to open the app, navigate user flows, take screenshots, and verify functionality visually — not just unit tests.
-- **Self-improvement via `.claude/rules/learnings.md`**: Referenced from `.claude/CLAUDE.md`, automatically loaded by `settingSources: ["project"]` on every subsequent `query()` call.
+- **Self-improvement via the project's agent instructions**: the implement prompt asks agents to add learnings to `CLAUDE.md` or `AGENTS.md`; `CLAUDE.md` is loaded through `settingSources` on every subsequent `query()` call.
 - **`full_plan.md` is read-only**: The loop NEVER modifies `full_plan.md`. It captures the user's original intent from clarification. Individual feature specs (derived from it) are mutable. Enforced via prompt guardrail: `999. DO NOT modify .specify/full_plan.md.`
 - **Acceptance-driven test derivation**: The plan stage derives required tests from acceptance criteria. The implement stage treats tests as part of task scope — all required tests must pass before marking a task `[x]`.
 - **Backward compatible**: Existing "build" mode (implement existing specs) remains unchanged.
 
 ### Implementation Steps
+
+These are the original build steps, kept as history. Since 015 the gap-analysis
+and learnings stages, their prompt builders (`buildGapAnalysisPrompt`,
+`buildLearningsPrompt`, `parseGapAnalysisResult`), `GapAnalysisResult`, the
+`RunConfig` fields `maxLoopCycles` / `maxBudgetUsd` (limits come from
+`.dex/policy.json`) and the per-spec failure tracking no longer exist, and the
+prompts no longer mention `.claude/rules/learnings.md`.
 
 #### Step 1: Extract `runBuild()` from `run()` (pure refactor)
 
@@ -292,29 +298,6 @@ Verify stage prompt:
 9999. If you cannot fix a failure, document it in .claude/rules/learnings.md.
 ```
 
-Gap analysis prompt:
-
-```text
-Study .specify/full_plan.md and compare against existing specs and implementation.
-
-The following spec directories already exist: {existingSpecs}
-Do NOT create new specs for features that already have a directory. Use RESUME_FEATURE or REPLAN_FEATURE.
-Only identify gaps for features described in full_plan.md. Do not invent new features.
-
-For each planned feature, determine:
-1. Does a spec directory exist? → If no, NEXT_FEATURE
-2. Are all tasks marked [x]? → If no, check if tasks are valid
-3. Are tasks valid but incomplete? → RESUME_FEATURE
-4. Are tasks wrong/conflicting/impossible? → REPLAN_FEATURE
-5. All features complete? → GAPS_COMPLETE
-
-Output EXACTLY one of:
-- NEXT_FEATURE: {name} | {one-line description}
-- RESUME_FEATURE: {specDir}
-- REPLAN_FEATURE: {specDir}
-- GAPS_COMPLETE
-```
-
 Plan stage prompt addition (acceptance-driven test derivation):
 
 ```text
@@ -344,11 +327,11 @@ The original Ralph Wiggum is philosophically about **eventual consistency throug
 Our enhanced approach goes beyond both:
 1. **Interactive clarification** before the loop ensures the agent has complete context — something neither Ralph nor any other approach does well
 2. **Spec-kit constitution** establishes project-wide constraints that shape all feature specs consistently
-3. **Four-way gap analysis** (`NEXT_FEATURE`/`RESUME_FEATURE`/`REPLAN_FEATURE`/`GAPS_COMPLETE`) handles the full lifecycle — not just "create" but also "recover" and "re-plan"
+3. **A file-based picker** handles the full lifecycle — not just "create" but also "resume after a crash or a reset" and "re-plan" (a human deletes `plan.md` and `tasks.md`) — with no model call and no repair step
 4. **Acceptance-driven test derivation** links acceptance criteria → required tests → backpressure, preventing agents from claiming tasks as done without real verification
 5. **Functional verification** (browser-based e2e, not just unit tests) catches issues that compile-and-test backpressure misses
 6. **Spec-kit integration** gives structured, reproducible planning instead of Ralph's free-form TODO list
 7. **`full_plan.md` as read-only source of truth** eliminates drift from user intent while keeping individual specs mutable
-8. **Degenerate case safeguards** (failure tracking, duplicate prevention, scope constraints) prevent the loop from burning budget unproductively
+8. **Degenerate case safeguards** (implement-progress and verify-round counters, stage and run budgets) prevent the loop from burning budget unproductively
 
 The result: a system that can take a vague user description, clarify it into a complete plan, and autonomously build, verify, and iterate for hours/days without human intervention.

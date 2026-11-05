@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  DEFAULT_CONFLICT_RESOLVER_CONFIG,
   DexConfigInvalidError,
   DexConfigParseError,
   dexConfigPath,
@@ -21,14 +20,11 @@ function writeConfig(projectDir: string, contents: string): void {
   fs.writeFileSync(configPath, contents);
 }
 
-test("dexConfig: absent file returns default { agent: 'claude', conflictResolver }", () => {
+test("dexConfig: absent file returns default { agent: 'claude' }", () => {
   const dir = mkTmpProject();
   try {
     const cfg = loadDexConfig(dir);
-    assert.deepEqual(cfg, {
-      agent: "claude",
-      conflictResolver: { ...DEFAULT_CONFLICT_RESOLVER_CONFIG },
-    });
+    assert.deepEqual(cfg, { agent: "claude" });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -91,83 +87,6 @@ test("dexConfig: empty-string 'agent' throws DexConfigInvalidError", () => {
   const dir = mkTmpProject();
   try {
     writeConfig(dir, '{ "agent": "" }');
-    assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: conflictResolver overrides merge field-by-field over defaults", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(
-      dir,
-      '{ "agent": "claude", "conflictResolver": { "maxIterations": 2, "costCapUsd": 0.05 } }',
-    );
-    const cfg = loadDexConfig(dir);
-    assert.equal(cfg.conflictResolver.maxIterations, 2);
-    assert.equal(cfg.conflictResolver.costCapUsd, 0.05);
-    // Other fields stay at defaults.
-    assert.equal(cfg.conflictResolver.model, DEFAULT_CONFLICT_RESOLVER_CONFIG.model);
-    assert.equal(
-      cfg.conflictResolver.maxTurnsPerIteration,
-      DEFAULT_CONFLICT_RESOLVER_CONFIG.maxTurnsPerIteration,
-    );
-    assert.equal(
-      cfg.conflictResolver.verifyCommand,
-      DEFAULT_CONFLICT_RESOLVER_CONFIG.verifyCommand,
-    );
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: conflictResolver verifyCommand:null skips verification", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "conflictResolver": { "verifyCommand": null } }');
-    const cfg = loadDexConfig(dir);
-    assert.equal(cfg.conflictResolver.verifyCommand, null);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: conflictResolver empty-string verifyCommand normalises to null", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "conflictResolver": { "verifyCommand": "" } }');
-    const cfg = loadDexConfig(dir);
-    assert.equal(cfg.conflictResolver.verifyCommand, null);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: conflictResolver invalid maxIterations throws", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "conflictResolver": { "maxIterations": 0 } }');
-    assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: conflictResolver negative costCapUsd throws", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "conflictResolver": { "costCapUsd": -1 } }');
-    assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("dexConfig: conflictResolver non-object throws", () => {
-  const dir = mkTmpProject();
-  try {
-    writeConfig(dir, '{ "conflictResolver": [] }');
     assert.throws(() => loadDexConfig(dir), DexConfigInvalidError);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

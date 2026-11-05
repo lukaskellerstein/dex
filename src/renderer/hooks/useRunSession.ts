@@ -105,19 +105,6 @@ export function useRunSession(): UseRunSessionResult {
           setTotalDuration(event.totalDuration);
           break;
 
-        case "state_reconciled":
-          if (event.driftSummary) {
-            const ds = event.driftSummary;
-            if (
-              ds.missingArtifacts.length > 0 ||
-              ds.modifiedArtifacts.length > 0 ||
-              Object.keys(ds.taskRegressions).length > 0
-            ) {
-              console.info("[dex] State reconciliation detected drift:", ds);
-            }
-          }
-          break;
-
         case "error":
           // Run-level error sink — phase-discriminated errors are handled by their domain hooks.
           // Composer-level fatal-error sink (B4) catches unmatched.
