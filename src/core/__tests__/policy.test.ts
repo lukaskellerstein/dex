@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import type { AcceptanceRecord } from "../acceptance.ts";
 import {
   DEFAULT_POLICY,
   decideToolUse,
@@ -14,6 +15,8 @@ import {
   skipsPermissionChecks,
   subjectOf,
 } from "../policy.ts";
+import { resolveEntries, type StageName } from "../queue.ts";
+import { stageScope } from "../scope.ts";
 import { rmTmp } from "./helpers/git.ts";
 import { mkTmpProject } from "./helpers/project.ts";
 
@@ -163,6 +166,99 @@ for (const [name, raw, message] of [
   });
 }
 
+test("parsePolicy: the 016 defaults — no checks, one re-run, the test globs and test support of the contract", () => {
+  const p = parse({});
+  assert.deepEqual(p.checks, { fast: [], standing: [], rerunOnFail: 1 });
+  assert.deepEqual(p.verify, { browser: false });
+  assert.deepEqual(p.testGlobs, [
+    "**/test/**",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/e2e/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/*_test.go",
+  ]);
+  assert.deepEqual(p.testSupport, [
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "playwright.config.*",
+    "vitest.config.*",
+    "jest.config.*",
+    "pytest.ini",
+    "pyproject.toml",
+    "uv.lock",
+    "**/conftest.py",
+    "go.mod",
+    "go.sum",
+  ]);
+});
+
+test("parsePolicy: the 016 contract example parses; a check's timeout defaults to 600", () => {
+  const p = parse({
+    checks: {
+      fast: [
+        { name: "unit", command: "npm test -- --changed", timeoutSec: 300 },
+        { name: "types", command: "npm run typecheck" },
+      ],
+      standing: [{ name: "full suite", command: "npm test", timeoutSec: 1200 }],
+      rerunOnFail: 2,
+    },
+    testGlobs: ["tests/**", "**/*.test.ts"],
+    testSupport: ["package.json"],
+    verify: { browser: true },
+  });
+  assert.deepEqual(p.checks.fast[1], {
+    name: "types",
+    command: "npm run typecheck",
+    timeoutSec: 600,
+  });
+  assert.equal(p.checks.standing[0].timeoutSec, 1200);
+  assert.equal(p.checks.rerunOnFail, 2);
+  assert.deepEqual(p.testGlobs, ["tests/**", "**/*.test.ts"]);
+  assert.equal(p.verify.browser, true);
+});
+
+for (const [name, raw, message] of [
+  ["an unknown checks key", { checks: { slow: [] } }, /unknown field "checks\.slow"/],
+  ["an unknown verify key", { verify: { headless: true } }, /unknown field "verify\.headless"/],
+  [
+    "a duplicate check name",
+    {
+      checks: {
+        fast: [
+          { name: "unit", command: "a" },
+          { name: "unit", command: "b" },
+        ],
+      },
+    },
+    /"checks\.fast\[1\]\.name" repeats the name "unit"/,
+  ],
+  [
+    "a timeout below 1",
+    { checks: { fast: [{ name: "unit", command: "a", timeoutSec: 0 }] } },
+    /"checks\.fast\[0\]\.timeoutSec" must be an integer of at least 1/,
+  ],
+  [
+    "rerunOnFail above 5",
+    { checks: { rerunOnFail: 6 } },
+    /"checks\.rerunOnFail" must be an integer from 0 to 5/,
+  ],
+  ["an empty testGlobs", { testGlobs: [] }, /"testGlobs" must not be empty/],
+  ["a non-boolean verify.browser", { verify: { browser: "yes" } }, /"verify\.browser" must be a boolean/],
+] as const) {
+  test(`parsePolicy: ${name} is a PolicyInvalidError`, () => {
+    assert.throws(
+      () => parse(raw),
+      (err: unknown) => err instanceof PolicyInvalidError && message.test(err.message),
+    );
+  });
+}
+
 test("parsePolicy: an explicit null systemPromptAppend is the default (dex queue init writes it)", () => {
   assert.equal(parse({ systemPromptAppend: null }).systemPromptAppend, null);
 });
@@ -282,4 +378,84 @@ test("decideToolUse: no rule has an opinion", () => {
       kind: "none",
     },
   );
+});
+
+// ── 016: stage scopes (contracts/policy-json.md § Table cases, research R9) ──
+
+const [PROMO] = resolveEntries(
+  { version: 3, kind: "existing", entries: [{ id: "003-promo-codes", title: "Promo codes" }] },
+  "main",
+  null,
+);
+const FROZEN_TEST = "tests/acceptance/003-promo-codes/apply.spec.ts";
+const ACC_RECORD: AcceptanceRecord = {
+  version: 1,
+  command: "npx playwright test tests/acceptance/003-promo-codes",
+  failExitCodes: [1],
+  timeoutSec: 900,
+  files: [FROZEN_TEST],
+  covers: [{ test: "apply.spec.ts › applies", criterion: "SC-001" }],
+};
+
+function scoped(stage: StageName, toolName: string, input: Record<string, unknown>) {
+  const scope = stageScope(policy, PROMO, stage, ACC_RECORD) ?? undefined;
+  return decideToolUse(policy, { toolName, input }, ENV, scope);
+}
+
+const edit = (file_path: string) => ({ file_path, old_string: "a", new_string: "b" });
+const ruleOf = (d: ReturnType<typeof decideToolUse>) => (d.kind === "deny" ? d.rule : d.kind);
+
+for (const [stage, toolName, input, expected] of [
+  ["tests", "Write", { file_path: "tests/acceptance/x.spec.ts", content: "x" }, "none"],
+  ["tests", "Write", { file_path: "src/cart/promo.ts", content: "x" }, "scope"],
+  ["tests", "Edit", edit("package.json"), "none"],
+  ["tests", "Write", { file_path: "specs/003-promo-codes/acceptance.json", content: "{}" }, "none"],
+  ["implement", "Edit", edit(FROZEN_TEST), "scope"],
+  ["implement", "Bash", { command: `rm ${FROZEN_TEST}` }, "scope"],
+  ["implement", "Bash", { command: `git mv ${FROZEN_TEST} tests/old.spec.ts` }, "scope"],
+  ["implement", "Bash", { command: `echo '' > ./${FROZEN_TEST}` }, "scope"],
+  ["implement", "Bash", { command: `npm test && unlink "${FROZEN_TEST}"` }, "scope"],
+  ["implement", "Bash", { command: `npx playwright test ${FROZEN_TEST}` }, "none"],
+  ["implement", "Write", { file_path: "specs/003-promo-codes/acceptance.json", content: "{}" }, "scope"],
+  ["implement", "Write", { file_path: "src/cart/promo.ts", content: "x" }, "none"],
+  ["verify", "Edit", edit("specs/003-promo-codes/tasks.md"), "none"],
+  ["verify", "Edit", edit("src/cart/promo.ts"), "scope"],
+  ["verify", "Edit", edit(FROZEN_TEST), "scope"],
+  ["plan", "Write", { file_path: "src/cart/promo.ts", content: "x" }, "none"],
+  ["tests", "Write", { file_path: path.join(os.tmpdir(), "scratch.txt"), content: "x" }, "none"],
+] as const) {
+  test(`stage scope: ${stage} · ${toolName} ${JSON.stringify(input).slice(0, 70)} → ${expected}`, () => {
+    assert.equal(ruleOf(scoped(stage, toolName, input)), expected);
+  });
+}
+
+test("stage scope: a policy deny is checked first; the scope reasons name the file and the stage", () => {
+  const prod = scoped("implement", "Bash", { command: `rm ${FROZEN_TEST} # prod-db` });
+  assert.equal(ruleOf(prod), "deny");
+  const frozen = scoped("implement", "Edit", edit(FROZEN_TEST));
+  assert.equal(
+    frozen.kind === "deny" && frozen.reason,
+    `${FROZEN_TEST} is a frozen acceptance test of 003-promo-codes; ask for a test amendment instead`,
+  );
+  const outside = scoped("verify", "Edit", edit("src/cart/promo.ts"));
+  assert.equal(
+    outside.kind === "deny" && outside.reason,
+    "the verify stage may write only specs/003-promo-codes/tasks.md",
+  );
+});
+
+test("stageScope: one per stage of R9, amend mode included; none for the other stages", () => {
+  const tests = stageScope(policy, PROMO, "tests", null);
+  assert.deepEqual(tests?.writeOnly, [...policy.testGlobs, ...policy.testSupport, "specs/003-promo-codes/**"]);
+  assert.deepEqual(tests?.protect, []);
+  const amend = stageScope(policy, PROMO, "tests", ACC_RECORD, FROZEN_TEST);
+  assert.deepEqual(amend?.writeOnly, [FROZEN_TEST, "specs/003-promo-codes/**"]);
+  const impl = stageScope(policy, PROMO, "implement", ACC_RECORD);
+  assert.equal(impl?.writeOnly, null);
+  assert.deepEqual(impl?.protect, [FROZEN_TEST, "specs/003-promo-codes/acceptance.json"]);
+  assert.deepEqual(stageScope(policy, PROMO, "verify", ACC_RECORD)?.writeOnly, ["specs/003-promo-codes/tasks.md"]);
+  assert.deepEqual(stageScope(policy, PROMO, "implement", null)?.protect, [], "no record yet, nothing frozen");
+  for (const stage of ["brief", "specify", "clarify", "plan", "tasks"] as const) {
+    assert.equal(stageScope(policy, PROMO, stage, ACC_RECORD), null, stage);
+  }
 });

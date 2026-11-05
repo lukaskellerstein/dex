@@ -1,0 +1,10 @@
+{
+  "checks": {
+    "fast": [
+      { "name": "unit", "command": "node .dex/fake/check.mjs unit", "timeoutSec": 30 },
+      { "name": "lint", "command": "node .dex/fake/check.mjs lint", "timeoutSec": 30 }
+    ],
+    "rerunOnFail": 1
+  },
+  "limits": { "maxImplementRunsWithoutProgress": 5 }
+}

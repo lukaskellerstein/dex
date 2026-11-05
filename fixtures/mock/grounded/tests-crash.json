@@ -1,0 +1,22 @@
+{
+  "entries": {
+    "*": {
+      "tests": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// fixture A: a test whose runner cannot start.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"failExitCodes\": [1],\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › greets\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "2\n" }
+        ]
+      },
+      "implement": { "delay": 0 },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

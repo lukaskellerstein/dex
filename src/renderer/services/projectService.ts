@@ -1,5 +1,5 @@
 /**
- * What: Typed wrapper over window.dexAPI project + appConfig surface — openProject, listSpecs, parseSpec, readFile/writeFile, pickFolder, pickGoalFile, createProject, openProjectPath, pathExists, getRunSnapshot, getWelcomeDefaults.
+ * What: Typed wrapper over window.dexAPI project + appConfig surface — openProject, listSpecs, parseSpec, readFile/writeFile, pickFolder, pickGoalFile, createProject, openProjectPath, pathExists, getRunSnapshot, getDigest, getWelcomeDefaults.
  * Not: Does not own project state — that lives in useProject. Does not handle history/runs reads — that's historyService.
  * Deps: window.dexAPI project methods, TaskPhase from core/types.
  */
@@ -115,6 +115,11 @@ export const projectService = {
 
   getRunSnapshot(projectDir: string): Promise<RunSnapshot> {
     return call(() => window.dexAPI.getRunSnapshot(projectDir));
+  },
+
+  /** The entry's digest (016), or null before Dex wrote one. */
+  getDigest(projectDir: string, entryId: string): Promise<{ markdown: string; path: string } | null> {
+    return call(() => window.dexAPI.getDigest(projectDir, entryId));
   },
 
   getWelcomeDefaults(): Promise<{ defaultLocation: string; defaultName: string }> {

@@ -1,0 +1,41 @@
+{
+  "entries": {
+    "*": {
+      "implement": {
+        "delay": 0,
+        "runs": [
+          {
+            "delay": 0,
+            "writes": [
+              { "path": ".dex/fake/unit", "content": "1\n" },
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A: the build is broken, and the run ticks its tasks anyway.\nexport const greet = (name: string): string => \"Hello, \" + nme;\n"
+              }
+            ]
+          },
+          {
+            "delay": 0,
+            "writes": [
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A, written by the mock implement stage.\nexport const greet = (name: string): string => \"Hello, \" + name;\n"
+              }
+            ]
+          }
+        ],
+        "restore": {
+          "delay": 0,
+          "writes": [
+            { "path": ".dex/fake/unit", "content": "0\n" },
+            {
+              "path": "src/fixture-a/greet.ts",
+              "content": "// fixture A: green again after the restore run.\nexport const greet = (name: string): string => \"Hello, \" + name;\n"
+            }
+          ]
+        }
+      },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { extractTaskIds } from "./parser.js";
+import { parseSensorSpecs, type SensorSpec } from "./sensors.js";
 import type { Task, TaskPhase } from "./types.js";
 
 // ── Types ──
@@ -17,6 +18,7 @@ export const STAGE_NAMES = [
   "clarify",
   "plan",
   "tasks",
+  "tests",
   "implement",
   "verify",
 ] as const;
@@ -41,7 +43,14 @@ export interface QueueEntry {
   tasks?: string[];
   skip?: StageName[];
   gates?: StageName[];
+  /** Acceptance commands of this entry, merged with the one the tests stage records (FR-040). */
+  acceptance?: DeclaredSensor[];
+  /** Extra fast checks for this entry only. */
+  checks?: DeclaredSensor[];
 }
+
+/** A sensor as queue.json spells it: the timeout may be left out. */
+export type DeclaredSensor = Omit<SensorSpec, "timeoutSec"> & { timeoutSec?: number };
 
 export interface QueueV3 {
   version: 3;
@@ -66,6 +75,8 @@ export interface ResolvedEntry {
   tasks: string[] | null;
   skip: StageName[];
   gates: StageName[];
+  acceptance: SensorSpec[];
+  checks: SensorSpec[];
 }
 
 export class QueueInvalidError extends Error {
@@ -104,6 +115,8 @@ const ENTRY_KEYS = new Set([
   "tasks",
   "skip",
   "gates",
+  "acceptance",
+  "checks",
 ]);
 const GENERATE_KEYS = new Set(["sources", "instructions"]);
 const OPTIONAL_STRINGS = ["description", "brief", "specDir", "branch", "baseBranch"] as const;
@@ -196,6 +209,27 @@ function checkEntry(file: string, i: number, raw: unknown, seen: Set<string>): v
   checkTasks(file, where, raw.tasks);
   checkStages(file, where, "skip", raw.skip);
   checkStages(file, where, "gates", raw.gates);
+  entrySensors(file, where, raw);
+}
+
+const ACCEPTANCE_TIMEOUT_SEC = 1800;
+const CHECK_TIMEOUT_SEC = 600;
+
+/** The entry's `acceptance` and `checks`, validated, with their default timeouts. */
+function entrySensors(
+  file: string,
+  where: string,
+  raw: Record<string, unknown>,
+): Pick<ResolvedEntry, "acceptance" | "checks"> {
+  const fail = (detail: string): never => {
+    throw new QueueInvalidError(file, where, detail);
+  };
+  const list = (key: "acceptance" | "checks", timeout: number) =>
+    raw[key] === undefined ? [] : parseSensorSpecs(raw[key], key, timeout, fail);
+  return {
+    acceptance: list("acceptance", ACCEPTANCE_TIMEOUT_SEC),
+    checks: list("checks", CHECK_TIMEOUT_SEC),
+  };
 }
 
 /** Checks `raw` against the v3 rules. Throws QueueInvalidError naming the entry and field. */
@@ -249,6 +283,8 @@ export function resolveEntries(
       tasks: e.tasks ? parseTaskScope(e.tasks) : null,
       skip: e.skip ?? [],
       gates: e.gates ?? (e.generate ? ["brief"] : []),
+      // Already validated: this only fills the default timeouts.
+      ...entrySensors("queue.json", e.id, { acceptance: e.acceptance, checks: e.checks }),
     });
   }
   return out;
@@ -290,6 +326,8 @@ export function entryForSpecDir(specDir: string, branch: string): ResolvedEntry 
     tasks: null,
     skip: [],
     gates: [],
+    acceptance: [],
+    checks: [],
   };
 }
 

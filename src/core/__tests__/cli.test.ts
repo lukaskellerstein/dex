@@ -16,7 +16,14 @@ import type { Terminal } from "../cli/terminal.ts";
 import type * as Cli from "../cli.ts";
 import type * as State from "../state.ts";
 import { logSubjects, rmTmp } from "./helpers/git.ts";
-import { mkExistingProject, mockFixture, stubCliTools, writeFile } from "./helpers/loop.ts";
+import {
+  GROUNDED_QUEUE,
+  mkExistingProject,
+  mkGroundedProject,
+  mockFixture,
+  stubCliTools,
+  writeFile,
+} from "./helpers/loop.ts";
 
 const realHome = process.env.HOME;
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "dex-home-"));
@@ -230,6 +237,71 @@ test("dex run with a TTY: the parked answer goes to the answer book, a new quest
     assert.equal(state?.status, "completed");
     assert.deepEqual(state?.pendingRequests, []);
     assert.deepEqual(state?.answerBook, []);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("dex digest: prints the digest (exit 0), none yet (exit 1), unknown entry (exit 2); dex run ends with its path", async () => {
+  const dir = mkGroundedProject("rewords-task.json");
+  try {
+    const none = fakeTerminal();
+    assert.equal(await main(["digest", dir, "900-fixture-a"], none.term), 1);
+    assert.equal(none.text(), "no digest for 900-fixture-a yet");
+    const unknown = fakeTerminal();
+    assert.equal(await main(["digest", dir, "999-nope"], unknown.term), 2);
+    assert.equal(unknown.text(), "unknown entry 999-nope");
+
+    const ran = fakeTerminal();
+    assert.equal(await main(["run", dir], ran.term), 3, "a gate pause exits 3");
+    const file = path.join(dir, ".dex/digests/900-fixture-a.md");
+    assert.equal(ran.text().split("\n").at(-1), `digest: ${file}`);
+
+    const printed = fakeTerminal();
+    assert.equal(await main(["digest", dir, "900-fixture-a"], printed.term), 0);
+    assert.match(printed.text(), /^# 900-fixture-a — paused at implement: plan_changed\n/);
+    assert.equal(printed.text(), fs.readFileSync(file, "utf-8").trimEnd());
+    assert.throws(() => parseArgs(["digest", dir]), /dex digest takes <projectDir> and <entryId>/);
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("dex run --dry-run: a sensors section per entry (fast, entry, standing, acceptance), and no sensor runs", async () => {
+  const [entry] = GROUNDED_QUEUE.entries;
+  const check = { name: "greet unit", command: "node .dex/fake/check.mjs greet", timeoutSec: 60 };
+  const dir = mkGroundedProject("happy-path.json", {
+    fake: { unit: "1\n0\n" },
+    queue: { ...GROUNDED_QUEUE, entries: [{ ...entry, checks: [check] }] },
+    policy: {
+      checks: {
+        fast: [{ name: "unit", command: "node .dex/fake/check.mjs unit", timeoutSec: 30 }],
+        standing: [{ name: "full suite", command: "node .dex/fake/check.mjs suite", timeoutSec: 1200 }],
+        rerunOnFail: 1,
+      },
+    },
+  });
+  try {
+    const before = treeHash(dir);
+    const t = fakeTerminal();
+    assert.equal(await main(["run", dir, "--dry-run"], t.term), 0);
+    const block = t.text().split(/^sensors {2}:\n/m)[1]?.split(/^prompt {3}:/m)[0] ?? "";
+    assert.deepEqual(
+      block.trimEnd().split("\n").map((l) => l.trim().split(/\s{2,}/)),
+      [
+        ["fast", "unit", "node .dex/fake/check.mjs unit", "30s"],
+        ["fast", "greet unit", "node .dex/fake/check.mjs greet", "60s", "(entry)"],
+        ["standing", "full suite", "node .dex/fake/check.mjs suite", "1200s"],
+        ["acceptance", "api", "node .dex/fake/check.mjs api", "30s"],
+      ],
+    );
+    assert.deepEqual(treeHash(dir), before, "no sensor ran: .dex/fake/unit still starts with 1");
+
+    writeFile(dir, ".dex/queue.json", JSON.stringify({ ...GROUNDED_QUEUE, entries: [{ ...entry, skip: ["brief", "specify", "clarify", "plan", "tasks"], acceptance: [] }] }));
+    const withTests = fakeTerminal();
+    assert.equal(await main(["run", dir, "--dry-run"], withTests.term), 0);
+    assert.match(withTests.text(), /^decision : tests — specs\/900-fixture-a\/acceptance\.json is missing$/m);
+    assert.match(withTests.text(), /^ {2}acceptance \(written by the tests stage\)$/m);
   } finally {
     rmTmp(dir);
   }

@@ -1,0 +1,22 @@
+{
+  "entries": {
+    "*": {
+      "tests": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// fixture A: a test that passes before the feature exists.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › greets\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "0\n" }
+        ]
+      },
+      "implement": { "delay": 0 },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

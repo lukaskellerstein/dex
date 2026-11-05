@@ -3,9 +3,12 @@ import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { evidenceKey, tasksHash, writeVerifyRecord } from "../evidence.ts";
+import { acceptanceHash } from "../acceptance.ts";
+import { evidenceKey, tasksHash, writeDoneRecord, writeStageRecord } from "../evidence.ts";
+import { type GateDecision, redFirst } from "../gates.ts";
 import { describeQueue, type PickerDecision, pickNext } from "../picker.ts";
-import type { QueueEntry, QueueV3 } from "../queue.ts";
+import { type QueueEntry, type QueueV3, resolveEntries } from "../queue.ts";
+import { gateCheck } from "../stages/post-stage.ts";
 import { commitFile, mkTmpRepo, rmTmp } from "./helpers/git.ts";
 import { mkTmpProject, writeFiles } from "./helpers/project.ts";
 
@@ -33,33 +36,63 @@ const ALL_DONE = tasksMd([
   ],
 ]);
 
+/** A valid acceptance.json for `id` and its test file: the tests stage is done (016 R4). */
+function acceptanceFiles(id: string, over: Record<string, unknown> = {}): Record<string, string> {
+  const file = `tests/acceptance/${id}.spec.ts`;
+  const record = {
+    version: 1,
+    command: `npx playwright test ${file}`,
+    files: [file],
+    covers: [{ test: `${id}.spec.ts › works`, criterion: "SC-001" }],
+    ...over,
+  };
+  return { [file]: "// acceptance\n", [`specs/${id}/acceptance.json`]: JSON.stringify(record) };
+}
+
 /** Every artefact for `id`, every task checked. Verify needs a record too (`recordVerify`). */
 function doneEntryFiles(id: string): Record<string, string> {
   return {
     [`specs/${id}/spec.md`]: SPEC_CLARIFIED,
     [`specs/${id}/plan.md`]: "# Plan\n",
     [`specs/${id}/tasks.md`]: ALL_DONE,
+    ...acceptanceFiles(id),
   };
 }
 
-type RecordOpts = { verdict?: "passed" | "failed"; tasks?: string };
+type RecordOpts = { gate?: "passed" | "failed"; tasks?: string; red?: boolean; blocking?: boolean };
 
-/** Writes the record a verify stage would leave for `id`, keyed by the entry as it is now. */
+/** Writes the done record a verify stage would leave for `id`, keyed by the entry as it is now. */
 function recordVerify(dir: string, id: string, kind: QueueV3["kind"], o: RecordOpts = {}): void {
   const specDir = `specs/${id}`;
   const key = evidenceKey(dir, kind, { branch: id, specDir });
   assert.ok(key, `no evidence key for ${id}`);
   const tasks = o.tasks ?? fs.readFileSync(path.join(dir, specDir, "tasks.md"), "utf8");
-  writeVerifyRecord(dir, {
-    version: 1,
+  const exitCode = o.red ? 1 : 0;
+  writeDoneRecord(dir, {
+    version: 2,
     entryId: id,
     key,
     tasksHash: tasksHash(tasks),
     checked: "2026-11-05T10:00:00Z",
-    verdict: o.verdict ?? "passed",
+    acceptance: [
+      {
+        name: "acceptance",
+        command: "npx playwright test",
+        exitCode,
+        signal: null,
+        durationMs: 1,
+        result: o.red ? "fail" : "pass",
+        reruns: 0,
+        tail: [],
+      },
+    ],
+    mode: o.red ? "diagnose" : "review",
+    findings: o.blocking
+      ? [{ severity: "blocking", summary: "the total is wrong", criterion: "SC-001", where: null }]
+      : [],
+    hypotheses: [],
     summary: "",
-    commands: [],
-    criteria: [],
+    gate: o.gate ?? (o.red || o.blocking ? "failed" : "passed"),
   });
 }
 
@@ -133,6 +166,7 @@ test("picker: no tasks.md → tasks", () => {
 
 test("picker: an unchecked task → implement on the first phase that has one", () => {
   const files = {
+    ...acceptanceFiles("001-a"),
     "specs/001-a/spec.md": SPEC_CLARIFIED,
     "specs/001-a/plan.md": "# Plan\n",
     "specs/001-a/tasks.md": tasksMd([
@@ -165,9 +199,33 @@ test("picker: a verify record for a different tasks.md → verify", () => {
   assertStage(d, "001-a", "verify");
 });
 
-test("picker: a verify record that failed for the entry as it is → verify again", () => {
-  const d = pickIn(doneEntryFiles("001-a"), newQueue([A]), { "001-a": { verdict: "failed" } });
-  assertStage(d, "001-a", "verify");
+test("picker: a done record that failed for the entry as it is → verify again, naming why", () => {
+  const red = pickIn(doneEntryFiles("001-a"), newQueue([A]), { "001-a": { red: true } });
+  assertStage(red, "001-a", "verify");
+  assert.match(red.kind === "stage" ? red.reason : "", /acceptance run was red \(acceptance\)/);
+  const blocking = pickIn(doneEntryFiles("001-a"), newQueue([A]), { "001-a": { blocking: true } });
+  assert.match(blocking.kind === "stage" ? blocking.reason : "", /1 blocking finding was open/);
+});
+
+test("picker: only a 015 verify.json, with a passed verdict → verify (it reads as absent)", () => {
+  const dir = mkTmpProject(doneEntryFiles("001-a"));
+  try {
+    const key = evidenceKey(dir, "new", { branch: "001-a", specDir: "specs/001-a" });
+    writeFiles(dir, {
+      ".dex/evidence/001-a/verify.json": JSON.stringify({
+        version: 1,
+        entryId: "001-a",
+        key,
+        tasksHash: tasksHash(ALL_DONE),
+        verdict: "passed",
+      }),
+    });
+    const d = pickNext({ projectDir: dir, queue: newQueue([A]), runBranch: null });
+    assertStage(d, "001-a", "verify");
+    assert.match(d.kind === "stage" ? d.reason : "", /no done record/);
+  } finally {
+    rmTmp(dir);
+  }
 });
 
 test("picker: verify passed for the entry as it is → done, the next entry is picked", () => {
@@ -248,6 +306,7 @@ test("picker: out-of-scope unchecked tasks do not block verify", () => {
     ["Later", [["T003", false]]],
   ]);
   const files = {
+    ...acceptanceFiles("001-a"),
     "specs/001-a/spec.md": SPEC_CLARIFIED,
     "specs/001-a/plan.md": "# Plan\n",
     "specs/001-a/tasks.md": tasks,
@@ -267,6 +326,7 @@ test("picker: a fix phase is in scope even with a task filter", () => {
     ],
   ])}\n## Phase 2: Verify fixes V1\n\n- [ ] T003 fix it\n`;
   const files = {
+    ...acceptanceFiles("001-a"),
     "specs/001-a/spec.md": SPEC_CLARIFIED,
     "specs/001-a/plan.md": "# Plan\n",
     "specs/001-a/tasks.md": tasks,
@@ -276,6 +336,7 @@ test("picker: a fix phase is in scope even with a task filter", () => {
 
 test("picker: task ids that tasks.md does not have → pause invalid_input", () => {
   const files = {
+    ...acceptanceFiles("001-a"),
     "specs/001-a/spec.md": SPEC_CLARIFIED,
     "specs/001-a/plan.md": "# Plan\n",
     "specs/001-a/tasks.md": ALL_DONE,
@@ -366,6 +427,9 @@ test("picker: the working tree counts for the current branch (uncommitted ticks)
   try {
     execSync("git switch -q -c 001-a", { cwd: dir });
     const pending = tasksMd([["Core", [["T001", false]]]]);
+    for (const [rel, content] of Object.entries(acceptanceFiles("001-a"))) {
+      commitFile(dir, rel, content, `add ${rel}`);
+    }
     commitFile(dir, "specs/001-a/spec.md", SPEC_CLARIFIED, "spec");
     commitFile(dir, "specs/001-a/plan.md", "# Plan\n", "plan");
     commitFile(dir, "specs/001-a/tasks.md", pending, "tasks");
@@ -423,4 +487,104 @@ test("describeQueue: statuses and next stages for every entry, read-only", () =>
   } finally {
     rmTmp(dir);
   }
+});
+
+// ── 016 research R4: the tests rows between tasks and implement ──
+
+const PLANNED = {
+  "specs/001-a/spec.md": SPEC_CLARIFIED,
+  "specs/001-a/plan.md": "# Plan\n",
+  "specs/001-a/tasks.md": tasksMd([["Core", [["T001", false]]]]),
+};
+
+/** A red-first record for the acceptance.json in `dir`, as the tests stage leaves it. */
+function recordRedFirst(dir: string, gate: GateDecision): void {
+  const text = fs.readFileSync(path.join(dir, "specs/001-a/acceptance.json"), "utf8");
+  writeStageRecord(dir, {
+    entryId: "001-a",
+    stage: "red-first",
+    mode: null,
+    taskPhase: null,
+    key: null,
+    tasksHash: null,
+    startSha: null,
+    endSha: null,
+    treeStamp: "t",
+    runs: [],
+    planDiff: null,
+    testChanges: null,
+    fingerprint: null,
+    gate,
+    acceptanceHash: acceptanceHash(text),
+    summary: null,
+  });
+}
+
+function pickWithRedFirst(files: Record<string, string>, gate: GateDecision | null): PickerDecision {
+  const dir = mkTmpProject(files);
+  try {
+    if (gate) recordRedFirst(dir, gate);
+    return pickNext({ projectDir: dir, queue: newQueue([A]), runBranch: null });
+  } finally {
+    rmTmp(dir);
+  }
+}
+
+const CRASH = redFirst(null, null, false, "the acceptance command crashed (exit 2)");
+
+test("picker R4: acceptance.json missing → tests", () => {
+  const d = pickIn(PLANNED, newQueue([A]));
+  assertStage(d, "001-a", "tests");
+  assert.match(d.kind === "stage" ? d.reason : "", /acceptance\.json is missing/);
+});
+
+test("picker R4: the last red-first run of this acceptance.json crashed → tests again", () => {
+  const d = pickWithRedFirst({ ...PLANNED, ...acceptanceFiles("001-a") }, CRASH);
+  assertStage(d, "001-a", "tests");
+  assert.match(d.kind === "stage" ? d.reason : "", /crashed: the acceptance command crashed/);
+});
+
+test("picker R4: red-first passed, or no red-first record at all → implement", () => {
+  const files = { ...PLANNED, ...acceptanceFiles("001-a") };
+  const passed: GateDecision = {
+    gate: "red-first",
+    outcome: "pass",
+    pauseReason: null,
+    reason: "the acceptance tests fail by an assertion (exit 1)",
+    next: null,
+  };
+  assertStage(pickWithRedFirst(files, passed), "001-a", "implement", 1);
+  assertStage(pickWithRedFirst(files, null), "001-a", "implement", 1);
+});
+
+test("picker R4: a crash recorded for another acceptance.json does not send it back", () => {
+  const dir = mkTmpProject({ ...PLANNED, ...acceptanceFiles("001-a") });
+  try {
+    recordRedFirst(dir, CRASH);
+    writeFiles(dir, acceptanceFiles("001-a", { failExitCodes: [1, 2] }));
+    assertStage(pickNext({ projectDir: dir, queue: newQueue([A]), runBranch: null }), "001-a", "implement");
+  } finally {
+    rmTmp(dir);
+  }
+});
+
+test("picker R4: skip tests with a queue acceptance → implement; without one → pause", () => {
+  const skip = { ...A, skip: ["tests"] as QueueEntry["skip"] };
+  const withAcc = { ...skip, acceptance: [{ name: "api", command: "npm run acc" }] };
+  assertStage(pickIn(PLANNED, newQueue([withAcc])), "001-a", "implement", 1);
+  assertPause(pickIn(PLANNED, newQueue([skip])), "001-a", /skips "tests" and has no "acceptance"/);
+});
+
+test("picker R4: an acceptance.json a human broke later → pause invalid_input", () => {
+  const broken = { ...PLANNED, ...acceptanceFiles("001-a", { failExitCodes: [0] }) };
+  assertPause(pickIn(broken, newQueue([A])), "001-a", /"failExitCodes" must be .* fix .* by hand/);
+  const notJson = { ...PLANNED, "specs/001-a/acceptance.json": "{" };
+  assertPause(pickIn(notJson, newQueue([A])), "001-a", /not valid JSON/);
+});
+
+test("picker R4: a tests gate pauses after the stage, and the picker then moves on", () => {
+  const [entry] = resolveEntries(newQueue([{ ...A, gates: ["tests"] }]), "main", null);
+  assert.equal(gateCheck(entry, "tests")?.reason, "gate");
+  const files = { ...PLANNED, ...acceptanceFiles("001-a") };
+  assertStage(pickIn(files, newQueue([{ ...A, gates: ["tests"] }])), "001-a", "implement");
 });

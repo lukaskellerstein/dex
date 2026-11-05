@@ -1,5 +1,5 @@
 /**
- * What: Parses the `dex` command line (contracts/cli.md) into one command: `run <projectDir>` with at most one of `--once`, `--dry-run`, `--status` and an optional `--agent`, or `queue init <projectDir>`. Anything else throws `UsageError`.
+ * What: Parses the `dex` command line (contracts/cli.md) into one command: `run <projectDir>` with at most one of `--once`, `--dry-run`, `--status` and an optional `--agent`, `queue init <projectDir>`, or `digest <projectDir> <entryId>`. Anything else throws `UsageError`.
  * Not: Runs nothing and reads no file.
  * Deps: agent.KNOWN_AGENTS.
  */
@@ -10,12 +10,14 @@ export type RunMode = "run" | "once" | "dry-run" | "status";
 
 export type CliCommand =
   | { kind: "queue-init"; projectDir: string }
+  | { kind: "digest"; projectDir: string; entryId: string }
   | { kind: "run"; projectDir: string; mode: RunMode; agent: string | null };
 
 export const USAGE = [
   "Usage:",
   `  dex run <projectDir> [--once | --dry-run | --status] [--agent ${KNOWN_AGENTS.join("|")}]`,
   "  dex queue init <projectDir>",
+  "  dex digest <projectDir> <entryId>",
 ].join("\n");
 
 export class UsageError extends Error {
@@ -64,6 +66,12 @@ export function parseArgs(argv: string[]): CliCommand {
   if (command === "run") return parseRun(rest);
   if (command === "queue" && rest[0] === "init" && rest.length === 2) {
     return { kind: "queue-init", projectDir: rest[1] };
+  }
+  if (command === "digest") {
+    if (rest.length !== 2 || rest.some((a) => a.startsWith("-"))) {
+      throw new UsageError("dex digest takes <projectDir> and <entryId>");
+    }
+    return { kind: "digest", projectDir: rest[0], entryId: rest[1] };
   }
   throw new UsageError(command ? `unknown command: ${argv.join(" ")}` : "no command given");
 }

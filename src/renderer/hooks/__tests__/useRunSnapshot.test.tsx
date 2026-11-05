@@ -43,6 +43,7 @@ function snapshot(stage: string): RunSnapshot {
       ],
     },
     errors: [],
+    digests: [],
   };
 }
 
@@ -147,6 +148,7 @@ describe("startActionFor", () => {
     state: null,
     queue: null,
     errors: [],
+    digests: [],
     ...over,
   });
   const state = (status: "paused" | "completed", descriptionFile?: string) =>
@@ -206,6 +208,7 @@ describe("queueProgress", () => {
     const snapshot: RunSnapshot = {
       state: null,
       errors: [],
+      digests: [],
       queue: {
         kind: "new",
         entries: [
@@ -221,6 +224,6 @@ describe("queueProgress", () => {
 
   it("is null without a queue", () => {
     expect(queueProgress(null)).toBeNull();
-    expect(queueProgress({ state: null, queue: null, errors: [] })).toBeNull();
+    expect(queueProgress({ state: null, queue: null, errors: [], digests: [] })).toBeNull();
   });
 });

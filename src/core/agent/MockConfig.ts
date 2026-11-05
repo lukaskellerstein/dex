@@ -31,6 +31,8 @@ export interface StepDescriptor {
   tick?: boolean;
   /** Questions the stage asks before it writes, answered like AskUserQuestion (research R7). */
   asks?: MockQuestion[];
+  /** Project paths the stage deletes, like an agent's `rm` (016 R16); checked by the policy and scope. */
+  deletes?: string[];
 }
 
 /** An AskUserQuestion call; mark an option recommended by ending its label in `(Recommended)`. */
@@ -41,18 +43,48 @@ export interface MockQuestion {
   options: Array<{ label: string; description?: string }>;
 }
 
-/** One verify round: the verdict, and on failure the fix tasks to append. */
-export interface VerifyRound {
+/** A review-mode finding, as the verifier returns it (016 data-model.md § Finding). */
+export interface MockFinding {
+  severity: "blocking" | "minor";
+  summary: string;
+  criterion?: string | null;
+  where?: string | null;
+}
+
+/** What the mock verifier returns by mode (016 R16); a round's own values win over the descriptor's. */
+interface VerifyOutput {
+  /** Review mode. A blocking one makes the mock append the fix phase. */
+  findings?: MockFinding[];
+  /** Diagnose mode. */
+  hypotheses?: string[];
+}
+
+/**
+ * One verify round. `verdict` is still returned as structured output, and the
+ * done gate ignores it (016). `fixTasks` are the fix phase the mock appends in
+ * diagnose mode, or in review mode with a blocking finding.
+ */
+export interface VerifyRound extends VerifyOutput {
   verdict: "passed" | "failed";
   fixTasks?: string[];
 }
 
-export interface VerifyDescriptor extends StepDescriptor {
+export interface VerifyDescriptor extends StepDescriptor, VerifyOutput {
   /** Round k (1-based, from the fix phases already in tasks.md) uses rounds[k-1], else the last one. */
   rounds?: VerifyRound[];
 }
 
-export type EntryStages = Partial<Record<Exclude<StageName, "verify">, StepDescriptor>> & {
+export interface ImplementDescriptor extends StepDescriptor {
+  /** The k-th task-phase run of an entry uses runs[k-1], else the last one (016). */
+  runs?: StepDescriptor[];
+  /** A "restore green first" run (016 research R7); it ticks nothing. */
+  restore?: StepDescriptor;
+}
+
+export type EntryStages = Partial<
+  Record<Exclude<StageName, "verify" | "implement">, StepDescriptor>
+> & {
+  implement?: ImplementDescriptor;
   verify?: VerifyDescriptor;
 };
 
@@ -140,6 +172,7 @@ export const PHASE_OF_STEP: Record<
   clarify: "entries",
   plan: "entries",
   tasks: "entries",
+  tests: "entries",
   implement: "entries",
   verify: "entries",
   completion: "completion",
@@ -150,7 +183,7 @@ export function stageScript(
   config: MockConfig,
   entryId: string | null,
   stage: StageName,
-): StepDescriptor | VerifyDescriptor | null {
+): StepDescriptor | VerifyDescriptor | ImplementDescriptor | null {
   const own = entryId ? config.entries[entryId]?.[stage] : undefined;
   return own ?? config.entries["*"]?.[stage] ?? null;
 }
@@ -241,10 +274,25 @@ function validateEntries(file: string, entries: unknown): void {
         );
       }
       validateStepDescriptor(file, `${where}.${stage}`, desc);
-      if (stage === "verify")
-        validateRounds(file, `${where}.verify`, (desc as Record<string, unknown>).rounds);
+      if (stage === "verify") {
+        const d = desc as Record<string, unknown>;
+        validateRounds(file, `${where}.verify`, d.rounds);
+        validateVerifyOutput(file, `${where}.verify`, d);
+      }
+      if (stage === "implement") validateImplement(file, `${where}.implement`, desc);
     }
   }
+}
+
+function validateImplement(file: string, where: string, desc: unknown): void {
+  const { runs, restore } = desc as Record<string, unknown>;
+  if (runs !== undefined) {
+    if (!Array.isArray(runs) || runs.length === 0) {
+      throw new MockConfigInvalidError(file, `${where}.runs must be a non-empty array`);
+    }
+    runs.forEach((r, i) => validateStepDescriptor(file, `${where}.runs[${i}]`, r));
+  }
+  if (restore !== undefined) validateStepDescriptor(file, `${where}.restore`, restore);
 }
 
 function validateRounds(file: string, where: string, rounds: unknown): void {
@@ -260,6 +308,32 @@ function validateRounds(file: string, where: string, rounds: unknown): void {
     const fix = r.fixTasks;
     if (fix !== undefined && !(Array.isArray(fix) && fix.every((t) => typeof t === "string"))) {
       throw new MockConfigInvalidError(file, `${w}.fixTasks must be an array of strings`);
+    }
+    validateVerifyOutput(file, w, r);
+  });
+}
+
+/** `findings` and `hypotheses`, on the verify descriptor or one of its rounds (016 R16). */
+function validateVerifyOutput(file: string, where: string, d: Record<string, unknown>): void {
+  const { findings, hypotheses } = d;
+  if (hypotheses !== undefined && !(Array.isArray(hypotheses) && hypotheses.every((h) => typeof h === "string"))) {
+    throw new MockConfigInvalidError(file, `${where}.hypotheses must be an array of strings`);
+  }
+  if (findings === undefined) return;
+  if (!Array.isArray(findings)) {
+    throw new MockConfigInvalidError(file, `${where}.findings must be an array`);
+  }
+  findings.forEach((f, i) => {
+    const ok =
+      isObject(f) &&
+      (f.severity === "blocking" || f.severity === "minor") &&
+      typeof f.summary === "string" &&
+      f.summary !== "";
+    if (!ok) {
+      throw new MockConfigInvalidError(
+        file,
+        `${where}.findings[${i}] needs a severity ("blocking" or "minor") and a non-empty summary`,
+      );
     }
   });
 }
@@ -288,6 +362,10 @@ function validateStepDescriptor(file: string, where: string, desc: unknown): voi
   }
   if (desc.tick !== undefined && typeof desc.tick !== "boolean") {
     throw new MockConfigInvalidError(file, `${where}.tick must be a boolean`);
+  }
+  const del = desc.deletes;
+  if (del !== undefined && !(Array.isArray(del) && del.every((p) => typeof p === "string" && p !== ""))) {
+    throw new MockConfigInvalidError(file, `${where}.deletes must be an array of non-empty paths`);
   }
   if (desc.asks !== undefined) validateAsks(file, `${where}.asks`, desc.asks);
 }

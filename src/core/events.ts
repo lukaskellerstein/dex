@@ -3,7 +3,9 @@
 // querying back into core (events flow one way: core → IPC → renderer).
 
 import type { RunConfig } from "./config.js";
+import type { GateDecision } from "./gates.js";
 import type { StageName } from "./queue.js";
+import type { SensorRun } from "./sensors.js";
 import type { PauseReason } from "./state.js";
 import type {
   AgentStep,
@@ -101,8 +103,29 @@ export type OrchestratorEvent =
       toolName: string;
       subject: string;
       reason: string;
-      rule: "deny" | "writeRoots" | "frozen";
+      rule: "deny" | "writeRoots" | "frozen" | "scope";
     }
+  // 016: one run of one sensor, in Dex's own process (D-016-1)
+  | {
+      type: "sensor_run";
+      runId: string;
+      entryId: string;
+      stage: string;
+      agentRunId: string | null;
+      run: SensorRun;
+    }
+  // 016: what a gate decided, and the record that holds the evidence
+  | {
+      type: "gate_decided";
+      runId: string;
+      entryId: string;
+      agentRunId: string | null;
+      decision: GateDecision;
+      /** Project-relative, e.g. `.dex/evidence/003-promo-codes/implement-3.json`. */
+      evidenceFile: string;
+    }
+  // 016: the entry's one-page digest was (re)written
+  | { type: "digest_written"; runId: string; entryId: string; path: string }
   // A tool call waits for a human (a policy or settings `ask` rule)
   | {
       type: "tool_approval_request";

@@ -1,0 +1,8 @@
+{
+  "entries": {
+    "*": {
+      "implement": { "delay": 0 },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

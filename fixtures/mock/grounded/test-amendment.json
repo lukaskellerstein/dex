@@ -1,0 +1,53 @@
+{
+  "entries": {
+    "*": {
+      "tests": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// fixture A: the greeter's acceptance test. The fake sensor stands in for it.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"failExitCodes\": [1],\n  \"timeoutSec\": 60,\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › greets by name\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "1\n" }
+        ],
+        "structured_output": { "summary": "the acceptance test for SC-001" }
+      },
+      "implement": {
+        "delay": 0,
+        "runs": [
+          {
+            "delay": 0,
+            "asks": [
+              {
+                "header": "Test amendment",
+                "question": "Amend specs/900-fixture-a/acceptance.test.mjs: SC-001 says the greeting ends with a period; the test expects none.",
+                "options": [{ "label": "Change the test (Recommended)" }, { "label": "Keep it" }]
+              }
+            ],
+            "writes": [
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A: the build step.\nexport const greet = (name: string): string => \"Hello, \" + name + \".\";\n"
+              }
+            ]
+          },
+          {
+            "delay": 0,
+            "writes": [
+              {
+                "path": "src/fixture-a/greet.ts",
+                "content": "// fixture A: done.\nexport const greet = (name: string): string => {\n  if (!name) throw new Error(\"empty name\");\n  return \"Hello, \" + name + \".\";\n};\n"
+              },
+              { "path": ".dex/fake/acceptance", "content": "0\n" }
+            ]
+          }
+        ]
+      },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

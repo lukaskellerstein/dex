@@ -130,6 +130,8 @@ git log --oneline --grep='^mock('                       # one commit per mock st
 
 A tag minted before 015 points at a pre-015 tree, whose `.dex/mock-config.json` may still use the `dex_loop` shape the mock loader now refuses. For a mock run, copy `fixtures/mock/new-project.json` over it, or mint a fresh tag from a current mock run (`specs/015-lean-core/quickstart.md` § 4).
 
+**Grounded mock runs (016)**: every gate runs real sensor commands, also under the mock agent. The mock's sensors are `node .dex/fake/check.mjs <name>`, which exits with the next code in `.dex/fake/<name>`. Before a mock run, copy `fixtures/mock/grounded/fake-check.mjs` to `<project>/.dex/fake/check.mjs`, give `.dex/fake/` a `.gitignore` of `*`, and copy `fixtures/mock/grounded/policy.json` over `.dex/policy.json` — the steps are in `specs/016-grounded-loop/quickstart.md` § 2. Without them every fake sensor fails to start and no entry reaches done. `fixtures/mock/grounded/README.md` lists one fixture per unhappy path (stall, flaky check, frozen-test edit, test amendment, and others) with its expected end.
+
 **Legacy fixtures**: `fixture/after-clarification` and `fixture/after-tasks` have been deleted — they're fully replaced by the `checkpoint/*` tags. Any references to `fixture/*` in older docs are obsolete.
 
 After restoring a checkpoint, the welcome submit button reads **Open Existing** (because the folder exists) and the topbar's run button reads **Resume** while a run state exists and a queue entry is still open. Clicking **Resume** starts with `config.resume=true` — the orchestrator skips `prerequisites`, reuses the existing `runId`, and runs the picker again: the next stage comes from the project's files, with no repair step.
@@ -295,6 +297,12 @@ Each project gets its own state directory. For the example project that's `~/Pro
 | `.dex/questions.md` | Runtime — pending questions and tool approvals as plain text, plus the questions answered by default for review. Gitignored. |
 | `.dex/state.lock` | PID file guarding against concurrent orchestrator processes on the same project. Gitignored. |
 | `.dex/runs/<runId>.json` | One file per Dex run — full audit summary (phases, subagents, costs). See § 4f.4. Gitignored. |
+| `.dex/evidence/<id>/<stage>-<n>.json` | One gate record per stage run of an entry (016): `tests-1`, `red-first-1`, `baseline-<n>`, `implement-<n>`, `verify-<n>` — the sensor runs, their tails, the gate's outcome and reason, the plan and test changes. Gitignored. |
+| `.dex/evidence/<id>/done.json` | The done gate's record (replaces 015's `verify.json`): the acceptance runs, the verifier's mode, findings or hypotheses, and `gate: "passed"` or `"failed"`. The picker reads it to decide if the entry is done. Gitignored. |
+| `.dex/evidence/<id>/amendments.json` | Test amendments the implementer asked for, each `approved`, `rejected` or `applied`. Gitignored. |
+| `.dex/evidence/<id>/progress.md` | The attempt log: one section per agent stage (agent summary, notes, gate, first failing line). The next prompt gets its newest 8,000 characters; it moves to `archive/` when the done gate passes. Gitignored. |
+| `.dex/digests/<id>.md` | The one-page digest of an entry, written at every pause and at done; `dex digest <projectDir> <id>` prints it. The folder carries its own `.gitignore` (`*`). |
+| `<specDir>/acceptance.json` | The acceptance command and the frozen test files, written by the `tests` stage. Tracked, and frozen for implement and verify. |
 
 `cat` / `jq` the JSON files to answer "what did the run last do?", "which branch is the run on?", "what is waiting for a human?". Which stage runs next is not stored anywhere: ask the picker with `node dist/core/cli.js run <projectDir> --status`, which writes nothing. A project that still has the old `.dex/feature-manifest.json` is migrated to `queue.json` when Dex loads it.
 

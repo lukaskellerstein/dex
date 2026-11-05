@@ -37,7 +37,9 @@ type AgentStepType =
   | "subagent_spawn"
   | "subagent_result"
   | "completed"
-  | "error";
+  | "error"
+  /** 016: Dex's own gate decision with its sensor runs; built by the app from events, never written to steps.jsonl. */
+  | "gate";
 
 export interface AgentStep {
   id: string;
@@ -78,6 +80,7 @@ export type StepType =
   | "clarify"
   | "plan"
   | "tasks"
+  | "tests"
   | "implement"
   | "verify"
   | "completion";

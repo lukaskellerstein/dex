@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import type { OrchestratorEvent } from "../events.ts";
-import { readVerifyRecord } from "../evidence.ts";
+import { readDoneRecord } from "../evidence.ts";
 import type * as HumanInput from "../humanInput.ts";
 import type * as Orchestrator from "../orchestrator.ts";
 import type * as State from "../state.ts";
@@ -112,6 +112,7 @@ const ENTRY_STAGES = (id: string) => [
   `${id}:clarify`,
   `${id}:plan`,
   `${id}:tasks`,
+  `${id}:tests`,
   `${id}:implement:1`,
   `${id}:implement:2`,
   `${id}:verify`,
@@ -128,7 +129,7 @@ test("loop: a two-entry queue runs every stage from files and ends queue_complet
       ...ENTRY_STAGES("002-beta"),
     ]);
     for (const id of ["001-alpha", "002-beta"]) {
-      assert.equal(readVerifyRecord(dir, id)?.verdict, "passed");
+      assert.equal(readDoneRecord(dir, id)?.gate, "passed");
       assert.equal(fs.existsSync(path.join(dir, "specs", id, "verify.md")), false);
     }
     // Dex writes no tracked file: the records are ignored, the tree is clean.
@@ -197,7 +198,7 @@ test("loop: verify fails once → fix phase V1 appended → implement runs it �
     const tasks = fs.readFileSync(path.join(dir, "specs/001-alpha/tasks.md"), "utf8");
     assert.match(tasks, /^## Phase 3: Verify fixes V1$/m);
     assert.match(tasks, /^- \[X\] T005 Handle an empty list in src\/001-alpha\/index\.ts$/m);
-    assert.equal(readVerifyRecord(dir, "001-alpha")?.verdict, "passed");
+    assert.equal(readDoneRecord(dir, "001-alpha")?.gate, "passed");
   } finally {
     rmTmp(dir);
   }
@@ -350,7 +351,7 @@ test("loop: gates [plan] pause after plan; Resume runs tasks", async () => {
   }
 });
 
-test("loop: a stage that changes a committed frozen file pauses frozen_changed; a new frozen file does not", async () => {
+test("loop: a write to a committed frozen file is denied (policy_denied, rule frozen); a new frozen file is not", async () => {
   const mock = mockFixture("new-project.json") as {
     entries: Record<string, Record<string, { writes?: unknown[] }>>;
   };
@@ -358,7 +359,7 @@ test("loop: a stage that changes a committed frozen file pauses frozen_changed; 
   stages.specify.writes?.push({ path: "docs/claim-new.md", content: "a new claim\n" });
   stages.plan.writes?.push({ path: "docs/thresholds.md", content: "p99 < 900ms\n" });
   const dir = mkLoopProject({
-    queue: QUEUE,
+    queue: ONE_ENTRY,
     mock,
     files: {
       "docs/thresholds.md": "p99 < 300ms\n",
@@ -367,23 +368,20 @@ test("loop: a stage that changes a committed frozen file pauses frozen_changed; 
   });
   try {
     const events = await runLoop(dir);
-    assert.equal(termination(events), "paused");
-    assert.deepEqual(stagesRun(events), [
-      "001-alpha:specify",
-      "001-alpha:clarify",
-      "001-alpha:plan",
-    ]);
-    const state = await loadState(dir);
-    assert.equal(state?.pauseReason, "frozen_changed");
-    assert.match(state?.pauseDetail ?? "", /docs\/thresholds\.md/);
-    assert.doesNotMatch(state?.pauseDetail ?? "", /claim-new/);
-    assert.equal(state?.pendingRequests[0]?.kind, "pause");
+    // The mock's writes go through the same decision as a real tool call (016 R16).
+    const denied = events.filter((e) => e.type === "policy_denied");
+    assert.equal(denied.length, 1);
+    assert.equal(denied[0].type === "policy_denied" && denied[0].rule, "frozen");
+    assert.match(denied[0].type === "policy_denied" ? denied[0].subject : "", /docs\/thresholds\.md$/);
+    assert.equal(fs.readFileSync(path.join(dir, "docs/thresholds.md"), "utf8"), "p99 < 300ms\n");
+    assert.equal(fs.readFileSync(path.join(dir, "docs/claim-new.md"), "utf8"), "a new claim\n");
+    assert.equal(termination(events), "queue_complete");
   } finally {
     rmTmp(dir);
   }
 });
 
-test("loop: git reset --hard to the mock(tasks) commit, Resume picks implement with no reconcile", async () => {
+test("loop: git reset --hard to the mock(tasks) commit, Resume picks tests, then implement, with no reconcile", async () => {
   const dir = mkLoopProject({ queue: QUEUE, mock: mockFixture("new-project.json") });
   try {
     await runLoop(dir);
@@ -395,7 +393,8 @@ test("loop: git reset --hard to the mock(tasks) commit, Resume picks implement w
     execSync(`git reset -q --hard ${sha}`, { cwd: dir });
 
     const resumed = await runLoop(dir, { resume: true });
-    assert.equal(stagesRun(resumed)[0], "001-alpha:implement:1");
+    // The reset removed acceptance.json too, so the files ask for tests first.
+    assert.deepEqual(stagesRun(resumed).slice(0, 2), ["001-alpha:tests", "001-alpha:implement:1"]);
     assert.equal(termination(resumed), "queue_complete");
     assert.equal(
       resumed.some((e) => e.type.includes("reconcil")),

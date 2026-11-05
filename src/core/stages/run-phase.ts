@@ -5,11 +5,11 @@
  */
 
 import path from "node:path";
+import { buildImplementPrompt } from "../entry-prompts.js";
 import { getCurrentBranch } from "../git.js";
 import type { RunLogger } from "../log.js";
 import { getActiveContext } from "../orchestrator.js";
 import { deriveTaskPhaseStatus } from "../parser.js";
-import { buildImplementPrompt } from "../prompts.js";
 import { entryForSpecDir, loadQueue, type ResolvedEntry, resolveEntries } from "../queue.js";
 import type { EmitFn, RunConfig, Task, TaskPhase } from "../types.js";
 

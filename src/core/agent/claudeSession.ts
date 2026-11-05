@@ -17,6 +17,7 @@ import type { RunLogger } from "../log.js";
 import { parseTasksFile } from "../parser.js";
 import { type Policy, skipsPermissionChecks } from "../policy.js";
 import * as runs from "../runs.js";
+import type { StageScope } from "../scope.js";
 import type { AgentStep, EmitFn, RunConfig, StepType } from "../types.js";
 import {
   makeCanUseTool,
@@ -51,6 +52,8 @@ export interface SessionParams {
   rlog: RunLogger;
   /** The project's policy (`.dex/policy.json`, or the defaults). */
   policy: Policy;
+  /** The stage's write scope (016 R9), checked by every tool decision. */
+  scope?: StageScope;
   /** The queue entry this session works on; null for project-level stages and build mode. */
   entryId: string | null;
   /** The stage this session runs; decides the question mode. */
@@ -137,16 +140,37 @@ function systemPrompt(policy: Policy, projectDir: string): Options["systemPrompt
 }
 
 /**
+ * The verify stage's browser (016 R13, `policy.verify.browser`): headless, with a
+ * fresh profile per session, never the user's. The version is pinned and was at
+ * least two weeks old when chosen (research R13).
+ */
+export const PLAYWRIGHT_MCP = "@playwright/mcp@0.0.83";
+
+function stageMcpServers(step: StepType | undefined, policy: Policy): Options["mcpServers"] | null {
+  if (step !== "verify" || !policy.verify.browser) return null;
+  return {
+    browser: {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", PLAYWRIGHT_MCP, "--headless", "--isolated"],
+    },
+  };
+}
+
+/**
  * The SDK options every Dex agent runs with, from the project's policy (research
  * R6). One builder for both call sites, so the abort controller, the
  * environment, the system prompt and the permission settings cannot drift apart.
  */
 export function buildQueryOptions(
-  p: Pick<SessionParams, "config" | "env" | "outputFormat" | "abortController" | "policy">,
+  p: Pick<SessionParams, "config" | "env" | "outputFormat" | "abortController" | "policy"> & {
+    step?: StepType;
+  },
   hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>>,
   canUseTool: CanUseTool,
 ): Options {
   const { policy } = p;
+  const mcpServers = stageMcpServers(p.step, policy);
   const turnLimit = policy.limits.maxTurnsPerStage;
   const stageBudget = policy.limits.maxBudgetUsdPerStage;
   return {
@@ -167,12 +191,14 @@ export function buildQueryOptions(
     canUseTool,
     hooks,
     ...(p.outputFormat ? { outputFormat: p.outputFormat } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
   };
 }
 
 function permissionDeps(p: SessionParams, isAborted: () => boolean): PermissionDeps {
   return {
     policy: p.policy,
+    scope: p.scope,
     policyEnv: policyEnvFor(p.config.projectDir),
     io: { projectDir: p.config.projectDir, runId: p.runId, emit: p.emit },
     agentRunId: p.agentRunId,

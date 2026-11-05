@@ -9,6 +9,7 @@ import {
   type QueueV3,
   queuePath,
   resolveEntries,
+  STAGE_NAMES,
   saveQueue,
   validateQueue,
 } from "../queue.ts";
@@ -101,6 +102,53 @@ test("queue: status accepts only done and skipped", () => {
 test("queue: string fields must be strings", () => {
   assertInvalid(q([{ id: "a", title: "A", brief: 3 }]), /brief/);
   assertInvalid(q([{ id: "a", title: "A", baseBranch: "" }]), /baseBranch/);
+});
+
+test("queue: tests sits between tasks and implement; skip and gates accept it", () => {
+  assert.deepEqual(STAGE_NAMES.slice(4, 7), ["tasks", "tests", "implement"]);
+  validateQueue(q([{ id: "a", title: "A", skip: ["tests"], gates: ["tests"] }]), "q");
+});
+
+test("queue: entry acceptance and checks validate and resolve with default timeouts", () => {
+  const raw = q([
+    {
+      id: "002-a",
+      title: "A",
+      skip: ["tests"],
+      acceptance: [{ name: "catalog api", command: "npm run test:acceptance -- catalog" }],
+      checks: [{ name: "cart unit", command: "npm test -- src/cart", timeoutSec: 90 }],
+    },
+  ]);
+  const [entry] = resolveEntries(validateQueue(raw, "q"), "main", null);
+  assert.deepEqual(entry.acceptance, [
+    { name: "catalog api", command: "npm run test:acceptance -- catalog", timeoutSec: 1800 },
+  ]);
+  assert.deepEqual(entry.checks, [
+    { name: "cart unit", command: "npm test -- src/cart", timeoutSec: 90 },
+  ]);
+  assertInvalid(q([{ id: "a", title: "A", acceptance: {} }]), /entries\[0\].*"acceptance" must be a list/);
+  assertInvalid(
+    q([
+      {
+        id: "a",
+        title: "A",
+        checks: [
+          { name: "x", command: "a" },
+          { name: "x", command: "b" },
+        ],
+      },
+    ]),
+    /"checks\[1\]\.name" repeats the name "x"/,
+  );
+  assertInvalid(
+    q([{ id: "a", title: "A", acceptance: [{ name: "x", command: "" }] }]),
+    /"acceptance\[0\]\.command" must be a non-empty string/,
+  );
+});
+
+test("queue: a 015 entry without acceptance or checks resolves to empty lists", () => {
+  const [entry] = resolveEntries(validateQueue(q([{ id: "a", title: "A" }]), "q"), "main", null);
+  assert.deepEqual([entry.acceptance, entry.checks], [[], []]);
 });
 
 // ── Resolution ──

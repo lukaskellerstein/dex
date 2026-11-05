@@ -1,12 +1,25 @@
 /**
- * What: The next-stage picker (D-015-1). Decides from files alone what runs next: `pickNext` returns one decision, `describeQueue` the derived status of every entry. Each entry's files are read from its own tree — working tree or a git ref — never through a checkout (research R3).
+ * What: The next-stage picker (D-015-1, amended by 016 research R4). Decides from files alone what runs next: `pickNext` returns one decision, `describeQueue` the derived status of every entry. Each entry's files are read from its own tree — working tree or a git ref — never through a checkout (research R3). Between tasks and implement, 016's rows send an entry to `tests` (an approved test amendment is pending, no acceptance.json, or its last red-first run crashed) or pause it (it skips tests with no queue acceptance, or a human broke acceptance.json). The done row reads Dex's done record (R5), never an agent's verdict.
  * Not: Never writes and never switches branches. Does not run stages and does not count attempts (post-stage does). Does not validate the queue (queue.ts does).
- * Deps: queue.{resolveEntries, ResolvedEntry, StageName}, tree-reader, evidence.{evidenceKey, readVerifyRecord, tasksHash}, parser.parseTasksMd, git.{getCurrentBranch, branchExists}.
+ * Deps: queue.{resolveEntries, ResolvedEntry, StageName}, tree-reader, evidence.{evidenceKey, readDoneRecord, readStageRecords, pendingAmendment, tasksHash}, acceptance.{readAcceptance, acceptancePath}, gates.isCrash, sensors.isGreen, policy.loadPolicy, parser.parseTasksMd, git.{getCurrentBranch, branchExists}.
  */
 
-import { type Evidence, evidenceKey, readVerifyRecord, tasksHash } from "./evidence.js";
+import { acceptancePath, readAcceptance } from "./acceptance.js";
+import {
+  type Amendment,
+  type DoneRecord,
+  type Evidence,
+  evidenceKey,
+  pendingAmendment,
+  readDoneRecord,
+  readStageRecords,
+  type StageRecord,
+  tasksHash,
+} from "./evidence.js";
+import { isCrash } from "./gates.js";
 import { branchExists, getCurrentBranch } from "./git.js";
 import { parseTasksMd } from "./parser.js";
+import { loadPolicy, type Policy } from "./policy.js";
 import {
   hasOpenScopedTask,
   isFixPhase,
@@ -15,6 +28,7 @@ import {
   resolveEntries,
   type StageName,
 } from "./queue.js";
+import { isGreen } from "./sensors.js";
 import { gitRef, type TreeReader, workingTree } from "./tree-reader.js";
 import type { TaskPhase } from "./types.js";
 
@@ -25,6 +39,18 @@ export interface PickerInput {
   queue: QueueV3;
   /** The new-project run branch; null before it exists and for existing projects. */
   runBranch: string | null;
+  /** The project's policy (its `testGlobs` validate acceptance.json); read from the project when absent. */
+  policy?: Policy;
+}
+
+/** What the picker reads besides the entry's tree — each only when a row needs it. */
+export interface EntryFacts {
+  policy: () => Policy;
+  verify: () => Evidence;
+  /** The entry's red-first records, oldest first. */
+  redFirst: () => StageRecord[];
+  /** The first approved test amendment not applied yet (R10). */
+  amendment: () => Amendment | null;
 }
 
 export type PickerDecision =
@@ -109,9 +135,19 @@ function implementStage(entry: ResolvedEntry, phases: TaskPhase[]): Outcome | nu
 }
 
 /** The verify row of D-015-1: a passing record that matches the entry now (contracts/evidence.md). */
+/** Why the last done gate failed, from the record's own runs and findings. */
+function failedBecause(record: DoneRecord): string {
+  const red = record.acceptance.filter((r) => !isGreen(r)).map((r) => r.name);
+  const blocking = record.findings.filter((f) => f.severity === "blocking").length;
+  if (red.length > 0) return `the acceptance run was red (${red.join(", ")})`;
+  if (blocking > 0) return `${blocking} blocking finding${blocking > 1 ? "s were" : " was"} open`;
+  return "the done gate failed";
+}
+
+/** FR-007: done only when Dex's done gate passed for the entry as it is now. */
 function verifyStage(entry: ResolvedEntry, tasks: string, evidence: Evidence): Outcome {
   const { record, key } = evidence;
-  if (!record) return stage("verify", `no verify record in .dex/evidence/${entry.id}/`);
+  if (!record) return stage("verify", `no done record in .dex/evidence/${entry.id}/`);
   const bySpec = record.key.startsWith("spec:");
   if (key === null || record.key !== key) {
     return stage(
@@ -124,18 +160,52 @@ function verifyStage(entry: ResolvedEntry, tasks: string, evidence: Evidence): O
   if (record.tasksHash !== tasksHash(tasks)) {
     return stage("verify", "the last verify checked a different tasks.md");
   }
-  if (record.verdict !== "passed") return stage("verify", "the last verify failed");
+  if (record.gate !== "passed") {
+    return stage("verify", `the last verify did not pass the done gate: ${failedBecause(record)}`);
+  }
   const what = bySpec ? `the current ${entry.specDir}` : "the current commit and tasks.md";
-  return { kind: "done", reason: `verify passed for ${what}` };
+  return { kind: "done", reason: `the done gate passed for ${what}` };
 }
 
-/** D-015-1 for one entry over one tree. `evidence` is read only when the entry reaches verify. */
-export function stageFor(
-  entry: ResolvedEntry,
-  tree: TreeReader,
-  evidence: () => Evidence,
-): Outcome {
-  const before = artefactStage(entry, tree);
+/**
+ * The rows of 016 research R4, between tasks and implement: an entry that skips
+ * `tests` needs a queue `acceptance` (FR-008); an approved test amendment sends
+ * it back to the test author (R10); otherwise acceptance.json must be there, and
+ * its last red-first run must not have crashed (R20). A record a human broke
+ * later pauses; the tests agent's own broken record is a crash.
+ */
+function testsStage(entry: ResolvedEntry, tree: TreeReader, facts: EntryFacts): Outcome | null {
+  const file = acceptancePath(entry);
+  if (entry.skip.includes("tests")) {
+    if (entry.acceptance.length > 0) return null;
+    return {
+      kind: "pause",
+      detail: `${entry.id} skips "tests" and has no "acceptance" command in queue.json — add one, or remove "tests" from "skip": without one the done gate can never pass`,
+    };
+  }
+  const amendment = facts.amendment();
+  if (amendment) return stage("tests", `the human approved an amendment of ${amendment.file}`);
+  const read = readAcceptance(tree, entry, facts.policy());
+  if (read.kind === "missing") return stage("tests", `${file} is missing`);
+  const last = facts
+    .redFirst()
+    .filter((r) => r.acceptanceHash === read.hash)
+    .at(-1);
+  if (last && isCrash(last.gate)) {
+    return stage("tests", `the last red-first run of ${file} crashed: ${last.gate?.reason ?? ""}`);
+  }
+  if (read.kind === "invalid") {
+    return {
+      kind: "pause",
+      detail: `${read.message} — fix ${file} by hand, or delete it to write the tests again`,
+    };
+  }
+  return null;
+}
+
+/** D-015-1 (with 016's tests rows) for one entry over one tree. Each fact is read only when a row needs it. */
+export function stageFor(entry: ResolvedEntry, tree: TreeReader, facts: EntryFacts): Outcome {
+  const before = artefactStage(entry, tree) ?? testsStage(entry, tree, facts);
   if (before) return before;
   const tasks = tree.read(`${entry.specDir}/tasks.md`) ?? "";
   if (!entry.skip.includes("implement")) {
@@ -144,7 +214,7 @@ export function stageFor(
   }
   if (entry.skip.includes("verify"))
     return { kind: "done", reason: "every stage is done or skipped" };
-  return verifyStage(entry, tasks, evidence());
+  return verifyStage(entry, tasks, facts.verify());
 }
 
 /** Verify rounds so far: the `Verify fixes V<k>` phases in tasks.md (research R8). */
@@ -182,10 +252,15 @@ function evaluate(input: PickerInput, entry: ResolvedEntry, current: string): Ou
   if (entry.status === "done") return { kind: "done", reason: "marked done in queue.json" };
   const t = entryTree(input, entry, current);
   if ("error" in t) return { kind: "pause", detail: t.error };
-  const outcome = stageFor(entry, t.tree, () => ({
-    record: readVerifyRecord(input.projectDir, entry.id),
-    key: evidenceKey(input.projectDir, input.queue.kind, entry),
-  }));
+  const outcome = stageFor(entry, t.tree, {
+    policy: () => input.policy ?? loadPolicy(input.projectDir, input.queue.kind),
+    verify: () => ({
+      record: readDoneRecord(input.projectDir, entry.id),
+      key: evidenceKey(input.projectDir, input.queue.kind, entry),
+    }),
+    redFirst: () => readStageRecords(input.projectDir, entry.id, "red-first"),
+    amendment: () => pendingAmendment(input.projectDir, entry.id),
+  });
   // Without its own branch, an entry can only start (brief, specify) or be done.
   if (
     t.fromBase &&

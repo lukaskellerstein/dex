@@ -152,6 +152,26 @@ test("MockConfig: writes entry without 'content' throws", () => {
   }
 });
 
+test("MockConfig: deletes load as paths; anything else throws naming the stage", () => {
+  const dir = mkProject();
+  try {
+    const ok = structuredClone(VALID_CONFIG) as typeof VALID_CONFIG & {
+      entries: Record<string, Record<string, { deletes?: unknown }>>;
+    };
+    ok.entries["*"].specify.deletes = ["tests/acceptance/old.spec.ts"];
+    writeConfig(dir, JSON.stringify(ok));
+    const loaded = loadMockConfig(dir).entries["*"].specify as { deletes?: string[] };
+    assert.deepEqual(loaded.deletes, ["tests/acceptance/old.spec.ts"]);
+    for (const bad of ["x.md", [""], [3]]) {
+      ok.entries["*"].specify.deletes = bad;
+      writeConfig(dir, JSON.stringify(ok));
+      assert.throws(() => loadMockConfig(dir), /specify\.deletes must be an array of non-empty paths/);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("MockConfig: non-finite delay throws", () => {
   const dir = mkProject();
   try {
@@ -164,7 +184,87 @@ test("MockConfig: non-finite delay throws", () => {
   }
 });
 
+test("MockConfig: implement.runs and implement.restore load; a bad one names its place", () => {
+  const dir = mkProject();
+  try {
+    const ok = structuredClone(VALID_CONFIG);
+    ok.entries["*"].implement = {
+      delay: 0,
+      runs: [{ delay: 0, tick: false }, { delay: 1 }],
+      restore: { delay: 0, writes: [{ path: ".dex/fake/unit", content: "0\n" }] },
+    };
+    writeConfig(dir, JSON.stringify(ok));
+    const impl = loadMockConfig(dir).entries["*"].implement;
+    assert.equal(impl?.runs?.length, 2);
+    assert.equal(impl?.restore?.writes?.[0].content, "0\n");
+    for (const [implement, msg] of [
+      [{ delay: 0, runs: [] }, /implement\.runs must be a non-empty array/],
+      [{ delay: 0, runs: [{ delay: -1 }] }, /implement\.runs\[0\]\.delay must be a non-negative/],
+      [{ delay: 0, restore: { writes: [] } }, /implement\.restore\.delay must be a non-negative/],
+    ] as const) {
+      const bad = structuredClone(VALID_CONFIG);
+      bad.entries["*"].implement = implement;
+      writeConfig(dir, JSON.stringify(bad));
+      assert.throws(() => loadMockConfig(dir), msg);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("MockConfig: verify findings and hypotheses load, on the descriptor or a round; bad ones name their place", () => {
+  const dir = mkProject();
+  try {
+    const ok = structuredClone(VALID_CONFIG);
+    ok.entries["*"].verify = {
+      delay: 0,
+      hypotheses: ["the route is missing"],
+      rounds: [
+        {
+          verdict: "passed",
+          findings: [{ severity: "blocking", summary: "wrong total", criterion: "SC-1" }],
+        },
+      ],
+    };
+    writeConfig(dir, JSON.stringify(ok));
+    const v = loadMockConfig(dir).entries["*"].verify;
+    assert.deepEqual(v?.hypotheses, ["the route is missing"]);
+    assert.equal(v?.rounds?.[0].findings?.[0].severity, "blocking");
+    for (const [verify, msg] of [
+      [{ delay: 0, findings: [{ severity: "critical", summary: "x" }] }, /verify\.findings\[0\] needs a severity/],
+      [{ delay: 0, rounds: [{ verdict: "passed", findings: [{ severity: "minor", summary: "" }] }] }, /rounds\[0\]\.findings\[0\]/],
+      [{ delay: 0, hypotheses: [1] }, /verify\.hypotheses must be an array of strings/],
+    ] as const) {
+      const bad = structuredClone(VALID_CONFIG);
+      bad.entries["*"].verify = verify;
+      writeConfig(dir, JSON.stringify(bad));
+      assert.throws(() => loadMockConfig(dir), msg);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("MockConfig: a tests descriptor loads and is the entry's tests script", () => {
+  const dir = mkProject();
+  try {
+    const ok = structuredClone(VALID_CONFIG);
+    ok.entries["*"].tests = {
+      delay: 0,
+      writes: [{ path: "{specDir}/acceptance.json", content: "{}\n" }],
+      structured_output: { summary: "one test" },
+    };
+    writeConfig(dir, JSON.stringify(ok));
+    const tests = stageScript(loadMockConfig(dir), "001-a", "tests");
+    assert.equal(tests?.writes?.[0].path, "{specDir}/acceptance.json");
+    assert.deepEqual(tests?.structured_output, { summary: "one test" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("PHASE_OF_STEP: every StepType maps to exactly one phase", () => {
+  assert.equal(PHASE_OF_STEP.tests, "entries");
   assert.equal(PHASE_OF_STEP.prerequisites, "prerequisites");
   assert.equal(PHASE_OF_STEP.manifest_extraction, "clarification");
   assert.equal(PHASE_OF_STEP.brief, "entries");

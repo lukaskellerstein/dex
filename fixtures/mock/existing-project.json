@@ -56,13 +56,29 @@
           }
         ]
       },
+      "tests": {
+        "delay": 200,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// {feature}: the farewell's acceptance test, written by the mock tests stage. The fake sensor stands in for it.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"failExitCodes\": [1],\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › says goodbye\", \"criterion\": \"FR-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "1\n" }
+        ],
+        "structured_output": { "summary": "mock: one acceptance test for FR-001" }
+      },
       "implement": {
         "delay": 200,
         "writes": [
           {
             "path": "src/{feature}/farewell.ts",
             "content": "// {feature}, written by the mock implement stage.\nexport const farewell = (name: string): string => \"Goodbye, \" + name;\n"
-          }
+          },
+          { "path": ".dex/fake/acceptance", "content": "0\n" }
         ]
       },
       "verify": {

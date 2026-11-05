@@ -12,6 +12,7 @@ export const CYCLE_STAGES: StepType[] = [
   "clarify",
   "plan",
   "tasks",
+  "tests",
   "implement",
   "verify",
 ];
@@ -29,6 +30,7 @@ export const STEP_LABELS: Record<StepType, string> = {
   clarify: "Clarify",
   plan: "Plan",
   tasks: "Tasks",
+  tests: "Tests",
   implement: "Implement",
   verify: "Verify",
   completion: "Completion",

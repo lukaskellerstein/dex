@@ -1,13 +1,14 @@
 /**
- * What: One queue for everything that waits on a human (research R7) — agent questions (AskUserQuestion), tool approvals (a policy or settings `ask` rule) and run pauses (bad input, no progress, gates, limits). Every request is persisted to `state.pendingRequests` and rendered to `.dex/questions.md`, so it survives a restart. Before a request waits, the answer book (answers given while no agent waited, `bookAnswers`) answers it if it can; in `recommended-then-review` a question whose every sub-question has a `(Recommended)` option is answered at once and added to `state.reviewList`. A held question or approval is answered through `resolveRequest`; Stop releases every held request (`cancelAll`): questions get no answers, approvals are denied. When no human can answer (`dex run` without a TTY), `parkAll` releases the agents the same way but keeps the requests for the next run, and `WaitingForHuman` is the abort reason that pauses the run. Resume drops every request left over (`clearStaleRequests`): a pause is answered by Resume itself, and a parked request is asked again.
+ * What: One queue for everything that waits on a human (research R7) — agent questions (AskUserQuestion), tool approvals (a policy or settings `ask` rule) and run pauses (bad input, no progress, gates, limits). Every request is persisted to `state.pendingRequests` and rendered to `.dex/questions.md`, so it survives a restart. Before a request waits, the answer book (answers given while no agent waited, `bookAnswers`) answers it if it can; in `recommended-then-review` a question whose every sub-question has a `(Recommended)` option is answered at once and added to `state.reviewList`. A held question or approval is answered through `resolveRequest`; Stop releases every held request (`cancelAll`): questions get no answers, approvals are denied. When no human can answer (`dex run` without a TTY), `parkAll` releases the agents the same way but keeps the requests for the next run, and `WaitingForHuman` is the abort reason that pauses the run. Resume drops every request left over (`clearStaleRequests`): a pause is answered by Resume itself, and a parked request is asked again. A test amendment question (016 R10, header `Test amendment`, `Amend <path>: <reason>`) gets the options `Approve amendment` and `Reject`, waits in every mode, and its decision is recorded in the entry's `amendments.json`; both the Claude path and the mock ask through here.
  * Not: Does not decide when to ask, which question mode a stage uses (the session does) or what a pause means.
- * Deps: state.{mutateState, readState}, events.EmitFn, policy.QuestionMode, node:fs, node:crypto.
+ * Deps: state.{mutateState, readState}, evidence.{AMENDMENT_HEADER, recordAmendment}, events.EmitFn, policy.QuestionMode, node:fs, node:crypto.
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { EmitFn } from "./events.js";
+import { AMENDMENT_HEADER, recordAmendment } from "./evidence.js";
 import type { Policy, QuestionMode } from "./policy.js";
 import { mutateState, type PauseReason, readState } from "./state.js";
 import type { StepType, UserInputQuestion } from "./types.js";
@@ -208,13 +209,95 @@ export interface QuestionOptions {
   step: StepType;
 }
 
+// ── Test amendments (016 R10) ──
+
+export const APPROVE_AMENDMENT = "Approve amendment";
+export const REJECT_AMENDMENT = "Reject";
+const AMEND_RE = /^Amend\s+`?([^\s`:]+)`?:\s*(\S[\s\S]*)$/;
+const UNREADABLE =
+  'Rejected: Dex cannot read the test file. Ask again with the question "Amend <path>: <reason>", one test file per question.';
+const ASK_APART = "Not answered: ask this again on its own, apart from the test amendment.";
+
+export function isAmendment(q: UserInputQuestion): boolean {
+  return q.header.trim().toLowerCase() === AMENDMENT_HEADER.toLowerCase();
+}
+
+/** The file and reason of `Amend <path>: <reason>`, or null when the question does not follow it. */
+export function parseAmendment(question: string): { file: string; reason: string } | null {
+  const m = AMEND_RE.exec(question.trim());
+  return m ? { file: m[1], reason: m[2].trim() } : null;
+}
+
+/** An amendment question with Dex's two options, whatever the agent offered. */
+function withAmendmentOptions(q: UserInputQuestion): UserInputQuestion {
+  if (!isAmendment(q)) return q;
+  const file = parseAmendment(q.question)?.file ?? "the test";
+  return {
+    ...q,
+    multiSelect: false,
+    options: [
+      { label: APPROVE_AMENDMENT, description: `The test author changes ${file}; the implementer goes on.` },
+      { label: REJECT_AMENDMENT, description: "The test stays as it is." },
+    ],
+  };
+}
+
+/** The answers Dex gives at once when an amendment cannot be recorded; null when every one can. */
+function unreadableAmendments(
+  entryId: string | null,
+  questions: UserInputQuestion[],
+): Record<string, string> | null {
+  const bad = questions.some((q) => isAmendment(q) && (!entryId || !parseAmendment(q.question)));
+  if (!bad) return null;
+  return Object.fromEntries(questions.map((q) => [q.question, isAmendment(q) ? UNREADABLE : ASK_APART]));
+}
+
+/** Records the human's decision on each amendment, and turns it into the implementer's answer. */
+function settleAmendments(
+  projectDir: string,
+  entryId: string,
+  questions: UserInputQuestion[],
+  answers: Record<string, string>,
+): Record<string, string> {
+  const out = { ...answers };
+  const askedAt = new Date().toISOString();
+  for (const q of questions) {
+    const parsed = parseAmendment(q.question);
+    const answer = answers[q.question];
+    if (!isAmendment(q) || !parsed || answer === undefined) continue;
+    const approved = answer.trim().toLowerCase().startsWith("approve");
+    const status = approved ? "approved" : "rejected";
+    recordAmendment(projectDir, entryId, { ...parsed, status, askedAt, decidedAt: new Date().toISOString() });
+    out[q.question] = approved
+      ? `Approved: the test author will change ${parsed.file}. Go on with the other tasks.`
+      : `Rejected: ${parsed.file} stays as it is. Make the code pass it as written.${answer === REJECT_AMENDMENT ? "" : ` The human says: ${answer}`}`;
+  }
+  return out;
+}
+
 /**
  * Answers an agent's questions: from the answer book, else (in
  * `recommended-then-review`) with the recommended options, else by holding
  * the agent until a human answers. Resolves with the answers, or `{}` on Stop.
- * Without options every question waits.
+ * Without options every question waits. A call with a test amendment (header
+ * `Test amendment`) gets Dex's two options and always waits; the decision goes
+ * to `amendments.json` and the agent gets what it means.
  */
 export async function askQuestions(
+  io: HumanIO,
+  entryId: string | null,
+  questions: UserInputQuestion[],
+  opts?: QuestionOptions,
+): Promise<Record<string, string>> {
+  if (!questions.some(isAmendment)) return answerQuestions(io, entryId, questions, opts);
+  const asked = questions.map(withAmendmentOptions);
+  const unreadable = unreadableAmendments(entryId, asked);
+  if (unreadable) return answeredAtOnce(io, asked, unreadable, "default");
+  const answers = await answerQuestions(io, entryId, asked);
+  return entryId ? settleAmendments(io.projectDir, entryId, asked, answers) : answers;
+}
+
+async function answerQuestions(
   io: HumanIO,
   entryId: string | null,
   questions: UserInputQuestion[],

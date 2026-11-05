@@ -1,5 +1,6 @@
 import type { RunLogger } from "../log.js";
 import type { Policy } from "../policy.js";
+import type { StageScope } from "../scope.js";
 import type { EmitFn, RunConfig, StepType, TaskPhase } from "../types.js";
 
 /** Context passed to runStep. Everything a runner needs to execute one step. */
@@ -25,8 +26,10 @@ export interface StepContext {
   env?: Record<string, string>;
   /** The queue entry this step works on; absent for project-level steps. */
   entryId?: string;
-  /** The project's policy; the Claude runner enforces it, the mock ignores it. */
+  /** The project's policy; both runners enforce it on writes (016 R16). */
   policy: Policy;
+  /** The stage's write scope (016 R9); absent for a stage with none. */
+  scope?: StageScope;
 }
 
 export interface StepResult {
@@ -69,8 +72,12 @@ export interface TaskPhaseContext {
   env?: Record<string, string>;
   /** The queue entry this phase belongs to; absent in build mode. */
   entryId?: string;
-  /** The project's policy; the Claude runner enforces it, the mock ignores it. */
+  /** The project's policy; both runners enforce it on writes (016 R16). */
   policy: Policy;
+  /** The implement stage's write scope: the frozen test set (016 R9). */
+  scope?: StageScope;
+  /** The attempt's structured output (016 `ATTEMPT_SCHEMA`: summary and notes). */
+  outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
 }
 
 export interface TaskPhaseResult {
@@ -79,6 +86,8 @@ export interface TaskPhaseResult {
   inputTokens: number;
   outputTokens: number;
   limitHit?: LimitHit | null;
+  /** Present when outputFormat was supplied and the agent returned it. */
+  structuredOutput?: unknown | null;
 }
 
 export interface AgentRunner {

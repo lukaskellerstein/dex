@@ -34,7 +34,13 @@ export type PauseReason =
   | "preflight_failed"
   | "limit_reached"
   | "no_progress"
-  | "invalid_input";
+  | "invalid_input"
+  // 016: raised by Dex's own gates (data-model.md § State changes)
+  | "red_first_green"
+  | "plan_changed"
+  | "tests_changed"
+  | "stalled"
+  | "flaky_check";
 
 interface ConfigSnapshot {
   model: string;

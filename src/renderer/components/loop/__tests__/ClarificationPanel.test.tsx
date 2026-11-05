@@ -30,6 +30,7 @@ function snapshot(status: "paused" | "running", pending: PendingRequest[] = [GAT
     state: { status, pendingRequests: pending } as unknown as RunSnapshot["state"],
     queue: null,
     errors: [],
+    digests: [],
   };
 }
 
@@ -49,6 +50,16 @@ describe("ClarificationPanel", () => {
     fireEvent.click(screen.getByTestId("pause-option-continue"));
     fireEvent.click(screen.getByTestId("pause-option-continue"));
     expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it("links the entry's digest when the pause wrote one, and only then", () => {
+    const withDigest = { ...snapshot("paused"), digests: ["001-alpha"] };
+    const { rerender } = render(
+      <ClarificationPanel snapshot={withDigest} isRunning={false} onResume={() => {}} projectDir="/p" />,
+    );
+    expect(screen.getByTestId("pause-digest-link").textContent).toBe("Read the digest for 001-alpha");
+    rerender(<ClarificationPanel snapshot={snapshot("paused")} isRunning={false} onResume={() => {}} projectDir="/p" />);
+    expect(screen.queryByTestId("pause-digest-link")).toBeNull();
   });
 
   it("Stop closes the card and leaves the run paused", () => {

@@ -1,16 +1,19 @@
 /**
- * What: What happens after each per-entry stage, and the check before the next one (research R4, R9, R13) — `recordStage` writes `state.current`, adds the cost and keeps the implement counter (runs that checked no new in-scope task); `frozenCheck` pauses when the stage changed a frozen file; `leftUncommitted` lists what the stage did not commit (the loop emits `tree_dirty`); `progressCheck` stops a loop: the same entry and stage picked again right after it ran (`no_progress`), or implement without progress too often (`limit_reached`); `verifyRoundsCheck`, `limitCheck` and `runBudgetLeft` apply the policy's other limits; `gateCheck` pauses after a stage the entry gates (R10). Every pause names the limit or the gate it hit.
+ * What: What happens after each per-entry stage, and the check before the next one (research R4, R9, R13) — `recordStage` writes `state.current`, adds the cost and keeps the implement counter (016: runs that did not pass Dex's progress gate); `stallCheck` (three equal implement fingerprints) and `flakyCheck` (a check flaky three times) pause from the evidence (016 R11, R12); `frozenCheck` pauses when the stage changed a frozen file; `leftUncommitted` lists what the stage did not commit (the loop emits `tree_dirty`); `progressCheck` stops a loop: the same entry and stage picked again right after it ran (`no_progress`), or implement without progress too often (`limit_reached`); `verifyRoundsCheck`, `limitCheck` and `runBudgetLeft` apply the policy's other limits; `gateCheck` pauses after a stage the entry gates (R10). Every pause names the limit or the gate it hit.
  * Not: Does not run stages or pick them. Stores nothing about a gate's approval: Resume is the approval.
  * Deps: state.mutateState, git.frozenChangesSince, branching.dirtyFiles, picker.PickerDecision, policy.PolicyLimits, queue.ResolvedEntry.
  */
 
 import type { LimitHit } from "../agent/AgentRunner.js";
 import { dirtyFiles } from "../branching.js";
+import type { StageRecord } from "../evidence.js";
+import { flakyPause, type GatePause, stalled } from "../gates.js";
 import { frozenChangesSince } from "../git.js";
 import type { PickerDecision } from "../picker.js";
 import type { PolicyLimits } from "../policy.js";
 import type { ResolvedEntry, StageName } from "../queue.js";
-import { type DexStateV2, mutateState, type PauseReason } from "../state.js";
+import { isGreen, type SensorRun } from "../sensors.js";
+import { type DexStateV2, mutateState } from "../state.js";
 
 export interface LastStage {
   entryId: string;
@@ -18,24 +21,24 @@ export interface LastStage {
   taskPhase: number | null;
 }
 
-export interface ImplementProgress {
-  checkedBefore: number;
-  checkedAfter: number;
-}
-
-/** Records the stage that just ran. Returns the entry's runs-without-progress count. */
+/**
+ * Records the stage that just ran. `progressPassed` is the implement run's
+ * progress gate (null for any other stage, and for a stopped one): a pass
+ * resets the entry's runs-without-progress count, a fail adds one (FR-031).
+ * Returns the count.
+ */
 export function recordStage(
   projectDir: string,
   last: LastStage,
   costUsd: number,
-  implement: ImplementProgress | null,
+  progressPassed: boolean | null,
 ): number {
   let count = 0;
   mutateState(projectDir, (s) => {
     const counters = { ...s.counters };
     count = counters[last.entryId]?.implementRunsWithoutProgress ?? 0;
-    if (implement) {
-      count = implement.checkedAfter > implement.checkedBefore ? 0 : count + 1;
+    if (progressPassed !== null) {
+      count = progressPassed ? 0 : count + 1;
       counters[last.entryId] = { implementRunsWithoutProgress: count };
     }
     return { ...s, current: last, cumulativeCostUsd: s.cumulativeCostUsd + costUsd, counters };
@@ -43,9 +46,28 @@ export function recordStage(
   return count;
 }
 
-export interface Guard {
-  reason: PauseReason;
-  detail: string;
+export type Guard = GatePause;
+
+/** Three implement runs in a row with the same fingerprint (R11): pause with the evidence. */
+export function stallCheck(records: StageRecord[]): Guard | null {
+  const implement = records.filter((r) => r.stage === "implement");
+  if (!stalled(implement.map((r) => r.fingerprint))) return null;
+  const last = implement.slice(-3);
+  const failing = (last.at(-1)?.runs ?? []).filter((r) => !isGreen(r));
+  const evidence =
+    failing.length > 0
+      ? failing.map((r) => `${r.name}: ${r.tail.find((l) => l.trim()) ?? r.result}`).join("; ")
+      : "no check is red, and the runs changed nothing";
+  const files = last.map((r) => `implement-${r.n}.json`).join(", ");
+  return {
+    reason: "stalled",
+    detail: `${last[0].entryId}: the last three implement runs ended the same way (${evidence}) — see .dex/evidence/${last[0].entryId}/{${files}}`,
+  };
+}
+
+/** A check that flaked again and has now flaked three times for the entry (R12). */
+export function flakyCheck(records: StageRecord[], latest: SensorRun[]): Guard | null {
+  return flakyPause(records, latest);
 }
 
 /**
@@ -104,16 +126,22 @@ export function progressCheck(
   limits: PolicyLimits,
 ): Guard | null {
   if (!last || decision.kind !== "stage" || decision.entry.id !== last.entryId) return null;
-  if (decision.stage === "implement") {
+  // A red baseline turns verify into a restore run, so the limit guards it too.
+  if (
+    decision.stage === "implement" ||
+    (decision.stage === "verify" && last.stage === "implement")
+  ) {
     const runs = counters[last.entryId]?.implementRunsWithoutProgress ?? 0;
     const max = limits.maxImplementRunsWithoutProgress;
     if (runs < max) return null;
     return {
       reason: "limit_reached",
-      detail: `implement ran ${runs} times for ${last.entryId} without checking a new task (limits.maxImplementRunsWithoutProgress: ${max})`,
+      detail: `implement ran ${runs} times for ${last.entryId} without passing the progress gate (limits.maxImplementRunsWithoutProgress: ${max})`,
     };
   }
   if (decision.stage !== last.stage) return null;
+  // After a red-first crash the picker asks for tests again: the red-first gate allows that once (R20).
+  if (decision.stage === "tests") return null;
   return {
     reason: "no_progress",
     detail: `${last.stage} ran for ${last.entryId}, but the files still ask for ${decision.stage}: ${decision.reason}`,

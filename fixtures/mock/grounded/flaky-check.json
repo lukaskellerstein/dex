@@ -1,0 +1,16 @@
+{
+  "entries": {
+    "*": {
+      "implement": {
+        "delay": 0,
+        "writes": [
+          {
+            "path": "src/fixture-a/greet.ts",
+            "content": "// fixture A, written by the mock implement stage.\nexport const greet = (name: string): string => \"Hello, \" + name;\n"
+          }
+        ]
+      },
+      "verify": { "delay": 0, "rounds": [{ "verdict": "passed" }] }
+    }
+  }
+}

@@ -5,8 +5,9 @@
     {
       "id": "900-fixture-a",
       "title": "Fixture A — finish the greeter",
-      "skip": ["brief", "specify", "clarify", "plan", "tasks"],
-      "tasks": ["T002", "T004-T005"]
+      "skip": ["brief", "specify", "clarify", "plan", "tasks", "tests"],
+      "tasks": ["T002", "T004-T005"],
+      "acceptance": [{ "name": "greet", "command": "node .dex/fake/check.mjs greet" }]
     },
     {
       "id": "901-fixture-b",

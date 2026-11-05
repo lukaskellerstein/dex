@@ -108,18 +108,39 @@
           }
         ]
       },
+      "tests": {
+        "delay": 300,
+        "writes": [
+          {
+            "path": "{specDir}/acceptance.test.mjs",
+            "content": "// {feature}: the acceptance test, written by the mock tests stage. The fake sensor stands in for it.\n"
+          },
+          {
+            "path": "{specDir}/acceptance.json",
+            "content": "{\n  \"version\": 1,\n  \"command\": \"node .dex/fake/check.mjs acceptance\",\n  \"failExitCodes\": [1],\n  \"files\": [\"{specDir}/acceptance.test.mjs\"],\n  \"covers\": [{ \"test\": \"acceptance.test.mjs › the main flow\", \"criterion\": \"SC-001\" }]\n}\n"
+          },
+          { "path": ".dex/fake/acceptance", "content": "1\n" }
+        ],
+        "structured_output": { "summary": "mock: one acceptance test for SC-001" }
+      },
       "implement": {
         "delay": 300,
         "writes": [
           {
             "path": "src/{feature}/index.ts",
             "content": "// {feature}: written by the mock implement stage (run {shortRunId}).\nexport const feature = \"{feature}\";\n"
-          }
+          },
+          { "path": ".dex/fake/acceptance", "content": "0\n" }
         ]
       },
       "verify": {
         "delay": 300,
         "rounds": [
+          {
+            "verdict": "passed",
+            "hypotheses": ["the entry's tasks were ticked before its acceptance tests existed"],
+            "fixTasks": ["Make the acceptance tests in {specDir} pass"]
+          },
           {
             "verdict": "passed"
           }

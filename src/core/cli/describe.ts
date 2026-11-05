@@ -1,15 +1,30 @@
 /**
- * What: The read-only views of `dex run` (contracts/cli.md). `dryRunLines`: the queue and policy summary, then one block per remaining entry — the decision, the branch move, the stage env, the SDK options, the system prompt and the full prompt — each entry evaluated on its own tree, as if every earlier entry were done. `statusLines`: the run snapshot the app reads — the run's state and cost, every entry's derived status and cost, and what waits for a human. Both read files and git only.
+ * What: The read-only views of `dex run` (contracts/cli.md). `dryRunLines`: the queue and policy summary, then one block per remaining entry — the decision, the branch move, the stage env, the SDK options, the system prompt, the sensors Dex would run (016: fast, standing, acceptance) and the full prompt — each entry evaluated on its own tree, as if every earlier entry were done. `statusLines`: the run snapshot the app reads — the run's state and cost, every entry's derived status and cost, and what waits for a human. Both read files and git only.
  * Not: Starts no agent, switches no branch and writes nothing (a v2 manifest is migrated in memory only). Does not parse arguments or pick exit codes (cli.ts does).
- * Deps: queue.loadQueue, policy.{loadPolicy, policyPath}, picker.{describeEntries, readEntryFile}, prompts.*, stages/cycle-stages.verifyFacts, branching.{stageBranch, dirtyFiles}, git.getCurrentBranch, agent/claudeSession.buildQueryOptions, run-snapshot.runSnapshot, state.readState, config.LOOP_DEFAULTS.
+ * Deps: queue.loadQueue, policy.{loadPolicy, policyPath}, picker.{describeEntries, readEntryFile}, entry-prompts.*, acceptance.{currentAcceptance, frozenTestSet, acceptanceSensorsFor}, attempt-log.attemptSlice, evidence.pendingAmendment, prompts.stageEnv, stages/verify-stage.verifyFacts, branching.{stageBranch, dirtyFiles}, git.getCurrentBranch, agent/claudeSession.buildQueryOptions, run-snapshot.runSnapshot, state.readState, config.LOOP_DEFAULTS.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import type { CanUseTool, Options } from "@anthropic-ai/claude-agent-sdk";
+import {
+  acceptanceSensorsFor,
+  assertEntrySensors,
+  currentAcceptance,
+  frozenTestSet,
+  RECORDED_ACCEPTANCE,
+} from "../acceptance.js";
 import { buildQueryOptions } from "../agent/claudeSession.js";
+import { attemptSlice } from "../attempt-log.js";
 import { dirtyFiles, stageBranch } from "../branching.js";
 import { LOOP_DEFAULTS } from "../config.js";
+import {
+  buildImplementPrompt,
+  buildStagePrompt,
+  buildTestsPrompt,
+  buildVerifyPrompt,
+} from "../entry-prompts.js";
+import { pendingAmendment } from "../evidence.js";
 import { getCurrentBranch } from "../git.js";
 import type { PendingRequest } from "../humanInput.js";
 import { parseTasksMd } from "../parser.js";
@@ -20,10 +35,17 @@ import {
   readEntryFile,
 } from "../picker.js";
 import { loadPolicy, type Policy, policyPath } from "../policy.js";
-import { buildImplementPrompt, buildStagePrompt, buildVerifyPrompt, stageEnv } from "../prompts.js";
-import { loadQueue, type QueueV3, type ResolvedEntry, type StageName } from "../queue.js";
+import { stageEnv } from "../prompts.js";
+import {
+  loadQueue,
+  type QueueV3,
+  queuePath,
+  type ResolvedEntry,
+  type StageName,
+} from "../queue.js";
 import { runSnapshot } from "../run-snapshot.js";
-import { verifyFacts } from "../stages/cycle-stages.js";
+import type { SensorSpec } from "../sensors.js";
+import { verifyFacts } from "../stages/verify-stage.js";
 import { type DexState, readState } from "../state.js";
 import type { RunConfig } from "../types.js";
 
@@ -40,10 +62,11 @@ function loadInput(
   const queue = loadQueue(projectDir, { persistMigration: false });
   if (!queue) return null;
   const policy = loadPolicy(projectDir, queue.kind);
+  assertEntrySensors(queue, policy, queuePath(projectDir));
   return {
     queue,
     policy,
-    input: { projectDir, queue, runBranch: readState(projectDir)?.runBranch ?? null },
+    input: { projectDir, queue, runBranch: readState(projectDir)?.runBranch ?? null, policy },
   };
 }
 
@@ -126,24 +149,78 @@ function goalPathOf(projectDir: string, kind: QueueV3["kind"]): string | null {
   return kind === "new" && fs.existsSync(goal) ? goal : null;
 }
 
+/** A dry run runs no sensor, so the verify prompt is shown in review mode with no acceptance runs. */
+const VERIFY_NOTE =
+  "(the verify mode follows Dex's own acceptance run, which a dry run does not do: red → diagnose, green → review; shown: review)\n\n";
+
 function promptFor(
   input: PickerInput,
+  policy: Policy,
   entry: ResolvedEntry,
   stage: StageName,
   taskPhase: number | null,
 ): string {
   const { projectDir, queue } = input;
   const tasksMd = () => readEntryFile(input, entry, `${entry.specDir}/tasks.md`) ?? "";
+  const attempts = attemptSlice(projectDir, entry.id);
   if (stage === "implement") {
     const phase = parseTasksMd(tasksMd()).find((p) => p.number === taskPhase);
     if (!phase) return `(${entry.specDir}/tasks.md has no phase ${taskPhase})`;
     return buildImplementPrompt(entry, projectDir, {
       phase,
       goalPath: goalPathOf(projectDir, queue.kind),
+      frozen: frozenTestSet(entry, currentAcceptance(projectDir, entry, policy)),
+      attempts,
     });
   }
-  if (stage === "verify") return buildVerifyPrompt(entry, projectDir, verifyFacts(tasksMd()));
+  if (stage === "tests") {
+    const { testGlobs, testSupport } = policy;
+    const amendment = pendingAmendment(projectDir, entry.id);
+    return buildTestsPrompt(entry, projectDir, { testGlobs, testSupport, lastCrash: null, amendment, attempts });
+  }
+  if (stage === "verify") {
+    const extras = {
+      ...verifyFacts(tasksMd()),
+      mode: "review" as const,
+      acceptance: [],
+      diffStat: null,
+      browser: policy.verify.browser,
+      attempts,
+    };
+    return `${VERIFY_NOTE}${buildVerifyPrompt(entry, projectDir, extras)}`;
+  }
   return buildStagePrompt(queue, entry, projectDir, stage);
+}
+
+/** One sensor row: kind, name, command, timeout, and a note. */
+function sensorRow(kind: string, s: SensorSpec, note = ""): string {
+  const command = s.command.length < 30 ? s.command.padEnd(30) : `${s.command} `;
+  return `  ${kind.padEnd(11)} ${s.name.padEnd(12)} ${command} ${`${s.timeoutSec}s`.padStart(6)}${note}`;
+}
+
+/**
+ * 016 contracts/cli.md § dry run: every sensor Dex would run for the entry —
+ * fast (the policy's, then the entry's), standing, and acceptance (the record's
+ * command, or who writes it, then the queue's). Reads files; runs nothing.
+ */
+function sensorLines(projectDir: string, policy: Policy, entry: ResolvedEntry): string[] {
+  const lines = [
+    ...policy.checks.fast.map((s) => sensorRow("fast", s)),
+    ...entry.checks.map((s) => sensorRow("fast", s, "   (entry)")),
+    ...policy.checks.standing.map((s) => sensorRow("standing", s)),
+  ];
+  const skipsTests = entry.skip.includes("tests");
+  const record = skipsTests ? null : currentAcceptance(projectDir, entry, policy);
+  if (skipsTests && entry.acceptance.length === 0) {
+    lines.push("  acceptance none — the entry will pause before implement");
+  } else if (!skipsTests && !record) {
+    lines.push("  acceptance (written by the tests stage)");
+  }
+  for (const s of acceptanceSensorsFor(entry, record)) {
+    const recorded = record !== null && s.name === RECORDED_ACCEPTANCE;
+    lines.push(sensorRow("acceptance", s, recorded ? "   (acceptance.json)" : ""));
+  }
+  return lines;
 }
 
 function entryBlock(
@@ -158,7 +235,7 @@ function entryBlock(
   const env = { ...policy.env, ...stageEnv(entry, stage, input.queue.kind) };
   let prompt: string;
   try {
-    prompt = promptFor(input, entry, stage, view.taskPhase);
+    prompt = promptFor(input, policy, entry, stage, view.taskPhase);
   } catch (err) {
     prompt = `(cannot build the prompt — ${message(err)})`;
   }
@@ -171,6 +248,8 @@ function entryBlock(
         .join(" ") || "(none)"
     }`,
     ...sdkLines(input.projectDir, policy, env),
+    "sensors  :",
+    ...sensorLines(input.projectDir, policy, entry),
     "prompt   :",
     ...indent(prompt),
   ];
