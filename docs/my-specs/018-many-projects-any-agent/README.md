@@ -6,7 +6,7 @@
 >
 > **Takes from REX** (`~/Projects/Github/lukaskellerstein/rex`): its agent library `agent-runner/` (REX specs 42, 44, 47) and its built-in gateway `local-gateway/` (REX spec 46). DEX **uses** both instead of porting them. [Appendix B](#appendix-b--what-changes-in-rexs-library) lists the changes REX's library needs before a second app can use it. Those changes also remove the places where the library still names REX.
 >
-> **Timing:** after 017. It doesn't block `onion-demo-01`, whose queue runs on Claude through 015–017. 015 built `policy.ts` over Claude's tool names; this spec converts it (D-018-4).
+> **Timing:** after 017. It doesn't block the first real `dex-ecommerce` queue, which runs on Claude through 015–017. 015 built `policy.ts` over Claude's tool names; this spec converts it (D-018-4).
 >
 > **How to start:** milestone 0 comes first, in the REX repo: the measurements in [Implementation order](#implementation-order) and the library changes in Appendix B, released as a REX tag. Then commit this brief on DEX `main`, start `claude -w 018-many-projects-any-agent`, and run `/speckit-specify` with this file as the feature description.
 
@@ -14,7 +14,7 @@
 
 Two limits remain after 017.
 
-1. **One project at a time.** `orchestrator.ts` keeps one module-level `runtimeState.currentContext`. The `orchestrator:start` IPC takes one `RunConfig`, and `stopRun()` stops "the" run. While `onion-demo-01` runs overnight, no other project runs.
+1. **One project at a time.** `orchestrator.ts` keeps one module-level `runtimeState.currentContext`. The `orchestrator:start` IPC takes one `RunConfig`, and `stopRun()` stops "the" run. While one project runs overnight, no other project runs.
 2. **One agent.** `agent/index.ts` knows `claude` and `mock`. `ClaudeAgentRunner.ts` (873 lines) imports the Claude Agent SDK, and the stages lean on Claude-only behaviour:
    - `/speckit-*` skill dispatch;
    - `AskUserQuestion` interception;
@@ -62,16 +62,16 @@ flowchart LR
         SUP["supervisor<br/><i>start · stop · tail files</i>"]
         INBOX["Needs you"]
     end
-    subgraph R1["dex run onion-demo-01"]
+    subgraph R1["dex run dex-ecommerce-a"]
         L1["loop: picker · policy · gates"]
         A1["agent-runner<br/><i>Python child</i>"]
     end
-    subgraph R2["dex run dex-ecommerce"]
+    subgraph R2["dex run dex-ecommerce-b"]
         L2["loop"]
         A2["agent-runner"]
     end
-    F1[("onion-demo-01/.dex/<br/>state · events · inbox")]
-    F2[("dex-ecommerce/.dex/")]
+    F1[("dex-ecommerce-a/.dex/<br/>state · events · inbox")]
+    F2[("dex-ecommerce-b/.dex/")]
     M[("~/.dex/<br/>projects · agents · gateways<br/>slots · locks · ledger")]
     GW["built-in gateway<br/><i>LiteLLM on 127.0.0.1</i>"]
     SUP -->|spawn| R1
@@ -158,7 +158,7 @@ Every stage result shares one small schema: `summary`, `questions`, `lessons` (0
 
 ### D-018-6 — Every agent gets the project's instructions
 
-Claude Code loads `CLAUDE.md` and `.claude/rules/*.md` itself. Codex and OpenCode read `AGENTS.md`, and milestone 0 checks what OpenCode does with `CLAUDE.md`. `onion-demo-01` has `.claude/CLAUDE.md` and 17 rule files (72 KB), and no `AGENTS.md`, so a Codex run there wouldn't see any of its rules.
+Claude Code loads `CLAUDE.md` and `.claude/rules/*.md` itself. Codex and OpenCode read `AGENTS.md`, and milestone 0 checks what OpenCode does with `CLAUDE.md`. A `dex-ecommerce` clone has its spec-kit skills under `.claude/skills/` and no `AGENTS.md`, so a Codex run there wouldn't see any of them.
 
 - **What counts.** The project's agent instructions are 017's docs with `audience: agent` and `read: always`. Without a docs list, DEX uses `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and `AGENTS.md`.
 - **Inlining.** For an agent that doesn't load a file itself, DEX appends it to the system prompt under its path.
@@ -183,7 +183,7 @@ The library reports these facts per route (Appendix B2). Before each stage, DEX 
 - **Write scopes and frozen files** (015, 016) need nothing from the agent. DEX checks them again from git after every stage, for every agent, and a veto before the write is an extra layer where the agent has one.
 - **The context window** must fit (D-018-6).
 
-A stage that needs something its agent lacks doesn't start, and the refusal names the rule and the agent. For example: "implement for 021 can't run on codex: policy deny[4] (`kubectl delete`) needs a veto before the command runs, and Codex reports commands only after its sandbox has run them."
+A stage that needs something its agent lacks doesn't start, and the refusal names the rule and the agent. For example: "implement for 003-promo-codes can't run on codex: policy deny[0] (`git push --force`) needs a veto before the command runs, and Codex reports commands only after its sandbox has run them."
 
 `dex run --dry-run` prints this table for the whole queue. The library checks again when the run starts. In REX's words: "a capability flag and a run-time check that could disagree are two ways to be wrong".
 
@@ -253,7 +253,7 @@ Where DEX differs from REX, because several DEX processes share one gateway:
 
 - **Slots** are lock files in `~/.dex/slots/`, created exclusively and holding a pid. A dead pid frees its slot.
   - A stage takes a slot before it starts and gives it back when it ends. Waiting for a human holds none.
-  - A stage that is waiting says what for, for example: "waiting for gateway builtin (1/1 in use: onion-demo-01 implement)".
+  - A stage that is waiting says what for, for example: "waiting for gateway builtin (1/1 in use: dex-ecommerce-a implement)".
 - **Spend** is appended to `~/.dex/ledger/<date>.jsonl` after each stage, and DEX adds up today's lines before each stage. Over a cap, no new stage starts in any project. Running stages finish, and an inbox item says why.
 
 ### D-018-11 — Two runs never share a tree or a declared resource
@@ -261,7 +261,7 @@ Where DEX differs from REX, because several DEX processes share one gateway:
 - **Tree locks.** A run locks its project (`.dex/run.lock`, with its pid). Machine-wide, it also locks the git top level of the project and of each `repos` entry (015), as `~/.dex/locks/<hash of real path>`.
   - A project whose locks overlap a running one waits, naming the other run. With `--no-wait` it exits instead.
   - Two worktrees of one repository are different trees, so they run in parallel.
-- **Resources.** `resources` in the policy names things outside the tree that two runs mustn't touch at once, such as `onion-demo-01`'s shared demo node. A run holds its resource locks while a stage runs.
+- **Resources.** `resources` in the policy names things outside the tree that two runs mustn't touch at once, such as a staging database that two `dex-ecommerce` clones both seed. A run holds its resource locks while a stage runs.
 
 ### D-018-12 — The app shows the projects, then a project
 
@@ -339,14 +339,14 @@ Where DEX differs from REX, because several DEX processes share one gateway:
    - the `agent-host` pin, the generated types, `LibraryBackend` and `MockBackend`, and one `run()`;
    - Claude through the library must match the current runner on `dex-ecommerce`: first the mock queue, then one real entry;
    - then delete `ClaudeAgentRunner.ts`.
-2. **Agent-neutral stages** (D-018-4, -5, -6). A dry run on `onion-demo-01` shows the same prompts for every agent, apart from the inlined instructions.
+2. **Agent-neutral stages** (D-018-4, -5, -6). A dry run on a `dex-ecommerce` clone shows the same prompts for every agent, apart from the inlined instructions.
 3. **Profiles and eligibility** (D-018-7, -8).
 4. **Gateways** (D-018-9).
    - Claude, Codex and OpenCode each run one `dex-ecommerce` entry on Original.
    - Claude and OpenCode each run a stage through the built-in gateway to a local model.
 5. **Many projects** (D-018-2, -3, -10, -11): the supervisor, inbox, slots, locks, ledger and CLI.
 6. **UI** (D-018-12).
-7. **Dogfood.** On one machine, overnight: `onion-demo-01` on Claude, and `dex-ecommerce` on OpenCode with a local model.
+7. **Dogfood.** On one machine, overnight, two scratch clones: `dex-ecommerce-a` on Claude, and `dex-ecommerce-b` on OpenCode with a local model.
 
 **Milestone 0 measurements.** Following REX's practice, any finding that contradicts this brief is written into it.
 
@@ -363,7 +363,7 @@ Where DEX differs from REX, because several DEX processes share one gateway:
 - [ ] The mock queue on `dex-ecommerce` runs to done at $0, on a machine with no Python environment.
 - [ ] The same `dex-ecommerce` entry reaches a verify record under Claude, Codex and OpenCode on Original, and each record names its agent and model.
 - [ ] Claude and OpenCode, through the built-in gateway to a local model, each run a stage. DEX's gates decide the result: a failure is a named gate failure, never a crash or a silent "done".
-- [ ] `dex run --dry-run` on `onion-demo-01` prints the eligibility table. Codex is refused for every stage while the policy has shell rules, with the rule named, unless milestone 0 found a veto.
+- [ ] `dex run --dry-run` on a `dex-ecommerce` clone prints the eligibility table. Codex is refused for every stage while the policy has shell rules, with the rule named, unless milestone 0 found a veto.
 - [ ] Two projects run at once. Their events, inbox items and evidence never mix. Stopping one leaves none of its `claude`, `codex` or `opencode` processes behind (`pgrep`), and the other keeps going.
 - [ ] Two registered projects on the same git top level can't run together; two worktrees of one repository can.
 - [ ] Two projects that declare the same resource never run stages at the same time, as event timestamps show.
@@ -400,21 +400,23 @@ The proposed default is in bold.
 8. **Concurrency:** **3 stages; 1 per local-only gateway** | other numbers.
 9. **Built-in gateway master key:** **Keychain, new on each start** | a file readable only by the owner (mode 0600).
 
-## Appendix A — `onion-demo-01`
+## Appendix A — two `dex-ecommerce` scratch clones
 
-- **Profile:** `claude` for every stage. The queue doesn't change.
+- **Projects:** `dex-ecommerce-a` and `dex-ecommerce-b`, each a scratch clone with `origin` on its own scratch bare repo.
+- **Profile:** `claude` for every stage of `dex-ecommerce-a`. The queue doesn't change.
 - **Policy additions:**
 
   ```json
   "agents": { "default": "claude" },
-  "resources": ["onion-demo-node"]
+  "resources": ["shop-staging-db"]
   ```
 
 - **The expected dry run:**
   - **Claude:** eligible for every stage.
-  - **OpenCode:** eligible once milestone 0 item 3 holds. DEX inlines `.claude/CLAUDE.md` and the 17 rule files, about 18k tokens per stage.
-  - **Codex:** refused for every stage, because the policy's `deny` rules cover `kubectl`, `helm`, `terraform`, `sops`, `mgmt-01` and force-push.- **A checker from another vendor on Onion** is OpenCode with an OpenAI model through the built-in gateway, set as `"stages": {"verify": "<that profile>"}`. Only after milestone 0, and not the default.
-- **The resource lock** means two Onion worktrees, for example the Month 2 and Month 3 queues, never deploy to the demo node at the same time.
+  - **OpenCode:** eligible once milestone 0 item 3 holds. DEX inlines the clone's agent instructions, and the dry run prints their token count.
+  - **Codex:** refused for every stage, because the policy's `deny` rules cover force-push.
+- **A checker from another vendor** is OpenCode with an OpenAI model through the built-in gateway, set as `"stages": {"verify": "<that profile>"}`. Only after milestone 0, and not the default.
+- **The resource lock** means the two clones never seed the staging database at the same time.
 
 ## Appendix B — what changes in REX's library
 

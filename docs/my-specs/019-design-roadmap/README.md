@@ -15,7 +15,7 @@
 
 ## Why
 
-DEX can turn a goal into features only for a **new** project: `GOAL.md` → clarification → `GOAL_clarified.md` → a feature list (`stages/manifest-extraction.ts`). All the features then go on one run branch, with one optional PR at the end. 015 kept that path and added the queue with `generate` briefs, but in an existing project a human still writes the queue. `onion-demo-01`'s queue was written by hand from its monthly plan.
+DEX can turn a goal into features only for a **new** project: `GOAL.md` → clarification → `GOAL_clarified.md` → a feature list (`stages/manifest-extraction.ts`). All the features then go on one run branch, with one optional PR at the end. 015 kept that path and added the queue with `generate` briefs, but in an existing project a human still writes the queue. The queue of a `dex-ecommerce` scratch clone is still written by hand.
 
 What's missing:
 

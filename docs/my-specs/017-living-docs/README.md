@@ -6,7 +6,7 @@
 >
 > **Followed by** [`018-many-projects-any-agent`](../018-many-projects-any-agent/README.md): several projects at once, and Codex and OpenCode next to Claude. Its agents get the project's instructions from this spec's `docs` list (D-018-6).
 >
-> **Timing:** 017 doesn't block the first real run on `onion-demo-01` at the end of 016. It should land before that queue reaches its first generated brief (022), because the `brief` stage reads the docs and the previous entry's digest (D-017-7).
+> **Timing:** 017 doesn't block the first real run on a `dex-ecommerce` scratch clone at the end of 016. It should land before that queue reaches its first generated brief, because the `brief` stage reads the docs and the previous entry's digest (D-017-7).
 
 ## Why
 
@@ -25,7 +25,7 @@ Lasting memory is the risky one, for four reasons:
 - **Two debts grow quietly:** *comprehension debt* (code nobody understands) and *intent debt* (the "why" is lost unless it's written down). A smooth loop grows both faster.
 - **spec-kit records history, not the present.** Each spec says what one feature intended at the time it was written. Nothing in them says what the system is today, which is what an agent starting a run needs.
 
-The projects already know the answer. `onion-demo-01` rule 07 says to keep `README.md` and `docs/` true to the code, and Dex's own workflow has a feature-docs step. Nothing checks either. So this spec makes **the project's documentation the only lasting memory**: written to the repo, reviewed as diffs, revertible with git, checked by the loop.
+Dex already knows the answer: its own workflow has a feature-docs step that keeps the docs true to the code. Nothing checks it. So this spec makes **the project's documentation the only lasting memory**: written to the repo, reviewed as diffs, revertible with git, checked by the loop.
 
 ## What changes
 
@@ -109,7 +109,7 @@ When the `brief` stage writes the next entry's brief, it reads:
 - the decision log;
 - the previous entry's digest (016, D-016-10).
 
-That is how what Month 1 learned reaches the Month 2 brief: through reviewed text, not through an agent's private notes.
+That is how what one entry learned reaches the next entry's brief: through reviewed text, not through an agent's private notes.
 
 ### D-017-8 — Spec folders are history, never the architecture
 
@@ -142,7 +142,7 @@ After every phase, `npm test` and `npm run typecheck` pass.
 4. The `docs` stage in apply and baseline modes; the picker rows (D-017-6).
 5. Handoff into the `brief` stage (D-017-7).
 6. The mock scenarios.
-7. Configure `onion-demo-01` (Appendix A) and run `dex docs check` there. The first findings are a baseline, not a failure: list them in the digest and fix them as a docs entry, with the owner's approval.
+7. Configure the `dex-ecommerce` scratch clone (Appendix A) and run `dex docs check` there. The first findings are a baseline, not a failure: list them in the digest and fix them as a docs entry, with the owner's approval.
 
 ## Verification (DoD)
 
@@ -162,7 +162,7 @@ After every phase, `npm test` and `npm run typecheck` pass.
 | The next entry's `brief` stage runs | its prompt includes the previous digest and the `read: always` docs |
 
 - [ ] A loop agent's environment has `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, and a mock run leaves the owner's auto-memory directory unchanged.
-- [ ] On `onion-demo-01`, `dex docs check` runs, and its findings are listed for the owner.
+- [ ] On the `dex-ecommerce` scratch clone, `dex docs check` runs, and its findings are listed for the owner.
 
 ## Out of scope
 
@@ -171,7 +171,7 @@ After every phase, `npm test` and `npm run typecheck` pass.
 - Publishing a docs site.
 - Executing commands found in docs (D-017-4 says why).
 - Vector search or embeddings over docs.
-- Docs outside the project's `writeRoots`; they stay read-only (see Appendix A).
+- Docs outside the project's `writeRoots`; they stay read-only.
 
 ## Open decisions
 
@@ -182,19 +182,19 @@ The proposed default is in bold.
 3. **Over `maxLines`:** **listed in the digest** | blocks done.
 4. **When approved lessons are applied:** **before the next stage, on the current entry's branch** | in one batch at the end of each entry.
 
-## Appendix A — onion-demo-01
+## Appendix A — a dex-ecommerce scratch clone
+
+The clone has no architecture doc yet, so it also exercises the `docs-baseline` mode (D-017-6).
 
 | Doc | Audience | Read | Covers | Notes |
 |---|---|---|---|---|
-| `workload/onion-platform/docs/architecture.md` (518 lines) | human | always | `workload/onion-platform/{svc,agent,policies,connectors,adapters,tools,helm}/**` | `maxLines` 600 |
-| `workload/onion-platform/docs/runbook.md` | human | onDemand | `workload/onion-platform/helm/**`, `cluster/**` | tested by acceptance, not by Dex executing it |
-| `workload/onion-platform/docs/measurement-protocol.md` | human | onDemand | `workload/onion-platform/tools/*-evidence/**` | |
-| `workload/onion-platform/IMPLEMENTATION-LOG.md` (6,041 lines) | human, decision log | onDemand | — | `appendOnly`; rule 04 already requires every delegated decision to be logged here |
-| `README.md`, `demo/README.md`, `demo/gap-report.md` | human | `README.md` always, the rest onDemand | `demo/**` | |
-| `workload/tenants/*/README.md`, `workload/sectors/*/README.md` | human | onDemand | that repo | |
-| `.claude/CLAUDE.md`, `.claude/rules/*.md` | agent | loaded by Claude Code | — | where `command`, `convention` and `gotcha` lessons go |
-| `.claude/rules/lsp.md`, `.claude/rules/machine-tools.md` | agent | loaded by Claude Code | — | `maintain: false`: delivered verbatim from mac-setup, never reworded |
+| `README.md` | human | always | `src/**` | |
+| `GOAL_technical_domain.md` | human | always | `src/**` | the stack, the folder structure and the constraints |
+| `GOAL.md`, `GOAL_clarified.md`, `GOAL_product_domain.md` | human | onDemand | — | `maintain: false`: the owner's intent, changed only by the owner |
+| `docs/architecture.md` | human | always | `src/{catalog,cart,accounts}/**` | written by a `docs-baseline` entry; `maxLines` 400 |
+| `docs/decisions.md` | human, decision log | onDemand | — | `appendOnly`; created by the same `docs-baseline` entry |
+| `CLAUDE.md`, `.claude/rules/*.md` | agent | loaded by Claude Code | — | where `command`, `convention` and `gotcha` lessons go; created by the first such lesson |
+| `.claude/skills/**` | agent | loaded by Claude Code | — | `maintain: false`: installed by spec-kit |
 
-- **Lint:** `docs.lint` is `./scripts/terminology-lint.sh`.
-- **Lesson targets:** `decision` lessons go to `IMPLEMENTATION-LOG.md`; the others go to the `.claude/rules/` file the lesson names.
-- **Read-only strategy docs:** `../executive-management/` (the plan, the HLA) is outside `writeRoots`. The loop reads those docs; the founder changes them.
+- **Lint:** `docs.lint` is empty until the clone carries a markdown lint config.
+- **Lesson targets:** `decision` lessons go to `docs/decisions.md`; the others go to the `.claude/rules/` file the lesson names.
