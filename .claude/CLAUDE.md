@@ -6,7 +6,7 @@ Execute these steps in order. Do NOT skip steps.
 
 1. **Understand** — Read relevant code, ask clarifying questions, identify gaps and opportunities. For bugs: reproduce the issue first.
 2. **Plan** — Create a plan, get user approval, iterate if needed *(skip for trivial changes)*
-3. **Spec Documentation** — Update spec via `/sync-spec-kit` *(skip on `main` branch or trivial changes)*
+3. **Spec Documentation** — Change the spex records first via `/spex:clarify`, then follow `spex next` *(skip on `main` branch or trivial changes)*
 4. **Implement** — Write the code
 5. **Test** — Define DoD checklist, test, fix, repeat until it works *(see `.claude/rules/06-testing.md`)*
 6. **Feature Documentation** — Update docs via `/update-feature-docs` *(skip on `main` branch or trivial changes)*

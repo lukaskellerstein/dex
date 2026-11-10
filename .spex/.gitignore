@@ -1,0 +1,4 @@
+# written by spex init. .spex/ is spex's folder: config.yaml is committed, the rest is the script's work.
+*
+!.gitignore
+!config.yaml

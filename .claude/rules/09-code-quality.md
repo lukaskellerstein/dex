@@ -53,7 +53,7 @@ This repo opts in to:
 |:--|:--|:--|
 | biome (format + lint + live server) | `biome.jsonc` | the 117 `.ts` and 77 `.tsx` files, plus JSON |
 | ruff (format + lint + live server) | `ruff.toml` | the three hook scripts in `.claude/hooks/` — nothing else here is Python |
-| shfmt | `.editorconfig` | `dev-setup.sh`, `scripts/*.sh`, `.specify/**/*.sh` |
+| shfmt | `.editorconfig` | `dev-setup.sh`, `scripts/*.sh`, `.claude/hooks/*.sh` |
 | shellcheck | `.shellcheckrc` | same |
 | markdownlint-cli2 | `.markdownlint-cli2.yaml` | the 211 tracked `.md` — more files than TypeScript, so this one is not incidental |
 
