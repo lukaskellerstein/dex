@@ -1,9 +1,10 @@
 # .spex/config.yaml — written by spex init (runner: vitest). Edit what the scan got wrong. Commit this file.
-format: 2 # the shape of specs/ and .spex/; spex update changes it, nothing else does
+format: 3 # the shape of specs/ and .spex/; spex update changes it, nothing else does
 acceptance_dir: tests/acceptance
 # {ids} becomes REQ_007_001|REQ_007_002 (a regex); {ids_k} becomes "REQ_007_001 or REQ_007_002" (pytest -k)
 # node --test, like test:core: vitest.config.ts includes only src/renderer/**, so vitest never finds tests/acceptance.
-acceptance_cmd: 'node --import ./scripts/ts-resolve-hook.mjs --test --experimental-strip-types --test-name-pattern="{ids}" "tests/acceptance/**/*.test.ts"'
+# npx tsc first: the acceptance tests run dist/core/cli.js, and a stale dist tests old code.
+acceptance_cmd: 'npx tsc && node --import ./scripts/ts-resolve-hook.mjs --test --experimental-strip-types --test-name-pattern="{ids}" "tests/acceptance/**/*.test.ts"'
 drivers: {} # more ways to run script tests: playwright: {cmd: 'npx playwright test --grep "{ids}"', dir: tests/e2e}
 repos: {} # other git repos a task may write (repo: in the task): web: {path: ../web-ui}
 # npm test globs src/core/** and src/renderer/** only, and typecheck covers src/ only, so a red acceptance test never fails these.
@@ -17,6 +18,8 @@ people: [] # names that never appear as an actor in a task or a test step
 limits: {task_files: 12, instructions_bytes: 1500, approach_bytes: 1200, context_kb: 24, diff_kb: 120, file_kb: 40, tests_scenarios: 12, verify_minutes: 20, step_introduces: 10}
 review_rounds: 3
 verify_rounds: 3 # whole-feature verify rounds before a person reads it
-approvals: [tasks] # stages past gate 1 a person approves with /spex:approve: tasks, tests. The spec and the records always need one
 auto: false # true: /spex:new and /spex:clarify let the decider agent settle what the design and the code answer, and ask you the rest in one list
-ship: {commit: false, cmd: ""} # commit: commit the tree first; cmd: push, open the request, merge it. Empty cmd: a person merges, then spex ship --merged
+commit: false
+base: "" # the branch a spec starts from and merges into. Empty: the branch the main folder is on
+close: {cmd: ""}
+worktree: {setup: ""} # setup: runs one time in a new worktree (install the packages, copy .env)

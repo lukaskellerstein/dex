@@ -1,25 +1,35 @@
 # 017 — Dex runs on spex: small spec files, gates the script checks
 
-> **Status:** draft v2.0 · 2026-11-10 · rewritten for spex 2.2.0 (data format 2). v1.0 (2026-11-05) was written for spex 1.4.0; [§ Changes from v1.0](#changes-from-v10) lists what spex changed and where this brief follows. Feature, branch and spec folder: `017-dex-runs-on-spex`.
+> **Status:** draft v3.0 · 2026-11-13 · rewritten for spex 3.0.0 (data format 3). v2.0 (2026-11-10) was written for spex 2.2.0, and v1.0 (2026-11-05) for spex 1.4.0. [§ Changes from v2.0](#changes-from-v20) lists what spex changed and where this brief follows. Feature and spec folder: `017-dex-runs-on-spex`. The branch is `spex/<the folder>`, and the script makes it.
 >
-> **Builds on** [`015-lean-core`](../015-lean-core/README.md) (queue, picker, policy, CLI), [`016-grounded-loop`](../016-grounded-loop/README.md) (sensors, gates, evidence, the `tests` stage, the digest) and the spex plugin 2.2.0: `~/Projects/Github/lukaskellerstein/claude-my-marketplace/plugins/spex/`. Its `README.md` is the design, and its § Use from Dex is the other half of this brief.
+> **Builds on** [`015-lean-core`](../015-lean-core/README.md) (queue, picker, policy, CLI), [`016-grounded-loop`](../016-grounded-loop/README.md) (sensors, gates, evidence, the digest) and the spex plugin 3.0.0: `~/Projects/Github/lukaskellerstein/claude-my-marketplace/plugins/spex/`. Its `README.md` is the reference, its `README.html` is the design, and its § Use from Dex is the other half of this brief.
 >
 > **Changes to 015 and 016:**
 >
-> - amends D-015-1 (an entry's stage is the stage `spex next` names, D-017-1);
+> - amends D-015-1 (the stage of an entry is the command that `spex status` names, D-017-1);
+> - amends D-015-2 (the spex script makes the branch and the worktree of a spec and commits on that branch; on the base branch the project's `commit` and `close.cmd` decide, D-017-7);
 > - drops the `constitution` step of the clarification flow;
-> - amends D-016-2 and D-016-3 (`tests` is `/spex:tests`, which writes every script test of spex's proof plan and proves each one red; the frozen set is spex's `protected` set; a wrong test goes to spex's decider, not to 016's amendment question);
-> - replaces D-016-5 (the done gate is `spex verify` green at this tree plus a clean `/spex:review`; fixes are `kind: fix` tasks);
-> - replaces the `tasks.md` plan diff of D-016-6 (spex's approval hash catches a changed task; Dex checks only the statuses).
+> - replaces D-016-2 (the tests are written and proved red inside `/spex:implement`, not in a stage of Dex) and amends D-016-3 (the frozen set is spex's `protected` set; a wrong test goes to spex's decider, not to 016's amendment question);
+> - replaces D-016-5 (the done gate is Dex's own `spex verify` after the last build, plus a spec that spex closed);
+> - replaces the `tasks.md` plan diff of D-016-6 (spex stamps the plan and refuses one that was changed by hand);
+> - amends D-016-7 (spex counts the rounds; a command that ends with its phase not done pauses the run);
+> - amends D-016-9 (the attempt log is no longer part of a prompt; `corrections.md` is what the next run reads).
 >
-> **How to start:**
->
-> 1. On `main`, commit this brief together with `.spex/config.yaml` and `.spex/.gitignore`. `/spex:init` wrote both (format 2), but they are not tracked yet.
-> 2. Start `claude -w 017-dex-runs-on-spex`, then `/spex:new docs/my-specs/017-dex-runs-on-spex/README.md`. It makes `specs/017-dex-runs-on-spex/` and sizes the brief in round 0. Answer "one step" (open decision 10).
->
-> This brief carries spex's four required sections (Why, What, Not this, Success), so `spex approve` accepts it as it is. It is the first Dex feature specified with spex, and the first end-to-end use of spex 2.x.
+> **The state of the code:** `main` is at `57836b9`, which holds 016's loop for spec-kit. `npm run typecheck` and `npm test` pass there (2026-11-13). v2.0 of this brief was built in part for spex 2.2: 22 of its 41 tasks were done, and the tree was red. The owner took that build off `main` on 2026-11-13. It is kept on the local branch `archive/017-spex-2.2` (one commit, not pushed), as reference only. [§ How to start](#how-to-start) says what comes next.
 >
 > **Followed by** [`018-living-docs`](../018-living-docs/README.md): the project's docs become the loop's lasting memory.
+
+## How to start
+
+The owner set this order on 2026-11-13 (open decision 16). Steps 1 and 2 are done. The other steps are the owner's.
+
+1. Save the 2.2 build on the local branch `archive/017-spex-2.2`. *(Done 2026-11-13.)*
+2. Put `main` back to `57836b9`. This brief and one line of `.spex/config.yaml` are the only changes that stay. *(Done 2026-11-13: `npm run typecheck` and `npm test` pass.)*
+3. Update the spex plugin to 3.0.x at project scope, and run `/spex:update`. It moves `.spex/config.yaml` to format 3. The 2.2 spec folder is gone, so the command converts nothing of it.
+4. Commit this brief and `.spex/config.yaml` on `main`. A worktree gets only what is committed.
+5. `/spex:new docs/my-specs/017-dex-runs-on-spex/README.md`. If it asks about a split, answer "one spec" (open decision 10). Then `/clear`, and `/spex:plan` with the folder it made. The plan checks this brief against the real code, which is 016's.
+
+This is the first Dex feature specified with spex, and the first end-to-end use of spex 3.0.
 
 ## Why
 
@@ -31,182 +41,191 @@ After 016, every entry goes through spec-kit. Three costs come with it.
 
 spex removes the three at the source:
 
-- Records with ids in three YAML files: `requirements.yaml` (EARS records with scenarios: the claim), `tests.yaml` (one test per scenario and per task: the proof plan) and `tasks.yaml` (one task per agent run). `spec.md` is the spec in words.
-- A bundled Node script, `spex.mjs`, that checks them, decides every gate, names the next stage, and is the only writer of every status.
+- Records with ids in three YAML files: `requirements.yaml` (EARS records with scenarios: the claim), `tests.yaml` (one test per scenario and per task: the proof plan) and `tasks.yaml` (one task per agent run). `spec.md` is the spec in words, and `source.md` keeps the person's text word for word.
+- A bundled Node script, `spex.mjs`, that checks them, starts and ends every phase, keeps the state of a spec in `status.yaml`, decides when a task is done, and is the only writer of every status.
 - A wall between a claim and its proof. The agent that writes a record or a task never writes its test: a `test-analyst` subagent writes `tests.yaml`, `test-developer` subagents write the test code from the records alone, and a `developer` never edits a test. 016 had to guard against an implementer that edits its own tests; spex makes that a role no agent holds.
-- Fourteen skills of 2.3–6.0 KB and eight subagents, none loaded until called. A develop run reads `spex show <task>` (about 1–3 KB) and its `context` files, capped at 24 KB.
+- Four commands carry a spec: `new`, `plan`, `implement` and `review`. Each is one skill of at most 6 KB, and its parts load only when the run gets there. The chat of a command holds ids and results. Ten subagents hold the content: a fresh `developer` builds each task from `spex show <task>` (about 1–3 KB) and its `context` files, capped at 24 KB.
+
+spex 3.0 does inside one command what Dex did with one agent per stage: a fresh agent for each piece of work. So Dex stops cutting an entry into nine stages, and runs four commands (D-017-3).
 
 ## What
 
 ```mermaid
 flowchart LR
-  Q[queue entry] --> NW{{"Dex: spex new<br/>--from brief --shaping"}}
-  NW -- "a section is empty<br/>or a question is open" --> SH["shaping<br/>/spex:new dir auto"]
-  NW -- "shaped" --> AS{{"approve spec<br/>Dex: spex approve"}}
-  SH --> AS
-  AS --> RQ["requirements<br/>/spex:requirements<br/>clarify, research, test analyst"]
-  RQ --> G1{{"gate 1<br/>Dex: spex approve"}}
-  G1 --> TK["tasks<br/>/spex:tasks<br/>test analyst"]
-  TK --> AT{{"approve tasks<br/>Dex: spex approve"}}
-  AT --> TS["tests<br/>/spex:tests<br/>test developers, every batch"]
-  TS --> RF{{"red check, per test<br/>Dex: spex run --test --expect fail"}}
-  RF --> N{"spex next"}
-  N -- "task T ready" --> GD{{"Dex: spex gate develop T<br/>(runs T's tests, needs red)"}}
-  GD --> DV["develop T<br/>/spex:develop dir T"]
-  DV --> DN{{"progress<br/>Dex: spex done T<br/>(runs the checks itself)"}}
-  DN --> N
-  N -- "every task done" --> VF["verify<br/>/spex:verify<br/>testers, decider"]
-  VF -- "a fix task" --> AT
-  VF --> RV["review<br/>/spex:review"]
-  RV --> RA{{"the answer<br/>Dex: spex review accept"}}
-  RA -- "fix picks" --> FX["fix<br/>/spex:fix"] --> RV
-  RA -- "clean" --> GS{{"done gate<br/>Dex: spex verify,<br/>spex gate ship"}}
-  GS --> D[done + digest]
+  Q[queue entry] --> NW["note<br/>/spex:new brief"]
+  NW --> CM{{"the note is committed<br/>spex commit, or a pause"}}
+  CM --> SP{{"Dex: spex start plan"}}
+  SP --> PL["plan<br/>/spex:plan dir"]
+  PL --> AP{{"the approval<br/>by policy, or a pause"}}
+  AP --> SI{{"Dex: spex start implement"}}
+  SI --> IM["implement<br/>/spex:implement dir"]
+  IM --> PG{{"progress gate<br/>Dex: spex verify"}}
+  PG --> RV["review<br/>/spex:review dir"]
+  RV -- "a fix pick, built in the same run" --> PG
+  RV -- "clean: the close" --> DG{{"done gate<br/>Dex: spex list"}}
+  DG --> D[done + digest]
 ```
 
-The picker runs `spex next <specDir> --json` and takes the row for the stage it names (D-017-1). Its rows for one entry, in the order `spex next` tests them:
+Every box with an agent can also end with its phase not done: a question, a need, the limit of the fix loop. That is always a pause (D-017-4), and the picture leaves it out.
 
-| Row (`spex next` stage) | Runs when | The agent runs | Dex runs |
+The picker runs `spex status --json` and takes the row for the command it names in `next` (D-017-1). Its rows for one entry:
+
+| Row | Runs when | The agent runs | Dex runs |
 |---|---|---|---|
-| folder (Dex's own) | `<specDir>/` does not exist | — | `spex new <slug> --from <doc> --shaping --number <NNN>` (D-017-3) |
-| `invalid` | `spex check` reports an error | — | a pause with the findings; Dex never edits a spex file to get past one |
-| `shaping` | a required section of `spec.md` is empty, or an Open question is left | `/spex:new <specDir> auto` | `spex check` |
-| `approve-spec` | every required section has words, and nothing is open | — | `spex approve <specDir>` by policy, or a pause (D-017-4) |
-| `spec-ready`, `clarify`, `research`, `plan-tests` | no records yet; or a question, an unknown, or a scenario without a test | the command `spex next` names: `/spex:requirements`, then `/spex:clarify` or `/spex:research` when one opens later | `spex check` |
-| `approve-requirements` | gate 1: a record is `draft` | — | `spex approve <specDir>` by policy, or a pause |
-| `tasks`, `plan-tests` | no `tasks.yaml`; or a task without a test | `/spex:tasks <specDir>` | `spex check`, exit 0 and not 5 |
-| `approve-tasks`, `approve-tests` | the file changed since a person approved it (`approvals: [tasks]` is spex's default) | — | after a `tasks` or `verify` run: `spex approve <specDir> tasks` by policy, or a pause; after a `develop` run: a pause (D-017-7) |
-| `tests` | a script test in `tests.yaml` has no file | `/spex:tests <specDir>` | `spex coverage`, then `spex run <specDir> --test <TS> --expect fail` per test the run wrote (D-017-5) |
-| `develop` | `spex next` names task T | `/spex:develop <specDir> <T>` | before: `spex gate develop <specDir> <T>`; after: progress, `spex done <specDir> <T>` (D-017-6) |
-| `blocked` | a task is `blocked` | — | a pause with the reason file, or the `--ask` question (D-017-4) |
-| `verify` | every task is `done`, and `spex verify` is not green at this tree | `/spex:verify <specDir>` | `spex check` |
-| `review` | verify is green at this tree, and the review report is not clean | `/spex:review <specDir>` | — |
-| `review-accept` | a review round waits for its answer | — | `spex review accept <specDir> ok --by agent` by policy, or a pause |
-| fix (`spex next` names `/spex:fix`) | accepted review fixes are not built and verified | `/spex:fix <specDir>` | `spex check` |
-| `ship` | every task done, verify green, the review report clean | — | the done gate (D-017-6) |
-| done | the entry's done record matches the tree | — | — |
+| note (Dex's own) | the entry has no `specDir`, and no spec is open | `/spex:new <brief>` | before: the project is on the entry's `baseBranch` (D-015-2). After: `spex list --json` for the one new note, which becomes the entry's `specDir`; then `spex commit` (D-017-7) |
+| `invalid` | a spex call exits 4 | — | a pause with the findings; Dex never edits a spex file to get past one |
+| plan | `next` names `/spex:plan <specDir>`: a note whose turn it is, or `plan, started` | `/spex:plan <specDir>` | before: `spex start plan <specDir>`, where a refusal (exit 6) is a pause with its fix text. After: the phase is `plan, done` |
+| the approval | `plan, done`, and no implement run has started | — | `recommended-then-review`: nothing, the next row runs. `wait`: a pause with the digest of the plan (D-017-4) |
+| implement | `next` names `/spex:implement <specDir>`: `plan, done`, or `implement, started` | `/spex:implement <specDir>` | before: `spex start implement <specDir>`. After: the progress gate (D-017-6) |
+| review | `next` names `/spex:review <specDir>`: `implement, done`, or `review, started` | `/spex:review <specDir>` | before: `spex start review <specDir>`. After a run that built fix picks: the progress gate. After a close: the done gate |
+| the close waits | `review, done`, and the spec is still open | — | `close.cmd` is empty: a pause, "merge `spex/<spec>` into `<base>`". After the merge: `spex close <specDir> finish` (D-017-7) |
+| comment | the human answered a pause with words that are no answer | `/spex:comment <the words>` | the picker again |
+| done | `spex list --json` has the spec as closed, and the entry's done record matches | — | — |
 
-`spex next --json` carries `stage`, `command`, `task` (id, title, kind, requirements), `ready`, `waves`, `counts` (todo, done, blocked), `asks` (the `--ask` questions) and `auto`. Dex takes the stage and the task from it, and nothing else decides the order.
+`spex status --json` carries `open` (`dir`, `state.command`, `state.state`, `worktree`, `corrections`), `next` (one command), `closed` and `waiting`. Dex takes the command and the folder from it, and nothing else decides the order.
+
+**`/clear` means a new session.** Every spex reply that finishes a phase ends with a NEXT block: `/clear`, then one command. Dex follows it: it ends the session, and starts a new one with that command as the whole prompt. So no context goes from one command to the next, and the state is in the files. Dex reads the command from `spex status --json`, not from the reply: the same script prints both. A reply that asks a question has no `/clear`, so the answer goes to the same session (D-017-4).
 
 ## Decisions
 
-### D-017-1 — spex owns the files, the rules and the stage of one entry; Dex owns the queue and the verdict
+### D-017-1 — spex owns the files, the rules, the state and the branch of one spec; Dex owns the queue and the verdict
 
-- **spex** owns the spec files, every rule (`spex check`), every status (`spex approve`, `done`, `block`, `review accept`), the stage of one entry (`spex next`) and the stage instructions (the skills and their subagents).
-- **Dex** owns which entry runs next, branches and commits, budgets, the sensors and the gates it runs in its own process, the person gates under its question modes, pauses and the digest.
-- **Dex never re-implements a spex rule.** For anything that is a rule, it runs the script with `--json` and reads `ok`, `findings`, `data` and the exit code (`0` ok, `2` usage, `4` invalid, `5` coverage gap, `6` gate refused, `7` verify failed).
-- **The picker asks `spex next`.** `spex next <specDir> --json` writes nothing, so `dex run --status` and `--dry-run` still change nothing. They run it on the checked-out tree. For an entry on another branch, `--status` shows the plain fields through the tree reader (task counts from `tasks.yaml`) and says the stage needs that branch checked out. *(Changed 2026-11-10: v1.0 had the picker compute the stage from plain fields, with no process. spex 2.x has about twenty stages, and some depend on the working tree: `verify` is green only at the tree it ran on. Computing them in Dex would copy spex's rules. Open decision 7.)*
-- Dex reads plain fields only for display: `status`, `questions[].answer` and `by`, `unknowns[].decision`, `tasks[].status`, `requirements` and `depends_on`, `tests[].covers` and `kind`.
+- **spex** owns the spec files, every rule (`spex check`), every status (`spex done`, `spex block`, `spex review accept`), the state of a spec (`status.yaml`, written by `spex start`, `spex end` and `spex close`), the branch `spex/<spec>` with its worktree and the commits on it, and the instructions of each phase (the skills and their subagents).
+- **Dex** owns which entry runs next, the base branch a run works on (D-015-2), budgets, the sensors and the gates it runs in its own process, the pauses under its question modes, and the digest.
+- **Dex never re-implements a spex rule.** For anything that is a rule, it runs the script with `--json` and reads `ok`, `findings` and the exit code (`0` ok, `2` usage, `4` invalid, `5` a gap, `6` refused, `7` failed, `8` a worktree is not removed).
+- **The picker asks `spex status`.** `spex status --json` writes nothing, so `dex run --status` and `--dry-run` still change nothing. A spex command that names a spec works in the worktree of that spec from any folder, so the stage of an open spec is known from the main folder. v2.0's limit (no stage for an entry on a branch that is not checked out) goes. *(Changed 2026-11-13: v2.0 asked `spex next`, which spex 3.0 removed. The state is two lines in `status.yaml` now.)*
+- **One spec is open at a time, in the order of the numbers.** `spex start plan` refuses a second open spec (`GATE-OPEN`) and a spec whose turn has not come (`GATE-TURN`). So Dex makes the note of an entry only when its turn comes, and the queue's order is the order of the notes (open decision 13).
+- Dex reads plain fields only for display: `status`, `questions[].answer` and `by`, `unknowns[].decision`, `tasks[].status`, `requirements` and `depends_on`, `tests[].covers` and `kind`. It reads them in the worktree of the open spec, and on the base branch for a closed one.
 
 ### D-017-2 — Dex loads the plugin itself, through the SDK
 
-- Every agent session gets `plugins: [{ type: "local", path: <spex dir> }]`, the SDK's form of `--plugin-dir`. The option wins over a copy that the project's own settings enable, so the session and Dex's own script calls use one copy (research U6). *(Changed by Q2, 2026-11-05: the first draft said the target project needs no install and no settings change. Now spex is installed at project scope in each target project, so a person working there has `/spex:*` too.)*
-- The plugin brings its eight subagents (`spex:test-analyst`, `spex:test-developer`, `spex:developer`, `spex:tester`, `spex:decider`, `spex:researcher`, `spex:reviewer`, `spex:roadmap-reviewer`) and a Playwright MCP server for the `tester`. Both come with the same option (phase 0).
+- Every agent session gets `plugins: [{ type: "local", path: <spex dir> }]`, the SDK's form of `--plugin-dir`. The option wins over a copy that the project's own settings enable, so the session and Dex's own script calls use one copy (research U6). spex is also installed at project scope in each target project, so a person working there has `/spex:*` too (Q2, 2026-11-05).
+- The plugin brings its ten subagents (`spex:analyst`, `spex:planner`, `spex:test-analyst`, `spex:test-developer`, `spex:developer`, `spex:tester`, `spex:decider`, `spex:researcher`, `spex:reviewer`, `spex:roadmap-reviewer`) and a Playwright MCP server for the `tester`. Both come with the same option (phase 0).
+- **A spex command needs three tools in its session:** `Agent` (every command starts subagents), and `EnterWorktree` and `ExitWorktree` (the skills move the chat into the worktree and out of it). A session that lacks `Agent` fails the stage before its prompt is sent. The two worktree tools are open decision 15.
 - `<spex dir>` is `DEX_SPEX_DIR` when set. Otherwise it is the `installPath` of the `spex@claude-my-marketplace` entry in `~/.claude/plugins/installed_plugins.json` whose `projectPath` is the project (Q2). For a new project, Dex runs `claude plugin install spex@claude-my-marketplace --scope project` itself. For an existing project, the prerequisites fail and name that command.
 - Dex runs the script as `node <spex dir>/scripts/spex.mjs` with its own runtime (`process.execPath`, with `ELECTRON_RUN_AS_NODE=1` in the app). So Dex's gates don't depend on the agent's `PATH`.
 - The SDK's init message lists the session's plugins, and `claudeSession.ts` already logs it. A stage whose session has no `spex` plugin fails at once with that reason. It doesn't send a `/spex:*` prompt that the agent can't resolve.
-- Each run record keeps the spex version from `plugin.json`. A version outside the range Dex was tested with (2.2.x) fails the prerequisites.
+- Each run record keeps the spex version from `plugin.json`. A version outside the range Dex was tested with (3.0.x) fails the prerequisites.
 
-### D-017-3 — Each stage prompt is one skill call plus Dex's own rules
+### D-017-3 — A stage is one spex command, and its prompt is that command alone
 
-| Stage | Prompt |
-|---|---|
-| `shaping` | `/spex:new <specDir> auto`: it resumes the folder Dex made, so round 0 (sizing) does not run |
-| `requirements` | `/spex:requirements <specDir> auto`; its run also settles the questions, decides the unknowns and has the test analyst write `tests.yaml` |
-| `clarify`, `research` | `/spex:clarify <specDir> auto`, `/spex:research <specDir>`, only when one opens after the `requirements` run |
-| `tasks` | `/spex:tasks <specDir>`; its run ends with a task test per task in `tests.yaml` |
-| `tests` | `/spex:tests <specDir>`: every batch in one run |
-| `develop` | `/spex:develop <specDir> <task>`, with 016's "restore green first", gate evidence and attempt log sections |
-| `verify` | `/spex:verify <specDir>` |
-| `review` | `/spex:review <specDir> auto` |
-| fix | `/spex:fix <specDir>` |
+| Stage | Prompt | One run does |
+|---|---|---|
+| note | `/spex:new <brief>` | keeps the brief word for word in `source.md`, and writes the note |
+| plan | `/spex:plan <specDir>` | checks the note against the code, settles what is open, writes the full spec, the records, the tasks and the test plan |
+| implement | `/spex:implement <specDir>` | writes every script test and proves it red, builds each task with a fresh developer, proves the whole spec |
+| review | `/spex:review <specDir>` | reads the diff, takes the answer to its findings, builds the fix picks, and closes the spec when none is left |
+| comment | `/spex:comment <words>` | puts the human's words into the spec, the tasks and the test plan; writes no code |
 
-- In the `wait` question mode, no prompt carries `auto` (D-017-4).
-- Dex's rule lines stay: the commit rule, the write scope, the evidence. The `tasks.md` lines go ("mark it `[X]`", "change nothing else in `tasks.md`").
+- **Five stages replace nine.** v2.0 had `shaping`, `requirements`, `clarify`, `research`, `tasks`, `tests`, one `develop` per task, `verify` and a fix stage. spex 3.0 has no skill for one of them: each is a part of a command. A fresh agent per task stays, because `/spex:implement` starts one `developer` subagent for each task (open decision 12).
+- **The prompt is the command and its arguments.** `auto` follows the folder in the `recommended-then-review` mode (D-017-4). `yes` and the answer to a review are the other two arguments (D-017-4). Nothing else follows the command, because a skill reads every word after it as an argument.
+- **Dex's own rule lines move to the system prompt** that Dex appends for the session: the write scope and the evidence line. The commit line goes: no agent commits, and the script commits at the end of each phase. 016's "restore green first" section goes too: a red base pauses before a spec starts (D-017-8).
 - `SPECIFY_FEATURE`, `SPECIFY_FEATURE_DIRECTORY` and `SPECIFY_FEATURE_NO_PERSIST` go.
-- **Dex makes the feature folder** with `spex new <slug> --from <doc> --shaping --number <NNN>`. `<doc>` is the entry's brief. For an entry without a brief, it is a file Dex writes with the title under `## Why` and the description under `## What`. `--number` keeps the folder at `specs/<entry id>`, where the queue expects it (`queue.ts`). `spex new` refuses a number below its next free one, and the queue's ids go up, so that holds. *(Changed 2026-11-10: v1.0 passed the brief to `/spex:requirements --dir`. spex 2.x removed that form: `spex gate requirements` opens only on a folder under `specs/` whose `spec.md` says `status: ready`.)*
-- A copy whose four required sections have words and whose Open questions are empty goes straight to `approve-spec`. Anything else is shaped by `/spex:new` in auto mode first, which drafts every section from the brief and the code.
-- If `/spex:new` sizes an entry as more than one step, its run stops with a concern, and Dex pauses the entry. Roadmaps are 020's.
-- **The run report is the stage's result.** Every skill writes `.spex/runs/<feature>/<stage>[-<task>].json` with `status` (`done`, `concerns`, `blocked`, `needs-context`, `too-big`), `summary`, `concerns`, `questions`, `files_changed` and `pulled`. Dex reads it in place of its own structured output for these stages. `summary` and `concerns` feed 016's attempt log, and `pulled` goes into the run record for the cost test. The subagents' own statuses never reach Dex except through that file.
+- **Dex starts every phase itself, before the agent.** It runs `spex start plan|implement|review <specDir>` in its own process and starts the session with its working folder set to the `worktree` path of the output. A refusal costs no agent: `GATE-TURN`, `GATE-COMMIT`, `GATE-NEEDS` and `GATE-PLAN-CHANGED` are pauses with the fix text. The skill runs the same `spex start` again, finds the phase started and the chat in the worktree, and goes on (open decision 15).
+- **The note comes from `/spex:new`, never from the script alone.** `spex new <slug> --words <file>` writes a note from a template, with every section empty (probe, 2026-11-13). The skill fills it: each detail of the brief becomes one bullet with a link to its line. `<brief>` is the entry's brief. For an entry without one, it is a file Dex writes with the title and the description. *(Changed 2026-11-13: v2.0 made the folder with `spex new --from --shaping --number`. `--from` and `--shaping` are gone, and a number is the next free one.)*
+- **`/spex:new` never gets `auto`.** With one spec it does not stop. With more than one it stops with the list before it writes a note, and Dex pauses the entry: split the entry in the queue, one entry for each spec. Roadmaps are 020's.
+- **The folder is a field of the entry.** After the note run, `spex list --json` has one note more than before, and Dex writes its `dir` into the entry as `specDir`. An entry whose note a person wrote already carries `specDir` by hand, and has no note run. v2.0's rule that an entry id is `NNN-slug` goes.
+- **The run report is the stage's result.** `plan`, `implement` and `review` each end with `spex report`, which writes `.spex/runs/<feature>/<stage>.json` in the worktree: `status` (`done`, `concerns`, `blocked`), `summary`, `concerns`, `questions`, `files_changed` and `pulled`. Dex reads it in place of its own structured output. `summary` and `concerns` go into Dex's attempt log and the digest, and `pulled` goes into the run record for the cost test.
+- **`corrections.md` is what the next run reads.** It is in git, in the spec folder, and only the script writes it: what changed after the plan, and why. 016's attempt log stays as Dex's own record, but no prompt carries it any more.
 
-### D-017-4 — The person gates follow the question mode
+### D-017-4 — A command that ends with its phase not done is a pause
 
-spex has four places where a person says yes: the spec (`approve-spec`), the records (gate 1), `tasks.yaml` (`approve-tasks`) and the answer to a review round (`review-accept`). Dex has two question modes, and the gates follow them:
+spex 3.0 has no `approve`. The next command is the approval, and each reply ends with a digest of what the agents decided. Dex has two question modes, and both use one rule.
 
-- **`recommended-then-review`:** every skill that can ask gets `auto`. Each question goes to the `decider` subagent, which answers with evidence and a confidence, written as `by: agent`. Dex then takes each person gate by policy: `spex approve` for the spec, gate 1 and `tasks.yaml`, and `spex review accept <specDir> ok --by agent` for a review round (`/spex:review` runs it itself under `auto`). The digest lists every approval Dex gave and every `by: agent` and `by: default` answer with its evidence and confidence, so the human reviews them after the fact, as 015 does for questions.
-- **`wait`:** no `auto`. A skill asks through Dex's question flow. Each person gate pauses: "approve the spec", "approve the records", "approve `tasks.yaml`", "answer the review: ok, or 2=defer 3=fix". The human's answer makes Dex run the matching `spex approve` or `spex review accept`. A spec that still needs shaping pauses as well: shaping without `auto` is a conversation (`/spex:new <specDir>` in the project), not a stage Dex runs.
-- `spex approve` refuses while `check` fails or a question is open. A refusal pauses the run with the findings. Dex never edits a `status` to get past it.
-- **Pauses that spex names, in both modes:**
-  - a `blocked` task: the pause shows its reason file. A block with `--ask` carries one yes/no question, and the human's yes makes Dex run `/spex:develop <specDir> <task>`, which unblocks it first (`spex next`'s `asks[].yes`);
-  - `GATE-NEEDS`: a test needs a token in the environment or a running system, and the pause names it;
-  - `/spex:verify` stopped past `verify_rounds`: the failures did not converge.
+- **The rule:** after a session, Dex runs `spex status --json`. If the phase of the command is `done`, the stage passed. If it is still `started`, the run pauses, and the pause shows the last reply of the session. A spex reply is written for a person: each question is closed, has options and a pick, and `ok` takes every pick. Dex does not parse it.
+- **The answer:** the human's answer goes to the same session as its next message, while Dex still holds that session. When the session is gone (the app closed, the run stopped), Dex runs the command again. Two commands take the answer as an argument: `/spex:review <specDir> ok` (or `2=defer 3=fix`) and `/spex:implement <specDir> yes`. `/spex:plan` asks its questions again.
+- **Words that are no answer** ("the export must also have the email") go through `/spex:comment <the words>` as a stage of their own. Its reply names the command to run next, and so does `spex status` (open decision 18).
+- **`recommended-then-review`:** `plan`, `implement` and `review` get `auto`. A `decider` subagent answers each question with evidence and a confidence, written as `by: agent`. In `review` it picks `fix`, `defer` or `skip` for each finding, and the skill runs `spex review accept … --by agent`. Dex starts `implement` right after `plan, done`: that is the approval, and Dex gave it by policy. The digest lists it, with every `by: agent` and `by: default` answer and every entry of `corrections.md`, so the human reviews them after the fact, as 015 does for questions.
+- **`wait`:** no `auto`. The pauses are: the questions of `plan` (at most 3), the approval after `plan, done` ("approve the plan", with its digest), a big change of the spec in `implement`, and the findings of a review round. The human's yes to the plan makes Dex start `implement`.
+- **Three stops come in both modes,** because they are not questions:
+  - a need only a person can give (a token, a running system): `spex start implement` refuses with `GATE-NEEDS` or `ENV-UP`, and the pause names it;
+  - the limit of the fix loop: `/spex:implement` stopped after `verify_rounds` rounds, with each red test and every verdict it got;
+  - a write to a real system with no undo: one task is blocked with one yes or no question, and the human's yes makes Dex run `/spex:implement <specDir> yes`.
+- A refusal of a gate pauses the run with the findings. Dex never edits a `status` to get past it.
 
-### D-017-5 — The proof plan, then the test code, before any code
+### D-017-5 — The proof plan, then the test code, before any code: inside the commands
 
-spex 2.x splits the claim from its proof (spex design rule 11). `/spex:requirements` and `/spex:tasks` write the claims, and a `test-analyst` subagent in each run writes `tests.yaml`: one test per scenario and one per task, each a script (a test file found by its name, or `driver: shell` steps) or a session (a procedure a `tester` performs at verify). `/spex:tests` then has `test-developer` subagents write the test code from the records alone, never from the source. *(Rewritten 2026-11-10: v1.0's per-batch tests run, its `spex run T --expect fail` per task and its amendment flow came from spex 1.x.)*
+spex splits the claim from its proof (spex design rule 11). The `analyst` and the `planner` write the claims in the `plan` run, and a `test-analyst` in the same run writes `tests.yaml`: one test per scenario and one per task, each a script (a test file found by its name, or `driver: shell` steps) or a session (a procedure a `tester` performs). In the `implement` run, `test-developer` subagents write the test code from the records alone, never from the source. *(Rewritten 2026-11-13: v2.0 had a `tests` stage of Dex, and Dex ran `spex run --test --expect fail` for every test. spex 3.0 has no command for the tests alone.)*
 
-- **One `tests` run per feature.** `/spex:tests <specDir>` takes batch after batch (`limits.tests_scenarios`, 12 script tests each) until every script test has its file. Session tests and shell tests have no file.
-- **Red-first** (D-016-2): each test developer proves its test red, and the skill runs one red run per test. Dex treats that as a claim, and runs `spex run <specDir> --test <TS> --expect fail` itself for every test the run wrote:
-  - `red as expected` passes;
-  - `RUN-GREEN` pauses: "the tests pass before the feature exists". One exception: the run report lists that test as already green, with a mutation proof. Then the record is met already, and the `develop` row's `spex done` closes the task;
-  - `RUN-NO-TESTS` or `RUN-SKIPPED` runs `tests` again once, as 016 does for a crash. A test that skips is neither red nor green.
-- `spex gate develop` runs the task's tests again when the task starts, and refuses with `GATE-RED` when one turned green in between: the same pause. A task with only shell tests has nothing to be red (`RUN-NO-RED`), and the gate opens.
+- **Red-first** (D-016-2) is spex's own, in two places of the `implement` run. Each test developer proves its test red with `spex run --test --expect fail`. And `spex gate develop` runs the tests of a task again when its developer starts, and refuses with `GATE-RED` when one is green already.
+- **Dex does not repeat the red check.** Between the tests and the code there is no moment that is Dex's: both are in one run. Dex's own verdict comes when the run ends (D-017-6). The red records in `.spex/evidence/` are claims, and the digest lists them as that (open decision 6).
+- **A test that is green before the code** goes to a `decider` in the run: either the code does what the claim says already, and `spex done` closes the task, or the test asserts nothing, and it is written again.
 - **Frozen tests** (D-016-3): the frozen set is spex's `protected` list (`specs/`, `.spex/`, `acceptance_dir`, `.github/`) plus every driver's `dir`. `acceptance.json` and its `files` list go.
-- **A wrong test** (replaces 016's amendments): the developer never edits a test. It stops with `test-bug`, and the `develop` skill settles that without a person. One `decider` says whether the test, the code or the spec is wrong. A wrong test goes to one `test-developer`, which rewrites it from its record; a wrong spec becomes a question, and the record goes back to `draft`. A second `test-bug` on the same task is a `spex block` with both verdicts, which pauses (D-017-4). 016's amendment question, `amendments.json` and `/spex:tests --fix` go for spex projects (open decision 8).
+- **A red test** (replaces 016's amendments): a `decider` names one of four causes: the test, the code, the tasks or the spec. A test developer rewrites a wrong test, a developer fixes the code, the planner splits a task or gives it one more file. A wrong spec is small (the analyst corrects it, and the digest says so) or big (it touches a line the person gave, the Success, the Not this, or the list of specs). A big change is a question to the human, or to the decider with `auto`. 016's amendment question and `amendments.json` go for spex projects (open decision 8).
 
-### D-017-6 — Dex runs the gates and `spex done` itself; the agent's own run is input
+### D-017-6 — Dex runs `spex verify` itself after every build; the run's own proof is input
 
-The `develop` skill ends with its own `spex run` and `spex done`. Dex treats that as a claim (D-016-1), as it treats ticks now. A gate and `spex done` run the checks themselves and never read `.spex/evidence/` as proof, so Dex's own call of `spex done` *is* the second run. There is no separate `spex run` for Dex to repeat, and no evidence file whose author matters.
+`/spex:implement` ends with `spex end implement`, which checks that every task is done and that the proof is green on this tree. It reads that from `.spex/evidence/<feature>/verify.json`, a record that the run wrote. Dex treats the record as a claim (D-016-1), as it treats ticks now.
 
-- **Progress gate:** after every `develop` run, Dex runs `spex done <specDir> <task>` in its own process, at the run's final tree. `done` runs `fast_checks` and the task's tests from `tests.yaml` (its script tests through their drivers, its shell tests), and writes `status: done` only when they pass at that moment. A skip is a refusal. Progress means `done` exits 0.
-- **Red after a claimed done:** if Dex's `spex done` exits 7, Dex runs `spex block <specDir> <task> --reason <the failing command>`, and the stall fingerprint (D-016-7) takes the record `done` wrote.
+- **Progress gate:** after every session that ends at `implement, done`, Dex runs `spex verify <specDir>` in its own process, in the worktree, at the final tree. It runs `env.deploy` and `env.check`, `fast_checks`, every script test and every shell test, and it counts each session's evidence at this tree. Progress means exit 0. A `review` run that built fix picks ends at `implement, done` too, so the same gate follows it.
 - **Flaky** (D-016-8): an exit 7 is re-run once (`checks.rerunOnFail`). Green on the re-run is recorded as `flaky` in Dex's evidence and doesn't block.
-- **Verify** (replaces the verify half of D-016-5): `/spex:verify` runs `spex verify` rounds. It has a `tester` perform each session test (a browser through the plugin's Playwright MCP server, an API, a CLI) and record it with `spex session`, and it sends each failure to one `decider`: a wrong test is rewritten, a code failure becomes a `kind: fix` task that the same run develops, and a spec gap becomes a question.
-- **Review:** `/spex:review` reads the diff for what no test sees. Every finding comes at once, with a severity (P1 to nit), a fix plan and a pick. The answer (D-017-4) turns each `fix` pick into a `kind: fix` task, and `/spex:fix` builds those in one run. A later round checks only the fixes.
+- **Red after a claimed done:** an exit 7 twice pauses the run with the failures (`spex show <specDir> --verify`). The human goes on with the same command, which sends each red test to the decider, or with `/spex:comment`.
+- **The tasks:** `spex done` is the only writer of `status: done`, and it runs the task's tests at that moment. The run calls it for each task. Dex does not call it again: its own `spex verify` runs every task's tests at the final tree. *(Changed 2026-11-13: v2.0 ran `spex done` in Dex's process after each `develop` stage. There is no such stage now.)*
+- **Review:** `/spex:review` starts one `reviewer` for each task slice. Every finding comes at once, with a severity (P1 to nit), a fix plan and a pick. The answer (D-017-4) turns each `fix` pick into a fix task, and the same run builds those. A later round checks only the fixes.
 - **Done gate:**
-  1. Dex runs `spex verify <specDir>` in its own process, at the final tree: `fast_checks`, every script test, every shell test, and every session's evidence at this tree.
-  2. Dex runs `spex gate ship <specDir>`: no question open, every task done, verify green at this tree, the review report clean.
-  3. The entry is done when both exit 0.
-- A session's evidence is a tester's claim, not a run: no program can judge it. spex counts it only at the tree it was recorded on, and the digest lists each session with what the tester observed and its artifacts.
-- **Rounds:** `.spex/config.yaml`'s `verify_rounds` and `review_rounds` are the limits (D-017-8). The script counts them, and the review's last round picks `fix` only for a P1, so the rounds always end.
+  1. Dex's progress gate passed after the last session that ended at `implement, done`.
+  2. spex closed the spec: `spex list --json` has it as closed, and the base branch has its `status.yaml` at `review, done`.
+  3. Dex's baseline gate (D-016-4) passes on the base branch after the close.
+- A session's evidence is a tester's claim, not a run: no program can judge it. spex counts it only at the tree it was recorded on. Dex keeps the `--json` output of its own `spex verify` in `.dex/evidence/<id>/`, because the close removes the worktree with `.spex/evidence/` in it. The digest lists each session with what the tester observed.
+- **Rounds:** `.spex/config.yaml`'s `verify_rounds` and `review_rounds` are the limits (D-017-8). The script counts them, and the review's last round picks `fix` only for a P1, so the rounds always end. Dex's own `spex verify` on a green tree is the same round, not a new one.
 - **Done record:** keyed by the tree, as in 016 (`tree-stamp.ts`), with the hashes of `tasks.yaml` and `tests.yaml` in place of `tasks.md`.
 
-### D-017-7 — Write scopes per stage and per role
+### D-017-7 — Branches, commits and write scopes
 
-016's scopes (D-016-6) get sharper, because a spex task names the files it may write and every subagent has one role:
+**Branches.** The script makes `spex/<spec>` and the worktree `.claude/worktrees/<spec>` at `spex start plan`, from the branch the main folder is on (`base` in the config, when it is set). It commits on that branch at the end of each phase. Dex makes neither, and never switches to the branch of a spec: its sessions work in the worktree.
 
-| Stage | The main agent may write | Its subagents may write |
+- **The base branch is Dex's concern, as in D-015-2.** A new project keeps its one `dex/<date>-<id>` run branch, and that branch is the base of every spec of the run. In an existing project the base is the entry's `baseBranch`. A probe on 2026-11-13 showed that a run branch with no upstream works as the base.
+- **The note must be committed on the base branch** before `plan` (`GATE-COMMIT`). `/spex:new` ends with `spex commit`. With `commit: true` in the config, the script commits the note. With `commit: false`, it names the files, and Dex pauses: "commit these files on `<base>`". Dex sets `commit: true` in a new project, and commits nothing itself in an existing one.
+- **The close follows the project's `close.cmd`** (open decision 14):
+
+| `close.cmd` | The close | Dex |
 |---|---|---|
-| `shaping` | `<specDir>/spec.md` | nothing (researcher, decider) |
-| `requirements`, `clarify`, `research` | `<specDir>/requirements.yaml`, `research.md`, `contracts/` | test analyst: `<specDir>/tests.yaml` |
-| `tasks` | `<specDir>/tasks.yaml`, `contracts/` | test analyst: `<specDir>/tests.yaml` |
-| `tests` | nothing | test developer: `acceptance_dir` and every driver's `dir`; test analyst: `<specDir>/tests.yaml` |
-| `develop` | the task's `paths` | for a wrong test, the test developer and the test analyst, as in `tests` |
-| `verify`, fix | `<specDir>/tasks.yaml`, `tests.yaml`, `requirements.yaml`: appends and `covers` only | developer: the fix task's `paths`; test developer and test analyst, as in `tests`; tester: nothing |
-| `review` | `.spex/review/<feature>-<n>.findings.yaml` | test developer, as in `tests`; reviewer: nothing |
+| `local` | the script merges `spex/<spec>` into the base branch in the main folder, and removes the worktree | sets this in a new project: the loop goes on with no person, and the merge of the run branch into `main` stays the human's |
+| empty (spex's default) | the run stops after `review, done`, and waits for a person to merge | pauses: "merge `spex/<spec>` into `<base>`"; after the merge it runs `spex close <specDir> finish` itself |
+| a command | the script pushes, opens the request and merges it, as the project says | nothing: the project's rule is the rule |
 
-- The PreToolUse hook enforces the table. It takes the role from the subagent type in the hook input (phase 0). A write outside the table is `policy_denied` in the trace, as now.
-- `.spex/` is spex's folder, not the agent's. `config.yaml` is the project's file: committed, changed only by a person, or by Dex through `spex init` and `spex update` (D-017-9). `evidence/`, `runs/` and `review/` are the script's work. A direct write under `.spex/` is denied in every stage, except the findings file of the `review` row. spex's own `protected` list refuses a task that names a path there. The tester's screenshots reach `.spex/artifacts/` through the Playwright MCP server, which is not a tool call the hook sees; spex counts them only as part of a session's claim.
-- **Plan diff:** spex's approval hash covers the text of `tasks.yaml` (statuses and `deferred` left out), so a reworded task comes back as `approve-tasks`. After a `develop` run, Dex treats that stage as the reword and pauses, like 016's reworded-task pause. It never approves it by policy. The hash leaves the statuses out, so Dex checks those: after `develop` on T, only T's `status` may differ from its state at the start of the stage. `plan-diff.ts` shrinks to that check.
+- The entry's `branch` field is derived: `spex/<the folder name>`. `openPullRequest` has no effect in a spex project: `close.cmd` says how a spec is merged.
+
+**Write scopes.** In spex 3.0 the chat of a command writes nothing: every file has one writer, and each writer is a subagent type. So the scope is per role, and the stage adds little.
+
+| Role | May write |
+|---|---|
+| the chat of `/spex:new` | `spec.md` of the notes this run made |
+| the chat of `/spex:review` | `.spex/review/<feature>-<n>.findings.yaml` |
+| the chat of any other command | nothing |
+| `spex:analyst` | `<specDir>/spec.md`, `requirements.yaml`, `research.md`, `contracts/`; at the close, `spec.md` of the later notes |
+| `spex:planner` | `<specDir>/tasks.yaml`, `contracts/` |
+| `spex:test-analyst` | `<specDir>/tests.yaml` |
+| `spex:test-developer` | `acceptance_dir` and every driver's `dir` |
+| `spex:developer` | the `paths` of its task, as `tasks.yaml` has them at the moment of the write; for a conflict or a failed merge, the files its brief names |
+| `spex:researcher`, `spex:decider`, `spex:tester`, `spex:reviewer`, `spex:roadmap-reviewer` | nothing |
+
+- The PreToolUse hook enforces the table. It takes the role from the subagent type in the hook input, and the task from the brief of the `Agent` call that started the developer (`<specDir> T03. Build it; …`) (phase 0). A write outside the table is `policy_denied` in the trace, as now.
+- **The write root is the worktree.** A write to the main folder from the session of a spec is denied. Dex's own state (`.dex/state.json`, `.dex/evidence/`, `.dex/runs/`) stays in the main folder, and Dex reads `.dex/policy.json` there.
+- **No agent writes these directly, in any stage:** `source.md`, `status.yaml`, `corrections.md`, and everything under `.spex/` but the findings file of the review. They are the script's. `.spex/config.yaml` is the project's file: changed only by a person, or by Dex through `spex init` and `spex update` (D-017-9). The tester's screenshots reach `.spex/artifacts/` through the Playwright MCP server, which is not a tool call the hook sees; spex counts them only as part of a session's claim.
+- **The plan diff goes.** `spex end plan` stamps the spec, the records, the tasks and the tests, and `spex start implement` refuses a plan that was changed by hand (`GATE-PLAN-CHANGED`). A change by the process goes through `spex stamp` or `spex paths`, and leaves an entry in `corrections.md`. `plan-diff.ts` is deleted. *(Changed 2026-11-13: v2.0 kept it as a check of the task statuses after each `develop` stage.)*
 
 ### D-017-8 — One place for the project's test commands and limits
 
 016 keeps test commands in two places: `checks.fast` in the policy and `acceptance.json` per entry. spex keeps them in `.spex/config.yaml` (`fast_checks`, `acceptance_cmd`, `drivers`), and `spex done` and `spex verify` run those themselves and refuse unless they pass.
 
 - **`.spex/config.yaml` wins.** If Dex's policy disagreed with it, `spex done` would refuse a task that Dex's own checks passed.
-- `checks.fast` and `acceptance.json` go for spex projects. Dex's baseline gate runs `config.yaml`'s `fast_checks` through its own sensors (timeout, re-run, evidence). `checks.standing`, `checks.rerunOnFail` and the per-check timeouts stay in the policy. `limits.verify_minutes` is spex's timeout for one command it runs.
-- The same holds for the rounds: `verify_rounds` and `review_rounds` in the config replace the policy's `limits.maxVerifyRounds` for spex projects. Dex's budget still caps the cost of an entry.
+- `checks.fast` and `acceptance.json` go for spex projects. Dex's baseline gate runs `config.yaml`'s `fast_checks` through its own sensors (timeout, re-run, evidence), on the base branch: before a spec starts and after it closes. A red base before a spec pauses the run. `checks.standing`, `checks.rerunOnFail` and the per-check timeouts stay in the policy. `limits.verify_minutes` is spex's timeout for one command it runs.
+- The same holds for the rounds: `verify_rounds` and `review_rounds` in the config replace the policy's `limits.maxVerifyRounds` for spex projects. Dex's budget still caps the cost of an entry. When the budget stops a session in the middle of a phase, the phase stays `started`, and the same command goes on later: a done task stays done.
+- **The worktree needs its packages.** `worktree.setup` in the config runs one time in a new worktree (`npm ci`). `spex verify` and Dex's sensors both run there. spex reports a failed setup as a warning (`WORKTREE-SETUP`), and Dex shows it in the pause of the first red check.
+- `env` in the config (`up`, `deploy`, `check`, `down`, `url`) is the project's. spex runs it, and Dex only reports its failures (`ENV-UP`, `ENV-DEPLOY`).
 
 ### D-017-9 — Prerequisites and the new-project flow
 
 - **Checks out:** `specify_cli`, `speckit_init`.
 - **Checks in:**
-  - `node`: version 20 or newer on `PATH`, because the skills call `node …/spex.mjs` through Bash;
+  - `node`: version 20 or newer on `PATH`, because the skills call `spex.mjs` through Bash;
   - `spex_plugin`: D-017-2 resolves, and the version is in range;
-  - `spex_config`: `.spex/config.yaml` exists, and `spex check --json` reports `format.repo === format.script` (2). A newer repo pauses with the `CONFIG-FORMAT` fix text: update the plugin.
-- **After a spex update:** Dex runs `spex update` itself, as it runs `spex init`: a program, not an agent. It keeps every value in the config, adds the new keys and sets `format`. One exception: a project on format 1 needs the 1 → 2 migration, whose `tests.yaml` files are a start that a test analyst completes. Dex pauses that project and names `/spex:update`.
-- **A new project:** Dex runs `spex init` itself. It is a scan, not an agent. `/spex:init` also proves `acceptance_cmd` with a throwaway test (`REQ_000_000_AC_0_probe`) that must fail and be named; the script does not, so Dex runs the same proof itself once `acceptance_cmd` is set. A command that collects nothing would make every red run `RUN-NO-TESTS`.
-- Once the first entry's `setup` task has put the stack in place, Dex runs `spex init --force` again (a new scan), or the human edits `.spex/config.yaml`. A task may not write it: `.spex/` is in spex's `protected` list. That entry's first `tests` run is refused until `acceptance_cmd` is set.
+  - `spex_config`: `.spex/config.yaml` exists, and `spex check --json` reports `format.repo === format.script` (3). A newer repo pauses with the `CONFIG-FORMAT` fix text: update the plugin;
+  - `spex_base`: `base` in the config is empty, or it is the branch the run works on. A spec that starts from another branch would not see the run's work.
+- **After a spex update:** in a new project, Dex runs `spex update` itself, as it runs `spex init`: a program, not an agent. In an existing project it pauses and names `/spex:update`, because the migration changes tracked files, and Dex commits nothing there (D-015-2). The 2 → 3 migration gives a spec in the middle a `status.yaml` and no branch, so its files must be committed on the base branch before its next command.
+- **A new project:** Dex runs `spex init` itself. It is a scan, not an agent. Then it sets `commit: true` and `close: {cmd: local}` (D-017-7). `/spex:init` also proves `acceptance_cmd` with a throwaway test (`REQ_000_000_AC_0_probe`) that must fail and be named; the script does not, so Dex runs the same proof itself once `acceptance_cmd` is set. A command that collects nothing would make every red run `RUN-NO-TESTS`.
+- **The first entry of an empty repository** has no stack, so the scan finds no `acceptance_cmd`. Its tests are `driver: shell` tests, which need no command (phase 0). Once that entry is closed, Dex runs `spex init --force` again (a new scan) and sets its two keys again, or the human edits `.spex/config.yaml`. A task may not write it: `.spex/` is in spex's `protected` list.
 - **An existing project:** check only, as 015 does. The pause names the fix: run `/spex:init`.
 - **The clarification flow** loses its constitution step: product, technical, synthesis, then manifest extraction. spex has no constitution. Its job falls to the project's `CLAUDE.md` or `AGENTS.md` (018) and to `.spex/config.yaml`.
 
@@ -215,42 +234,54 @@ The `develop` skill ends with its own `spex run` and `spex done`. Dex treats tha
 Dex drops spec-kit; it doesn't keep it beside spex.
 
 - Two formats would double the picker rows, the prompts, the parser, the prerequisites and the mock runner.
-- The only project Dex runs on is dex-ecommerce, a playground. Its `checkpoint/*` tags were minted on spec-kit trees, so they're minted again from a mock run after 017, as 015 did for its mock config.
-- **The task board** reads `tasks.yaml`. A card is a spex task, with its status from the file and its tests from `tests.yaml`. The running task shows the agent's own step list (spex skills say "track your steps"), which brings back the TodoWrite feed that the `tasks.md` re-parse replaced.
-- **Spec discovery** (`orchestrator.ts`, `ipc/project.ts`) looks for `requirements.yaml`, or a `spec.md` with a spex `status:` line, instead of `tasks.md`. The welcome screen's project marker is `.spex/config.yaml` instead of `.specify/integration.json`.
+- The only project Dex runs on is dex-ecommerce, a playground. Its `checkpoint/*` tags were minted on spec-kit trees, so they're minted again from a mock run after 017, as 015 did for its mock config. A mock run now leaves one commit per phase on `spex/<spec>`, made by the script, and a tag can point at any of them.
+- **The task board** reads `tasks.yaml`: in the worktree for the open spec, on the base branch for a closed one. A card is a spex task, with its status from the file and its tests from `tests.yaml`. The running card comes from the start of a `spex:developer` subagent, whose brief names the task. Under it the board shows that subagent's own step list.
+- **The stage list** has five stages for an entry (D-017-3). Inside a stage, the trace shows the subagents the command started: the skills say one line before each start (`Develop: T03 + T04 → 2 agents`).
+- **Spec discovery** (`orchestrator.ts`, `ipc/project.ts`) reads `spex list --json` instead of a search for `tasks.md`. The welcome screen's project marker is `.spex/config.yaml` instead of `.specify/integration.json`.
 
-### D-017-11 — Dex's own repo moves to spex
+### D-017-11 — Dex's own repo moves to spex 3.0
 
-- `.claude/settings.json` enables `spex@claude-my-marketplace`. Done on 2026-11-05, so `/spex:*` works in Dex sessions.
-- `.spex/config.yaml` and `.spex/.gitignore`: `/spex:init` wrote them, and the config is at format 2 (`acceptance_cmd` runs `node --test` over `tests/acceptance/`). They are committed with this brief.
+- `.claude/settings.json` enables `spex@claude-my-marketplace` (2026-11-05). The plugin moves to 3.0.x at project scope.
+- `.spex/config.yaml`: `/spex:update` moves it from format 2 to 3. `ship` becomes `commit` and `close`, and `approvals` goes. Two values are set by hand: `worktree: {setup: "npm ci"}`, and `close.cmd`. It stays empty at first: the owner merges the request, then types `/spex:review` again.
 - `.specify/` and `.claude/skills/speckit-*` are deleted, and so are the spec-kit lines in `rules/09-code-quality.md` and `.markdownlint-cli2.yaml`. Done on `main` on 2026-11-05. Nothing in `src/` read Dex's own `.specify/`: every `.specify` path there is the target project's.
-- **Workflow step 3** (`.claude/CLAUDE.md`, `rules/04-spec-documentation.md`): `/sync-spec-kit` became `/spex:sync` on 2026-11-05. spex 2.0 removed `sync`, because it edited approved records from the code, so on 2026-11-10 step 3 became `/spex:clarify`, then what `spex next` names (open decision 11). Done on `main`.
-- Left for 017: the lines that describe the product as orchestrating spec-kit projects (`rules/01-project-config.md`, `.claude/CLAUDE.md` § Dex at a glance, `package.json` `description`, `README.md`). They stay true until 017's code ships.
-- **Briefs** stay in `docs/my-specs/NNN-slug/README.md` as the input. When a feature starts, `/spex:new` (or Dex's `spex new --from`) copies the brief into `specs/NNN-slug/spec.md`, and that copy is the spec from then on (open decision 9). A brief carries spex's four required sections as `##` headings: Why, What, Not this and Success. This one does since v2.0.
+- **Workflow step 3** (`.claude/CLAUDE.md`, `rules/04-spec-documentation.md`) names `/spex:clarify` and `/spex:approve` since 2026-11-10. spex 3.0 has neither. Step 3 becomes: a change to an open spec is `/spex:comment <the change>`, then the command its reply names (open decision 11). The words "skip on `main`" stay true: the work of a spec is on `spex/<spec>`, in its worktree.
+- **Worktrees:** `rules/worktree.md` puts a change session in `.worktrees/<name>` (`claude -w <name>`) and forbids `EnterWorktree`. spex 3.0 makes `.claude/worktrees/<spec>` itself, and its skills call `EnterWorktree`. The two rules meet in this repo (open decision 17).
+- Left for 017: the lines that describe the product as orchestrating spec-kit projects (`rules/01-project-config.md`, `.claude/CLAUDE.md` § Dex at a glance, `package.json` `description`, `README.md`), and `rules/06-testing.md`, which describes the stages and the checkpoints of 016. They stay true until 017's code ships.
+- **Briefs** stay in `docs/my-specs/NNN-slug/README.md` as the input. `/spex:new <the brief>` keeps the text word for word in `specs/NNN-slug/source.md`, and writes the note from it (open decision 9). A brief keeps Why, What, Not this and Success as `##` headings: the note and the full spec have the same sections.
 - `specs/001`–`016` stay as they are, as spec-kit history. Nothing converts them.
 
-### D-017-12 — The mock runner writes spex files and calls the real script
+### D-017-12 — The mock runner plays a whole command and calls the real script
 
-- `MockAgentRunner` writes `spec.md`, `requirements.yaml`, `tests.yaml`, `tasks.yaml` and test files whose names carry the ids' tokens (`REQ_007_001_AC_1_…`, `TASK_007_03_…`). For a session test it records a `spex session`. Every gate then runs the real `spex.mjs`, so a mock loop costs nothing and still exercises spex's rules.
-- Every D-016-11 scenario is kept, rewritten for spex files.
+- For one prompt, `MockAgentRunner` does what the command does: it runs the real `spex start` and `spex end`, and between them it writes the files the phase writes. For `plan`: `spec.md`, `requirements.yaml`, `tasks.yaml`, `tests.yaml`. For `implement`: test files whose names carry the ids' tokens (`REQ_007_001_AC_1_…`, `TASK_007_03_…`), a red run for each, the code, `spex done` for each task, a `spex session` for each session test, and `spex verify`. For `review`: the findings file, `spex review accept`, and the steps of the close. So a mock loop costs nothing and still exercises spex's rules.
+- A mock scenario names the role that does each write, so the hook sees the same subagent types as in a real run.
+- Every D-016-11 scenario is kept, rewritten for spex files. The test-amendment scenario goes with the amendment question (D-017-5).
 - New scenarios:
 
 | Scenario | Expected outcome |
 |---|---|
-| The agent sets `status: done` by hand on another task in `tasks.yaml` | the status check pauses the run |
-| The developer rewords a task | `approve-tasks` after `develop`; the run pauses |
-| The developer writes outside the task's `paths` | the hook denies it; `policy_denied` in the trace |
+| `/spex:new` splits a brief into two specs | the run stops with the list, no note is written, the entry pauses |
+| The note is not committed, and `commit` is `false` | `GATE-COMMIT`: the run pauses and names the files, before any agent starts |
+| `spex end plan` refuses three times (a line of the brief has no record) | the session ends at `plan, started`; the run pauses with the gap |
+| A plan question in `wait` | the run pauses with the reply; the answer goes to the same session, and the plan ends |
+| `plan, done` in `wait` | the run pauses with the digest; the human's yes starts `implement` |
+| A file of the plan is changed by hand after the stamp | `spex start implement` exits 6 with `GATE-PLAN-CHANGED`; the run pauses, and no agent starts |
+| A test's `needs` is not met | `GATE-NEEDS` pauses and names it, before any code is written |
+| The developer writes outside the `paths` of its task | the hook denies it; `policy_denied` in the trace |
+| A developer writes a test file, or the chat writes `status.yaml` | the hook denies it |
 | An agent writes into `.spex/evidence/` | the hook denies it |
-| `/spex:tests` writes a test that already passes | Dex's red check pauses on `RUN-GREEN` |
-| A test skips | `RUN-SKIPPED`: `tests` runs again once |
-| The developer claims done, and Dex's `spex done` exits 7 | Dex runs `spex block`; the next run gets the record |
-| The developer stops with `test-bug` twice on one task | `spex block` with both verdicts; the run pauses |
-| A test's `needs` is not met | `GATE-NEEDS` pauses and names it |
-| A session fails at verify, and the decider says "the code" | a `kind: fix` task; `approve-tasks` by policy; the fix is developed; verify goes green |
-| A review round with one P1 in `recommended-then-review` | `spex review accept … --by agent`, `/spex:fix`, a clean second round, done |
-| A review round in `wait` | the run pauses with the findings; the human's answer runs `spex review accept` |
-| `spex approve` refuses (a question is open) | the run pauses with the findings |
-| The session's init message has no `spex` plugin | the stage fails before its prompt is sent |
+| A test is green before the code exists | `GATE-RED` in the run; the mock's decider says "the test asserts nothing"; the test is written again and is red |
+| The run ends at `implement, done` with a forged `verify.json`, and one script is red | Dex's `spex verify` exits 7 twice; the run pauses with the failures |
+| A script is red once and green on Dex's re-run | recorded as `flaky`; the run goes on |
+| The fix loop reaches `verify_rounds` | the session ends at `implement, started`; the run pauses with each red test and its verdicts |
+| A task must write to a real system with no undo | the task is blocked with a question; the run pauses; a yes runs `/spex:implement <specDir> yes` |
+| A session test fails, and the decider says "the code" | a fix inside the same run; the tester performs the session again; verify goes green |
+| A review round with one P1 in `recommended-then-review` | `spex review accept … --by agent`, the fix is built in the same run, the progress gate, a clean second round, the close, done |
+| A review round in `wait` | the run pauses with the findings; the answer runs `/spex:review <specDir> <the answer>` |
+| The close with an empty `close.cmd` | the run pauses after `review, done`; after the merge, Dex's `spex close … finish` removes the worktree; done |
+| The close with `close.cmd: local` | the script merges and removes the worktree; the baseline gate runs on the base branch; done |
+| The budget stops the session in the middle of `implement` | the phase stays `started`; Resume runs the command again, and a done task is not built again |
+| The human answers a pause with words that are no answer | a `comment` stage; the plan is stamped again; the picker goes on with `implement` |
+| The session's init message has no `spex` plugin, or the session has no `Agent` tool | the stage fails before its prompt is sent |
 
 ## Configuration
 
@@ -260,30 +291,54 @@ Dex drops spec-kit; it doesn't keep it beside spex.
 |---|---|
 | `checks.fast` | removed for spex projects; the commands come from `.spex/config.yaml` (D-017-8) |
 | `limits.maxVerifyRounds` | removed for spex projects; `verify_rounds` and `review_rounds` in `.spex/config.yaml` (D-017-8) |
-| `questions` | now also decides `auto` and the person gates (D-017-4) |
+| `questions` | now also decides `auto` and the pause after `plan, done` (D-017-4) |
 | `checks.standing`, `checks.rerunOnFail` | unchanged |
 | `testGlobs` | unchanged; the frozen set adds spex's `protected` list and every driver's `dir` |
+| `openPullRequest` | no effect in a spex project; `close.cmd` decides (D-017-7) |
 
-**Queue entry:** `acceptance` is removed for spex projects, because each test is named by the id it covers. Entry ids must be `NNN-slug`. `brief` is the document `spex new --from` copies.
+**`.spex/config.yaml`,** the keys Dex reads or sets:
+
+| Key | Dex |
+|---|---|
+| `format` | checks it against the script's (D-017-9) |
+| `fast_checks` | runs them in its baseline gate (D-017-8) |
+| `commit`, `close.cmd` | sets `true` and `local` in a new project; follows them in an existing one (D-017-7) |
+| `base` | checks that it is empty or the branch of the run (D-017-9) |
+| `verify_rounds`, `review_rounds`, `auto`, `worktree.setup`, `env` | reads none of them: the script and the skills do. Dex passes `auto` as an argument, so the project's own `auto: true` also works |
+
+**Queue entry:** `acceptance` is removed for spex projects, because each test is named by the id it covers. `specDir` is new: Dex writes it after the note run, or a person writes it for a note that exists. `brief` is the document `/spex:new` reads. `branch` is derived (`spex/<folder>`). An id no longer has to be `NNN-slug`.
 
 **Environment:** `DEX_SPEX_DIR`, the plugin directory, overrides the installed one (D-017-2).
 
 ## Files
 
-- **Add, core:**
-  - `spex.ts`: find the plugin, run the script with `--json`, type the envelope and `spex next`'s data;
-  - `spex-files.ts`: the plain-field reader for `requirements.yaml`, `tests.yaml` and `tasks.yaml` over a tree reader, replacing `parser.ts`.
-- **Change, core:**
-  - `picker.ts`: the rows above, from `spex next`;
-  - `entry-prompts.ts`, `prompts.ts`: the `/spex:*` prompts and `auto`; the constitution prompt and the `SPECIFY_*` env go;
-  - `gates.ts`, `stages/gate-runs.ts`, `stages/tests-stage.ts`, `stages/verify-stage.ts`, `acceptance.ts`: the red check per test, `spex gate develop`, progress through `spex done`, the done gate through `spex verify` and `spex gate ship`;
-  - `humanInput.ts`: the person gates of D-017-4; the amendment question goes;
-  - `scope.ts`: the D-017-7 scopes per stage and role; `plan-diff.ts`: the status check;
-  - `evidence.ts`, `digest.ts`: spex files in place of `tasks.md`; the digest lists the approvals Dex gave, the `by: agent` and `by: default` answers, the sessions and the deferred findings;
-  - `policy.ts`: D-017-8;
-  - `agent/claudeSession.ts`: the `plugins` option, the init check, the board feed; `agent/ClaudeAgentRunner.ts`: the skill name;
-  - `stages/prerequisites.ts`, `stages/clarification.ts`, `queue.ts`, `queue-init.ts`, `orchestrator.ts`, `cli/describe.ts`, `types.ts`;
-  - `agent/MockAgentRunner.ts`, `agent/MockConfig.ts`, `fixtures/mock/*.json`.
+The lists name 016's modules on `main` by what they are for; `/spex:plan` checks each one against the code. A new module gets its name in the plan. The branch `archive/017-spex-2.2` holds a first version of most new modules, written for spex 2.2. A developer may read it, but copies nothing without a check against spex 3.0.
+
+- **New:**
+  - a spex client: find the plugin, run the script with `--json`, type the envelope of `spex status`, `spex list` and `spex start` (archive: `spex.ts`);
+  - a reader of the plain fields of `requirements.yaml`, `tests.yaml` and `tasks.yaml` over `tree-reader.ts`, also for a worktree path (archive: `spex-files.ts`). It needs the `yaml` package;
+  - the spex picker: the rows above, from `spex status` (archive: `spex-picker.ts`);
+  - the spex prompts: five commands, `auto`, `yes` and the review answer (archive: `spex-prompts.ts`);
+  - the spex prerequisites and the setup of a new project: the version range, format 3, the tools check, the two keys (archive: `stages/spex-prereqs.ts`, `stages/spex-setup.ts`);
+  - the start of a phase: `spex start` before a session, the worktree as the working folder, the note and its commit, the three ways of the close (archive: `stages/spex-actions.ts`);
+  - the one pause rule of D-017-4, the answer to a live session, the `comment` stage (archive: `stages/person-gates.ts`);
+  - the progress gate, the done gate and the done record of D-017-6 (archive: `stages/progress-gate.ts`, `stages/spex-verify.ts`, `spex-done.ts`);
+  - the reader of the three run reports (archive: `stages/run-report.ts`);
+  - the mock's spex commands and their fixtures (archive: `agent/mock-spex.ts`, `fixtures/mock/spex/`, `fixtures/spex/`).
+- **Change:**
+  - `picker.ts`, `stages/loop.ts`, `run-lifecycle.ts`, `branching.ts`, `orchestrator.ts`: the spex rows and the phase start replace 016's stages for spec-kit;
+  - `prompts.ts`: Dex's rule lines move to the appended system prompt;
+  - `humanInput.ts`: the pause that shows the last reply, and its answer;
+  - `gates.ts`: the done gate of D-017-6;
+  - `acceptance.ts`: the sensors of an entry stay; the `acceptance.json` record goes;
+  - `scope.ts`: the roles of D-017-7, the worktree as the write root;
+  - `evidence.ts`, `digest.ts`: the approvals Dex gave by policy, the `by: agent` and `by: default` answers, the entries of `corrections.md`, the sessions and the deferred findings;
+  - `stages/prerequisites.ts`, `policy.ts`, `queue.ts`, `queue-init.ts` (`specDir`), `cli/describe.ts`, `types.ts`;
+  - `agent/claudeSession.ts` (the working folder, the tools check, the subagent type and brief for the hook and the board), `agent/ClaudeAgentRunner.ts`;
+  - `agent/MockAgentRunner.ts`, `agent/MockConfig.ts`.
+- **Go:**
+  - `plan-diff.ts`, `stages/tests-stage.ts`, `stages/verify-stage.ts`: the plan diff and 016's two stages;
+  - `parser.ts`, the `tasks.md` parser, once its last caller reads `tasks.yaml` (12 modules import it on 2026-11-13).
 - **Change, main and renderer:** `ipc/project.ts`, `PrerequisitesPhase.tsx`, `ClarificationPhase.tsx`, `LoopDashboard.tsx`, `StageList.logic.ts`, `useOrchestrator.ts`, and the task board.
 - **Change, this repo:** D-017-11.
 
@@ -291,98 +346,112 @@ Dex drops spec-kit; it doesn't keep it beside spex.
 
 After every phase, `npm test` and `npm run typecheck` pass.
 
-0. **Confirm what Dex relies on in spex 2.2.0,** on a dex-ecommerce scratch clone. Every gap becomes a spex change in the marketplace, with its own test, released before phase 1:
+0. **Confirm what Dex relies on in spex 3.0.0,** on a dex-ecommerce scratch clone. Every gap becomes a spex change in the marketplace, with its own test, released before phase 1:
    - a `/spex:*` skill loads through the SDK's `plugins` option, and `${CLAUDE_PLUGIN_ROOT}` resolves in its Bash calls;
-   - the plugin's subagents start from a skill in that session, and its Playwright MCP server starts for a `tester` (it needs a browser: `npx playwright install chromium`);
-   - the PreToolUse hook input names the subagent type, so D-017-7 can scope by role;
-   - the argument forms in D-017-3 work, `auto` included;
-   - `spex new <slug> --from <brief> --shaping --number <NNN>` makes the folder the queue expects, and `/spex:new <specDir> auto` resumes it without round 0 and ends at `approve-spec`;
-   - `spex check` and `spex next` leave spec-kit folders beside a spex folder alone (`specs/001`–`016` here, whose `spec.md` is spec-kit's);
-   - `spex next --json` writes nothing;
-   - `spex done` on a task the agent already marked `done`, at the same tree, exits 0;
-   - a project that enables `spex@claude-my-marketplace` itself, plus Dex's `plugins` option, loads one copy, not two;
-   - `spex gate develop` on a task whose tests already pass exits 6 with `GATE-RED`; `spex done` on a red task exits 7 and leaves `status: todo`; a skipping test is refused (`RUN-SKIPPED`), all with a forged `.spex/evidence/` record in place;
-   - `spex init` on an empty repository writes a valid `.spex/config.yaml` and the `.spex/.gitignore` that keeps the work folders out of git.
-1. **`spex.ts` and `spex-files.ts`,** unit-tested on spex's own fixtures (`tests/fixtures/csv-export`, `tests/fixtures/guest-checkout`).
-2. **Plugin loading and prerequisites;** the constitution step goes.
-3. **The folder, shaping, requirements and tasks,** with the person gates (D-017-3, D-017-4).
-4. **Tests and develop:** the red checks, the develop gate, the progress gate, the scopes, the wrong-test pause.
-5. **Verify, review and fix,** and the done gate.
+   - the session has the `Agent` tool, the plugin's subagents start by name from a skill, and its Playwright MCP server starts for a `tester` (it needs a browser: `npx playwright install chromium`);
+   - `EnterWorktree` and `ExitWorktree` in an SDK session: are they there, and what does a skill do without them;
+   - Dex's own `spex start <phase>`, then a session whose working folder is the worktree: the skill's second `spex start` goes on, loses no round count, and the skill skips the move;
+   - `spex close <specDir> finish` from Dex's own process in the main folder: after a merge by hand with an empty `close.cmd`, and after a session that could not leave the worktree;
+   - the PreToolUse hook input names the subagent type, and the brief of the `Agent` call ties a developer to its task, so D-017-7 can scope by role and by task;
+   - the argument forms of D-017-3 and D-017-4 work: a file path for `/spex:new`, `auto`, `yes`, the answer to a review;
+   - `/spex:new <brief>` with one spec writes one note and does not stop; with two it stops before it writes; `spex list --json` shows the new note;
+   - with spex's default config on a branch with no upstream, `spex start plan` passes once the note is committed, and the base is that branch (probed 2026-11-13: yes); with `close.cmd: local` no gate asks for a remote (`GATE-PUSH`);
+   - `spex status --json`, `spex list --json` and `spex check --json` write nothing;
+   - spex leaves spec-kit folders beside a spex folder alone (`specs/001`–`016` here), and `/spex:new` gives the number after them;
+   - Dex's own `spex verify` on the tree that `spex end implement` proved exits 0 and is the same round; with a forged `verify.json` and one red script it exits 7;
+   - where the run report of `review` and the evidence of the sessions are after the close removed the worktree;
+   - a session that is stopped in the middle of a phase leaves the worktree usable, and the same command goes on;
+   - `spex init` on an empty repository writes a valid `.spex/config.yaml` and the `.spex/.gitignore`; a way to set `commit` and `close.cmd` with no edit by hand (a flag of `spex init`); a first entry with no `acceptance_cmd` gets shell tests and runs to the close.
+1. **The spex client and the file reader** on spex 3.0: the types of `status`, `list` and `start`, unit-tested on spex's own fixtures.
+2. **Plugin loading and prerequisites:** the version range, format 3, the tools check; the constitution step goes.
+3. **The note and the plan:** `/spex:new`, `specDir`, the commit of the note, `spex start plan`, the worktree as the working folder, the pauses of D-017-4.
+4. **Implement:** `spex start implement`, the run, the progress gate, the scopes by role.
+5. **Review and the close:** the answer, the fix picks, the three ways of the close, the done gate, the `comment` stage.
 6. **The board, the CLI's `describe`, and the digest.**
-7. **The mock runner** on spex files; every D-016-11 and D-017-12 scenario ends as documented.
-8. **spec-kit removed,** and this repo moved to spex (D-017-11).
+7. **The mock runner** plays the commands; every D-016-11 and D-017-12 scenario ends as documented.
+8. **spec-kit removed,** and this repo moved to spex 3.0 (D-017-11).
 9. **The cost test** (Appendix A).
 
 ## Success
 
 - [ ] `npm test`, `npm run typecheck` and `npm run check:size` pass.
 - [ ] `grep -rn -i -E 'speckit|spec-kit|\.specify|SPECIFY_' src` finds nothing.
-- [ ] A mock loop on a dex-ecommerce clone runs every entry from its folder to an open `spex gate ship`, and the real `spex.mjs` decides every gate.
+- [ ] `grep -rn -E '/spex:(requirements|clarify|research|tasks|tests|develop|verify|fix|approve)' src` finds nothing, and no spex call of a mock loop exits 2: spex 3.0 answers a removed command (`spex next`, `spex approve`, `spex ship`) with a usage error.
+- [ ] A mock loop on a dex-ecommerce clone runs every entry from its note to a closed spec, and the real `spex.mjs` starts and ends every phase.
 - [ ] Every D-016-11 and D-017-12 scenario ends as documented, under the mock.
 - [ ] Every agent session's init message lists the `spex` plugin.
 - [ ] A real entry on a dex-ecommerce clone runs end to end: a new small entry written for the test (one capability, 2 to 3 spex tasks), with a full cost estimate to done before the first paid stage. Its trace shows no read of the spex `README.md`. *(Changed by Q1, 2026-11-05: the first draft used `003-promo-codes`.)*
 - [ ] The cost test's numbers are in Appendix A, and spex is below spec-kit at the same acceptance result.
-- [ ] In this repo, workflow step 3 names a skill that spex 2.2 has, `.specify/` is gone, and `.spex/config.yaml` is committed.
+- [ ] In this repo, workflow step 3 names a command that spex 3.0 has, `.specify/` is gone, and `.spex/config.yaml` is at format 3 and committed.
 
 ## Not this
 
-- Codex and OpenCode: [019](../019-many-projects-any-agent/README.md).
-- `spex ship` run by Dex. spex folded `archive` into `ship`, which closes the records and merges through `ship.cmd`. The merge is the human's (gate 2), so the digest's last line gives `/spex:ship <specDir>`.
-- Roadmaps: `spex new --planned`, `spex roadmap`, `spex drop` and `spex gate new` on a planned step are 020's.
-- A feature that writes more than one git repo (`repos` in the config, `repo:` on a task).
+- Codex and OpenCode: [019](../019-many-projects-any-agent/README.md). spex 3.0 moves the chat with two Claude Code tools and starts subagents by name, so a port must give both.
+- A push or a request made by Dex. `close.cmd` is the project's: Dex follows it, and adds no way of its own to merge.
+- `/spex:new-bug` and `/spex:delete` run by Dex. A person types them in the project. They move the numbers of the notes that wait, and Dex makes a note only when its turn comes, so no `specDir` goes stale.
+- spex's list as Dex's queue, and roadmaps: `/spex:new` on a design file, `spex roadmap` and an entry that owns more than one spec are [020](../020-design-roadmap/README.md)'s.
+- A feature that writes more than one git repo (`repos` in the config, `repo:` on a task). spex 3.0 makes a worktree in the home repo only.
 - Converting `specs/001`–`016` to spex.
 - spex's three-readings ambiguity check (spex v2 open question).
 
 ## Open decisions
 
-The proposed default is in bold. The owner accepted defaults 1 to 6 on 2026-11-05. v2.0 of this brief rewrote 1, 2, 3 and 6 for spex 2.2 and added 7 to 11, and the owner accepted all eleven on 2026-11-10. So they are decisions, not open questions.
+The proposed default is in bold. The owner accepted 1 to 11 for v2.0 on 2026-11-10. spex 3.0 settled two of them (1, 8), three stand as they were (2, 4, 5), and six are rewritten (3, 6, 7, 9, 10, 11). 12 to 18 are new. The owner accepted the rewritten and the new ones on 2026-11-13.
 
-1. **Tests:** **one `/spex:tests` run per feature, which takes every batch itself** | one Dex stage per batch, so Dex's budget and pauses act between batches. spex 2.x loops the batches inside the skill, each batch through test-developer subagents. *(Rewritten 2026-11-10.)*
-2. **Test commands and limits:** **`.spex/config.yaml` is the one source, also for `verify_rounds` and `review_rounds`** | the policy's `checks.fast` and `maxVerifyRounds` stay, and Dex writes `config.yaml` from them. *(Widened 2026-11-10 to the rounds.)*
-3. **The person gates in `recommended-then-review`:** **Dex takes all four by policy (spec, records, `tasks.yaml`, the review answer), and the digest lists them** | Dex always waits for the human. *(Widened 2026-11-10: v1.0 had gate 1 and `tasks.yaml` only.)*
-4. **spec-kit:** **removed** | kept as a second format behind a `format` field.
-5. **Finding the plugin:** **`installed_plugins.json`, with `DEX_SPEX_DIR` to override** | a copy of spex in Dex, pinned (a second copy to keep up to date).
-6. **The verdict:** **Dex runs `spex done` after each task and `spex verify` plus `spex gate ship` at the end, in its own process** | Dex trusts the agent's own runs. Dex's process, so the verdict is Dex's (D-017-1). *(Widened 2026-11-10 to the done gate.)*
-7. **The stage of an entry:** **the picker asks `spex next --json`** | Dex computes the stage from plain fields, as v1.0 did. With about twenty stages, some tied to the working tree, computing them in Dex copies spex's rules. The cost: `--status` shows no stage for an entry on a branch that is not checked out.
-8. **A wrong test:** **spex's decider settles it, and a second one on the same task is a block that pauses** | 016's amendment question waits for the human in both modes. spex's rule is that the process fixes a test the process wrote.
-9. **Where briefs live:** **in `docs/my-specs/` as the input; `spex new --from` copies one into `specs/NNN-slug/spec.md` when its feature starts** | move the briefs into `specs/` now | a spex change that lets `spec:` name a document before records exist. spex 2.x's way in is a `spec.md` in the folder; the `spec:` pointer works only once `requirements.yaml` exists.
-10. **The size of 017 itself:** **one spec folder: answer "one step" in round 0, and accept `FILE-SIZE` warnings** | a roadmap. A dry run of v1.0 (2026-11-05, spex 1.x, `.spex/runs/017/`) gave 69 records and 24 tasks, with `requirements.yaml` at 53–62 KB, above `limits.file_kb` (40 KB, a warning). But the change cannot ship in halves: a Dex that reads spex for records and spec-kit for tasks does not work (D-017-10). A develop run reads `spex show <task>`, not the whole file, so the size costs the analyst runs only. A roadmap's step folders would also take `017`, `018` and on, which collide with briefs 018 to 020.
-11. **Workflow step 3 in this repo:** **on a feature branch, a changed behavior is `/spex:clarify specs/<dir>` (the record goes back to `draft`, then `/spex:approve`), then whatever `spex next` names** | drop step 3, because every spex skill already ends with the NEXT block. `/spex:sync` is gone since spex 2.0.
+1. **Tests:** settled by spex 3.0. The tests are a part of `/spex:implement`, and no command writes them alone. *(v2.0: one `/spex:tests` run per feature.)*
+2. **Test commands and limits:** **`.spex/config.yaml` is the one source, also for `verify_rounds` and `review_rounds`** | the policy's `checks.fast` and `maxVerifyRounds` stay, and Dex writes `config.yaml` from them. *(Stands.)*
+3. **The approval and the questions in `recommended-then-review`:** **every command gets `auto`, Dex starts `implement` right after the plan, and the digest lists what the agents decided** | Dex pauses after every plan, in both modes. spex 3.0 has one approval, the plan, and typing `implement` gives it. *(Rewritten 2026-11-13: v2.0 had four `spex approve` gates.)*
+4. **spec-kit:** **removed** | kept as a second format behind a `format` field. *(Stands.)*
+5. **Finding the plugin:** **`installed_plugins.json`, with `DEX_SPEX_DIR` to override** | a copy of spex in Dex, pinned (a second copy to keep up to date). *(Stands.)*
+6. **The verdict:** **Dex runs `spex verify` in its own process after every session that ends at `implement, done`; the red check and the close are spex's own** | Dex also holds two moments inside a run with its hook: it runs `spex gate develop` itself before a developer starts, and `spex verify` before the `merge` step of the close. The hook way keeps Dex's verdict at every gate of 016. It ties Dex to the text of Bash calls and to the order of steps in a skill, which change with spex. *(Rewritten 2026-11-13.)*
+7. **The stage of an entry:** **the picker asks `spex status --json` and runs the command it names** | Dex reads `status.yaml` itself. The file is two lines, but the next command also depends on the list, on an open entry of `corrections.md` and on a close that is not finished: those are spex's rules. *(Rewritten 2026-11-13: `spex next` is gone.)*
+8. **A wrong test:** settled by spex 3.0. A decider names the cause of every red test, and only a big change of the spec reaches a person. 016's amendment question goes.
+9. **Where briefs live:** **in `docs/my-specs/` as the input; `/spex:new <the brief>` keeps it word for word in `source.md` and writes the note** | move the briefs into `specs/` now. *(Rewritten 2026-11-13: v2.0 copied the brief into `spec.md` with `spex new --from`.)*
+10. **The size of 017 itself:** **one spec: if `/spex:new` proposes a split, answer "one spec", and accept `FILE-SIZE` warnings** | a list of specs. The change cannot ship in halves: a Dex that reads spex for the plan and spec-kit for the tasks does not work (D-017-10). A split would also take the numbers 018 and on, which collide with briefs 018 to 020. *(Rewritten 2026-11-13: spex 3.0 has no round 0; the split is a question of `/spex:new`.)*
+11. **Workflow step 3 in this repo:** **a change to an open spec is `/spex:comment <the change>`, then the command its reply names** | drop step 3, because every spex reply already ends with a NEXT block. *(Rewritten 2026-11-13: `/spex:clarify` and `/spex:approve` are gone.)*
+12. **The size of a stage:** **one session per spex command: note, plan, implement, review** | Dex keeps its own loop per task between `spex start implement` and `spex end implement`, with `spex gate develop`, `spex run`, `spex done` and `spex verify`. The own loop keeps a budget check and a pause between two tasks, and a cost per task in the run record. But spex 3.0 has no skill for one task, so Dex would write the orchestration of `/spex:implement` again in TypeScript: the batches of tests, the waves, the decider and its four causes. That copies spex's process, and it breaks with each spex release. The cost of the pick: the budget acts by stopping a session in the middle, which spex allows at any time.
+13. **The queue and spex's list:** **`.dex/queue.json` stays the queue; Dex makes the note of an entry with `/spex:new` when its turn comes, and keeps the folder in `specDir`** | spex's list is the queue: manifest extraction becomes one `/spex:new` on the goal, and Dex runs the notes in the order of their numbers. The second way is the natural form of spex 3.0, and it removes a stage of Dex. It also replaces 015's queue, `dex queue init` and the queue view, so it belongs to 020.
+14. **The close:** **the project's `close.cmd` decides; Dex sets `local` and `commit: true` in a new project, where the run branch is the base** | Dex always merges `spex/<spec>` itself and keeps `close.cmd` empty | no run branch: each spec is one request into `main`, and the loop waits for a person after every entry. D-015-2 says Dex never commits or merges on its own in an existing project. With the pick, the script does both where the project's config says so, and a person does where it does not.
+15. **Who starts a phase:** **Dex runs `spex start` itself and starts the session in the worktree; it also runs `spex close … finish` itself when a session could not** | the skill starts the phase and moves the chat with `EnterWorktree`. With the pick, a refused gate costs no agent, and Dex does not need the two worktree tools in an SDK session. Phase 0 confirms that the skill's second `spex start` is harmless.
+16. **The 2.2 build:** **take it off `main`: save it on the local branch `archive/017-spex-2.2`, put `main` back to `57836b9`, and plan again from 016's code** | make it green, commit it on `main`, and plan again on top of it | keep its spec folder: `/spex:update` gives it `implement, started`, and `/spex:comment` puts v3.0 into the plan. `57836b9` is green, and the 2.2 tree was red. spex refuses every task on a red base, so the second way pays to repair code that the plan then rewrites: the build was cut for nine stages, and v3.0 has five. The parts that stand (the plugin loading, the readers, the prerequisites, the mock files) stay readable on the archive branch. The third way leaves 22 done tasks of a plan that no longer says what is built. *(Changed by the owner, 2026-11-13: the first pick of v3.0 was the second way. Done the same day.)*
+17. **Worktrees in this repo:** **a spex session starts in the main checkout (`claude --no-worktree`), spex makes `.claude/worktrees/<spec>`, and `rules/worktree.md` names the spex skills as the one caller of `EnterWorktree`** | change spex so that the worktree folder is a config key, and set it to `.worktrees`. `rules/worktree.md` comes from mac-setup, so the change is made there.
+18. **The human's words at a pause:** **Dex runs `/spex:comment <the words>` as a stage** | the pause tells the human to type `/spex:comment` in the project, and then to press Resume. The pick is one more prompt and no new rule: `comment` writes no code, and `spex status` names what comes next.
 
-## Changes from v1.0
+## Changes from v2.0
 
-spex moved from 1.4.0 to 2.2.0 between v1.0 and v2.0 of this brief. Each row is a spex change and where this brief follows it.
+spex moved from 2.2.0 to 3.0.0 on 2026-11-13, three days after v2.0 of this brief. Each row is a spex change and where this brief follows it. The table of the 1.4 → 2.2 changes was in v2.0 and is in git.
 
 | spex change | In this brief |
 |---|---|
-| `/spex:new` is the only way in: `spex gate requirements` opens only on `specs/NNN-slug/spec.md` at `status: ready`; the `--dir` and document forms of `/spex:requirements` are gone | D-017-3 (Dex makes the folder with `spex new --from --shaping`), D-017-11 (briefs carry Why, What, Not this, Success) |
-| `requirements` runs clarify, research and the test analyst inside its own run | the picker rows, D-017-3 |
-| `tests.yaml`, the proof plan, by a `test-analyst`; test code by `test-developer`s from the records alone; design rule 11, the wall | D-017-5, D-017-7 (scopes per role) |
-| `implement` is `develop`; `spex gate implement` is `spex gate develop`; the red run is `spex run --test <TS> --expect fail` per test | D-017-3, D-017-5 |
-| a wrong test is settled by a decider, never by a person | D-017-5, open decision 8 |
-| a new `verify` stage: `spex verify` at the tree that ships, session tests a `tester` performs in a browser | D-017-6 |
-| review findings with a severity and a pick, a one-word answer, `spex review accept`, `/spex:fix` | D-017-4, D-017-6 |
-| `archive` folded into `ship`, which merges through `ship.cmd` | Not this |
-| `quick` and `sync` removed | D-017-11, open decision 11; `/spex:quick` left Not this |
-| `spex next` covers about twenty stages, some tied to the working tree | D-017-1, open decision 7 |
-| `needs[]`, `live[]`, `people[]`, `RUN-SKIPPED`, `spex block --ask` | D-017-4 (pauses), D-017-5 |
-| data format 2; `spex update` migrates format 1 | D-017-9 |
-| `verify_rounds`, `review_rounds`, `drivers` in the config | D-017-8 |
-| eight subagents and a Playwright MCP server in the plugin | D-017-2, phase 0 |
+| Four commands carry a spec: `new`, `plan`, `implement`, `review`. `requirements`, `clarify`, `research`, `tasks`, `develop-tests`, `develop`, `run-tests` and `fix` are parts of them | the picker rows, D-017-3, open decision 12 |
+| No `approve`: the next command is the approval, and `spex end plan` stamps the plan | D-017-4, D-017-7 (the plan diff goes), open decision 3 |
+| `status.yaml` holds the state; `spex start` and `spex end` open and close a phase; `spex next` became `spex status` | D-017-1, D-017-3, open decisions 7 and 15 |
+| The script makes the branch `spex/<spec>` and a worktree, and commits at the end of each phase | D-017-7, D-017-9 (`spex_base`), open decisions 14 and 17 |
+| `new` only writes notes, `spex new --from` and `--shaping` are gone, `source.md` keeps the text | D-017-3 (the note, `specDir`), D-017-11 (briefs), open decisions 9 and 13 |
+| One spec is open at a time, in the order of the numbers (`GATE-OPEN`, `GATE-TURN`) | D-017-1 |
+| A clean review closes the spec: `spex close` in six steps; `ship` became `commit` and `close` in the config | D-017-6 (the done gate), D-017-7 (the close), Configuration |
+| A decider names one of four causes of a red test; a small change of the spec is an agent's, a big one is the person's | D-017-4, D-017-5, open decision 8 |
+| `corrections.md` in the spec folder, in git | D-017-3, D-017-4 (the digest) |
+| `/spex:comment`: the person's words about the open spec | D-017-4, the picker rows, open decision 18 |
+| `new-bug` and `delete` move the numbers of the notes that wait | Not this |
+| Ten subagents: `analyst` and `planner` are new, and the chat of a command writes nothing | D-017-2, D-017-7 (scopes per role) |
+| Data format 3; `spex update` migrates format 2; `approvals` is gone | D-017-9, D-017-11 |
+| `worktree.setup`, `base` and `env` in the config | D-017-8, D-017-9, Configuration |
+| `auto` is an argument of `new`, `plan`, `implement` and `review`; three stops still wait for a person | D-017-3, D-017-4 |
 
 ## Appendix A — the cost test
 
-The test spex's own Definition of Done asks for. It runs once phase 8 is done.
+The test spex's own open question 8 asks for. It runs once phase 8 is done.
 
 - **Setup:** two scratch clones of dex-ecommerce, each with `origin` pointed at a scratch bare repository. Each clone has `{"agent": "claude"}` in `.dex/dex-config.json`. The entry is the new small entry of the Success list, with its own brief in dex-ecommerce. *(Changed by Q1, 2026-11-05: the first draft used `003-promo-codes`, whose 016 real run reached 15.21 USD at phase 5 of 10.)*
-- **Runs:** clone A on 016's spec-kit loop (the commit before 017 merges); clone B on 017's spex loop. Same model, same policy, `recommended-then-review`.
+- **Runs:** clone A on 016's spec-kit loop (the commit before 017 merges); clone B on 017's spex 3.0 loop. Same model, same policy, `recommended-then-review`.
 - **Measure, per stage and in total:**
   - input tokens, with cache reads and cache writes counted separately;
-  - the number of fresh agents and of subagents, and turns per agent;
+  - the number of sessions, and of subagents by type; turns per session and per subagent;
   - the size of the spec folder;
-  - `spex check` rounds per stage, and verify and review rounds;
-  - `pulled[]` per develop run;
+  - tries of `spex end plan`, and verify and review rounds;
+  - `pulled[]` of the implement run;
   - the acceptance result.
 
-  The per-run figures come from the run records (`.dex/runs/<runId>.json`), so both loops are measured the same way. Today an agent run there keeps `costUsd`, `inputTokens` and `outputTokens`, but no cache counts. Phase 9 adds `cacheReadTokens` and `cacheCreationTokens`, taken from the same SDK usage that `claudeSession.ts` already reads. Then clone A runs on a build that has them too. A subagent's usage counts toward the session that started it.
+  The per-run figures come from the run records (`.dex/runs/<runId>.json`), so both loops are measured the same way. Today an agent run there keeps `costUsd`, `inputTokens` and `outputTokens`, but no cache counts. Phase 9 adds `cacheReadTokens` and `cacheCreationTokens`, taken from the same SDK usage that `claudeSession.ts` already reads. Then clone A runs on a build that has them too. A subagent's usage counts toward the session that started it. In clone B most of the work is in subagents, so the record also keeps the usage of each subagent with its type.
 - **Pass:** clone B's acceptance result equals clone A's, and its total input tokens are lower. The numbers go into this appendix, with the run ids.
